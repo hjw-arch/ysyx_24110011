@@ -142,8 +142,8 @@ wire BVALID;
 reg [1:0] BRESP;
 
 SRAM #(
-    .R_DELAY_TIME 	(5  ),
-    .W_DELAY_TIME 	(5  ))
+    .R_DELAY_TIME 	(1  ),
+    .W_DELAY_TIME 	(1  ))
 u_SRAM(
     .clk     	(clk      ),
     .rst     	(rst      ),
