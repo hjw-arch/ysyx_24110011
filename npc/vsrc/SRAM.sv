@@ -89,6 +89,9 @@ end
 assign RDATA = pmem_read(raddr_buf, {28'b0, WSTRB});
 assign RRESP = 2'b00;
 
+always_ff @(posedge clk) begin
+end
+
 
 
 // 写通道

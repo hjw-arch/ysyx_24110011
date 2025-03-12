@@ -55,7 +55,7 @@ always_ff @(posedge clk) begin
 end
 
 assign lsu_ready = wbu_ready;
-assign lsu_valid = done | (state == S_WAIT_READY);
+assign lsu_valid = done & lsu_ren | done & lsu_wen | ~lsu_ren & ~lsu_wen & has_new_data | (state == S_WAIT_READY);
 
 // 读
 // wire [WIDTH - 1 : 0] rdata = pmem_read(lsu_addr, lsu_op[1:0]);
