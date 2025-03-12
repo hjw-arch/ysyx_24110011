@@ -86,11 +86,8 @@ always_ff @(posedge clk) begin
 end
 
 
-assign RDATA = pmem_read(raddr_buf, {28'b0, WSTRB});
+assign RDATA = ~is_rcnt_not_zero ? pmem_read(raddr_buf, {28'b0, WSTRB}) : 32'b0;
 assign RRESP = 2'b00;
-
-always_ff @(posedge clk) begin
-end
 
 
 
@@ -149,7 +146,6 @@ assign BVALID = w_state == W_ACTIVE & ~is_wcnt_not_zero | w_state == W_WAIT_BREA
 
 always_comb begin
     if (~is_wcnt_not_zero && w_state == W_ACTIVE) begin
-        $display("here11"); 
        pmem_write(waddr_buf, wdata_buf, {28'b0, WSTRB});
     end
 end
