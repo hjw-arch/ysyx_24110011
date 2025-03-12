@@ -1,4 +1,4 @@
-module LSU #(parameter WIDTH = 32) (
+module LSU (
     input clk,
     input rst,
 
@@ -55,10 +55,10 @@ always_ff @(posedge clk) begin
 end
 
 assign lsu_ready = wbu_ready;
-assign lsu_valid = has_new_data | (state == S_WAIT_READY);
+assign lsu_valid = done | (state == S_WAIT_READY);
 
 // 读
-wire [WIDTH - 1 : 0] rdata = pmem_read(lsu_addr, lsu_op[1:0]);
+// wire [WIDTH - 1 : 0] rdata = pmem_read(lsu_addr, lsu_op[1:0]);
 
 wire [31 : 0] rdata_extend;
 assign rdata_extend[31 : 16] =  {16{rdata[7] & ~lsu_op[2] & ~lsu_op[1] & ~lsu_op[0]}} | {16{rdata[15] & ~lsu_op[2] & ~lsu_op[1] & lsu_op[0]}} | rdata[31 : 16] & {16{lsu_op[1]}};
@@ -69,12 +69,104 @@ always_ff @(posedge clk) begin
     lsu_data <= (lsu_valid & wbu_ready) ? {exu_data[108 : 77], rdata_extend, rest_exu_data} : lsu_data;
 end
 
-// 写
-always @(posedge clk) begin
-    if(lsu_wen & lsu_valid & wbu_ready) begin
-        pmem_write(lsu_addr, lsu_wdata, lsu_op[1:0]);
-    end
-end
+// // 写
+// always @(posedge clk) begin
+//     if(lsu_wen & lsu_valid & wbu_ready) begin
+//         pmem_write(lsu_addr, lsu_wdata, lsu_op[1:0]);
+//     end
+// end
+
+
+// output declaration of module axi4_lite_master
+wire [3 : 0] wmask = {2'b00, lsu_op[1 : 0]};
+wire wen = lsu_wen & has_new_data;
+wire ren = lsu_ren & has_new_data;
+wire [31:0] rdata;
+wire [1:0] rresp;
+wire [1:0] wresp;
+wire done;
+
+
+wire [31:0] ARADDR;
+wire ARVALID;
+wire RREADY;
+wire [31:0] AWADDR;
+wire AWVALID;
+wire [31:0] WDATA;
+wire [3:0] WSTRB;
+wire WVALID;
+wire BREADY;
+
+axi4_lite_master u_axi4_lite_master(
+    .clk        	(clk         ),
+    .rst        	(rst         ),
+    .wen        	(wen         ),
+    .ren        	(ren         ),
+    .user_ready 	(lsu_ready   ),
+    .wmask      	(wmask       ),
+    .waddr      	(lsu_addr    ),
+    .wdata      	(lsu_wdata   ),
+    .raddr      	(lsu_addr    ),
+    .rdata      	(rdata       ),
+    .rresp      	(rresp       ),
+    .wresp      	(wresp       ),
+    .done       	(done        ),
+    .ARADDR     	(ARADDR      ),
+    .ARVALID    	(ARVALID     ),
+    .ARREADY    	(ARREADY     ),
+    .RDATA      	(RDATA       ),
+    .RRESP      	(RRESP       ),
+    .RVALID     	(RVALID      ),
+    .RREADY     	(RREADY      ),
+    .AWADDR     	(AWADDR      ),
+    .AWVALID    	(AWVALID     ),
+    .AWREADY    	(AWREADY     ),
+    .WDATA      	(WDATA       ),
+    .WSTRB      	(WSTRB       ),
+    .WVALID     	(WVALID      ),
+    .WREADY     	(WREADY      ),
+    .BRESP      	(BRESP       ),
+    .BVALID     	(BVALID      ),
+    .BREADY     	(BREADY      )
+);
+
+
+// output declaration of module SRAM
+wire ARREADY;
+wire RVALID;
+wire [31:0] RDATA;
+wire [1:0] RRESP;
+wire AWREADY;
+wire WREADY;
+wire BVALID;
+reg [1:0] BRESP;
+
+SRAM #(
+    .R_DELAY_TIME 	(1  ),
+    .W_DELAY_TIME 	(1  ))
+u_SRAM(
+    .clk     	(clk      ),
+    .rst     	(rst      ),
+    .ARVALID 	(ARVALID  ),
+    .ARREADY 	(ARREADY  ),
+    .ARADDR  	(ARADDR   ),
+    .RVALID  	(RVALID   ),
+    .RREADY  	(RREADY   ),
+    .RDATA   	(RDATA    ),
+    .RRESP   	(RRESP    ),
+    .AWVALID 	(AWVALID  ),
+    .AWREADY 	(AWREADY  ),
+    .AWADDR  	(AWADDR   ),
+    .WVALID  	(WVALID   ),
+    .WREADY  	(WREADY   ),
+    .WDATA   	(WDATA    ),
+    .WSTRB   	(WSTRB    ),
+    .BREADY  	(BREADY   ),
+    .BVALID  	(BVALID   ),
+    .BRESP   	(BRESP    )
+);
+
+
 
 endmodule
 

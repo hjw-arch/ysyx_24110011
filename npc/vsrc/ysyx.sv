@@ -107,7 +107,7 @@ EXU #(WIDTH) EXU_INTER(
 );
 
 // LS
-LSU #(WIDTH) LSU_INTER(
+LSU LSU_INTER(
     .clk(clk),
     .rst(rst),
 

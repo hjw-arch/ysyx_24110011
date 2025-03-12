@@ -1,6 +1,5 @@
 module registerfile #(parameter WIDTH = 32) (
     input clk,
-    input rst,
     input wen,
     
     input [4 : 0] rd_addr,

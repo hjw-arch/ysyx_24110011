@@ -43,7 +43,6 @@ wire [WIDTH - 1 : 0] rd_data = rd_input_sel == 2'b01 ? lsu_rdata :
 
 registerfile #(32) RF_INTER (
     .clk(clk),
-    .rst(rst),
     .wen(rd_wen & has_new_data),
     .rd_addr(rd_addr),
     .rd_data(rd_data),
