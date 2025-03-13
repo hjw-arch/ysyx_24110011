@@ -89,6 +89,9 @@ end
 assign RDATA = ~is_rcnt_not_zero ? pmem_read(raddr_buf, {28'b0, WSTRB}) : 32'b0;
 assign RRESP = 2'b00;
 
+always_ff @(posedge clk) begin
+    if(w_state != W_IDLE || r_state != R_IDLE) $display("here");
+end
 
 
 // 写通道
