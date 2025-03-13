@@ -145,12 +145,8 @@ axi4_lite_master u_axi4_lite_master(
     .BREADY     	(BREADY      )
 );
 
-
+// 提前通知仲裁器
 assign prerequest = exu_valid & lsu_ready & pre_lsu_ren | exu_valid & lsu_ready & pre_lsu_wen;
-
-always_ff @(posedge clk) begin
-    $display("prerequest = %d", prerequest);
-end
 
 
 endmodule

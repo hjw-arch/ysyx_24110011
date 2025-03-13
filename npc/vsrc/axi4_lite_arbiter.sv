@@ -117,9 +117,6 @@ always_comb begin
     endcase
 end
 
-always_ff @(posedge clk) begin
-    $display("arbiter state = %d, pre[0] = %d, pre[1] = %d", state, prerequest[0], prerequest[1]);
-end
 
 
 // 转发机制
