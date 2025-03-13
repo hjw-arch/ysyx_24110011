@@ -8,7 +8,7 @@ module ysyx #(parameter WIDTH = 32) (
 );
 
 assign inst = ifu_data[63 : 32];
-assign PC = pc;
+assign PC = ifu_data[31 : 0];
 
 // PC
 // 五级流水线需要修改
