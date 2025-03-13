@@ -117,6 +117,10 @@ always_comb begin
     endcase
 end
 
+always_ff @(posedge clk) begin
+    $display("arbiter state = %d", state);
+end
+
 
 // 转发机制
 assign mrdata[0] = srdata;
