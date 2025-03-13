@@ -22,7 +22,7 @@ module SRAM(
 
     input  BREADY,
     output BVALID,
-    output reg [1 : 0] BRESP
+    output [1 : 0] BRESP
 );
 
 parameter R_DELAY_TIME = 5'd1;

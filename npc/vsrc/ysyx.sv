@@ -50,14 +50,33 @@ wire [31 : 0] rs2_data;
 
 // IF
 IFU #(WIDTH) IFU_INTER(
-    .clk(clk),
-    .rst(rst),
-    .start(can_start),
-    .pc(pc),        // 五级流水线需要修改
-    .ifu_valid(ifu_valid),
-    .ifu_data(ifu_data),
-    .idu_ready(idu_ready)
+    .clk       	(clk        ),
+    .rst       	(rst        ),
+    .start     	(can_start  ),
+    .pc        	(pc         ),
+    .ifu_valid 	(ifu_valid  ),
+    .ifu_data  	(ifu_data   ),
+    .idu_ready 	(idu_ready  ),
+    // SRAM
+    .ARADDR    	(IFU_ARADDR ),
+    .ARVALID   	(IFU_ARVALID),
+    .RREADY    	(IFU_RREADY ),
+    .AWADDR    	(IFU_AWADDR ),
+    .AWVALID   	(IFU_AWVALID),
+    .WDATA     	(IFU_WDATA  ),
+    .WSTRB     	(IFU_WSTRB  ),
+    .WVALID    	(IFU_WVALID ),
+    .BREADY    	(IFU_BREADY ),
+    .ARREADY   	(IFU_ARREADY),
+    .RVALID    	(IFU_RVALID ),
+    .RDATA     	(IFU_RDATA  ),
+    .RRESP     	(IFU_RRESP  ),
+    .AWREADY   	(IFU_AWREADY),
+    .WREADY    	(IFU_WREADY ),
+    .BVALID    	(IFU_BVALID ),
+    .BRESP     	(IFU_BRESP  )
 );
+
 
 
 // ID
@@ -108,17 +127,34 @@ EXU #(WIDTH) EXU_INTER(
 
 // LS
 LSU LSU_INTER(
-    .clk(clk),
-    .rst(rst),
-
-    .exu_valid(exu_valid),
-    .exu_data(exu_data),
-    .lsu_ready(lsu_ready),
-
-    .lsu_valid(lsu_valid),
-    .lsu_data(lsu_data),
-    .wbu_ready(1'b1)
+    .clk       	(clk        ),
+    .rst       	(rst        ),
+    .exu_valid 	(exu_valid  ),
+    .exu_data  	(exu_data   ),
+    .lsu_ready 	(lsu_ready  ),
+    .lsu_valid 	(lsu_valid  ),
+    .lsu_data  	(lsu_data   ),
+    .wbu_ready 	(1'b1       ),
+    // SRAM
+    .ARADDR    	(LSU_ARADDR ),
+    .ARVALID   	(LSU_ARVALID),
+    .RREADY    	(LSU_RREADY ),
+    .AWADDR    	(LSU_AWADDR ),
+    .AWVALID   	(LSU_AWVALID),
+    .WDATA     	(LSU_WDATA  ),
+    .WSTRB     	(LSU_WSTRB  ),
+    .WVALID    	(LSU_WVALID ),
+    .BREADY    	(LSU_BREADY ),
+    .ARREADY   	(LSU_ARREADY),
+    .RVALID    	(LSU_RVALID ),
+    .RDATA     	(LSU_RDATA  ),
+    .RRESP     	(LSU_RRESP  ),
+    .AWREADY   	(LSU_AWREADY),
+    .WREADY    	(LSU_WREADY ),
+    .BVALID    	(LSU_BVALID ),
+    .BRESP     	(LSU_BRESP  )
 );
+
 
 // WB
 WBU #(WIDTH) WBU_INTER(
@@ -134,6 +170,172 @@ WBU #(WIDTH) WBU_INTER(
     .lsu_data(lsu_data),
     .can_start(can_start)
 );
+
+
+
+
+
+// IFU & LSU Interface
+// output declaration of module axi4_lite_master
+wire [31:0] LSU_ARADDR, IFU_ARADDR;
+wire LSU_ARVALID, IFU_ARVALID;
+wire LSU_RREADY, IFU_RREADY;
+wire [31:0] LSU_AWADDR, IFU_AWADDR;
+wire LSU_AWVALID, IFU_AWVALID;
+wire [31:0] LSU_WDATA, IFU_WDATA;
+wire [3:0] LSU_WSTRB, IFU_WSTRB;
+wire LSU_WVALID, IFU_WVALID;
+wire LSU_BREADY, IFU_BREADY;
+
+// input declaration of module SRAM
+wire LSU_ARREADY, IFU_ARREADY;
+wire LSU_RVALID, IFU_RVALID;
+wire [31:0] LSU_RDATA, IFU_RDATA;
+wire [1:0] LSU_RRESP, IFU_RRESP;
+wire LSU_AWREADY, IFU_AWREADY;
+wire LSU_WREADY, IFU_WREADY;
+wire LSU_BVALID, IFU_BVALID;
+wire [1:0] LSU_BRESP, IFU_BRESP;
+
+// output declaration of module axi4_lite_arbiter
+wire [1 : 0] marready;
+wire [1 : 0] [31:0] mrdata;
+wire [1 : 0] [1:0] mrresp;
+wire [1 : 0] mrvalid;
+wire [1 : 0] mawready;
+wire [1 : 0] mwready;
+wire [1 : 0] [1:0] mbresp;
+wire [1 : 0] mbvalid;
+
+assign {LSU_ARREADY, IFU_ARREADY} = marready;
+assign {LSU_RDATA, IFU_RDATA} = mrdata;
+assign {LSU_RRESP, IFU_RRESP} = mrresp;
+assign {LSU_RVALID, IFU_RVALID} = mrvalid;
+assign {LSU_AWREADY, IFU_AWREADY} = mawready;
+assign {LSU_WREADY, IFU_WREADY} = mwready;
+assign {LSU_BRESP, IFU_BRESP} = mbresp;
+assign {LSU_BVALID, IFU_BVALID} = mbvalid;
+
+
+wire [1 : 0] [31 : 0] maraddr = {LSU_ARADDR, IFU_ARADDR};
+wire [1 : 0] marvalid = {LSU_ARVALID, IFU_ARVALID};
+wire [1 : 0] mrready = {LSU_RREADY, IFU_RREADY}; 
+wire [1 : 0] [31 : 0] mawaddr = {LSU_AWADDR, IFU_AWADDR}; 
+wire [1 : 0] mawvalid = {LSU_AWVALID, IFU_AWVALID}; 
+wire [1 : 0] [31 : 0] mwdata = {LSU_WDATA, IFU_WDATA}; 
+wire [1 : 0] [3 : 0] mwstrb = {LSU_WSTRB, IFU_WSTRB}; 
+wire [1 : 0] mwvalid = {LSU_WVALID, IFU_WVALID}; 
+wire [1 : 0] mbready = {LSU_BREADY, IFU_BREADY}; 
+
+axi4_lite_arbiter u_axi4_lite_arbiter(
+    .clk        	(clk         ),
+    .rst        	(rst         ),
+    .prerequest 	({1'b0, 1'b0}),
+    .maraddr    	(maraddr     ),
+    .marvalid   	(marvalid    ),
+    .marready   	(marready    ),
+    .mrdata     	(mrdata      ),
+    .mrresp     	(mrresp      ),
+    .mrvalid    	(mrvalid     ),
+    .mrready    	(mrready     ),
+    .mawaddr    	(mawaddr     ),
+    .mawvalid   	(mawvalid    ),
+    .mawready   	(mawready    ),
+    .mwdata     	(mwdata      ),
+    .mwstrb     	(mwstrb      ),
+    .mwvalid    	(mwvalid     ),
+    .mwready    	(mwready     ),
+    .mbresp     	(mbresp      ),
+    .mbvalid    	(mbvalid     ),
+    .mbready    	(mbready     ),
+    .saraddr    	(saraddr     ),
+    .sarvalid   	(sarvalid    ),
+    .sarready   	(sarready    ),
+    .srdata     	(srdata      ),
+    .srresp     	(srresp      ),
+    .srvalid    	(srvalid     ),
+    .srready    	(srready     ),
+    .sawaddr    	(sawaddr     ),
+    .sawvalid   	(sawvalid    ),
+    .sawready   	(sawready    ),
+    .swdata     	(swdata      ),
+    .swstrb     	(swstrb      ),
+    .swvalid    	(swvalid     ),
+    .swready    	(swready     ),
+    .sbresp     	(sbresp      ),
+    .sbvalid    	(sbvalid     ),
+    .sbready    	(sbready     )
+);
+
+// output
+wire [31:0] saraddr;
+wire sarvalid;
+wire srready;
+wire [31:0] sawaddr;
+wire sawvalid;
+wire [31:0] swdata;
+wire [3:0] swstrb;
+wire swvalid;
+wire sbready;
+
+// input
+wire sarready = SRAM_ARREADY;
+wire [31 : 0] srdata = SRAM_RDATA;
+wire [1 : 0] srresp = SRAM_RRESP;
+wire srvalid = SRAM_RVALID;
+wire sawready = SRAM_AWREADY;
+wire swready = SRAM_WREADY;
+wire [1 : 0] sbresp = SRAM_BRESP;
+wire sbvalid = SRAM_BVALID;
+
+
+// SRAM
+// output declaration of module SRAM
+wire SRAM_ARREADY;
+wire SRAM_RVALID;
+wire [31:0] SRAM_RDATA;
+wire [1:0] SRAM_RRESP;
+wire SRAM_AWREADY;
+wire SRAM_WREADY;
+wire SRAM_BVALID;
+wire [1:0] SRAM_BRESP;
+
+// input declaration of module SRAM
+wire SRAM_ARVALID = sarvalid;
+wire [31 : 0] SRAM_ARADDR = saraddr;
+wire SRAM_RREADY = srready;
+wire SRAM_AWVALID = sawvalid;
+wire [31 : 0] SRAM_AWADDR = sawaddr;
+wire SRAM_WVALID = swvalid;
+wire [31 : 0] SRAM_WDATA = swdata;
+wire [3 : 0] SRAM_WSTRB = swstrb;
+wire SRAM_BREADY = sbready;
+
+SRAM #(
+    .R_DELAY_TIME 	(1  ),
+    .W_DELAY_TIME 	(1  ))
+u_SRAM(
+    .clk     	(clk      ),
+    .rst     	(rst      ),
+    .ARVALID 	(SRAM_ARVALID  ),
+    .ARREADY 	(SRAM_ARREADY  ),
+    .ARADDR  	(SRAM_ARADDR   ),
+    .RVALID  	(SRAM_RVALID   ),
+    .RREADY  	(SRAM_RREADY   ),
+    .RDATA   	(SRAM_RDATA    ),
+    .RRESP   	(SRAM_RRESP    ),
+    .AWVALID 	(SRAM_AWVALID  ),
+    .AWREADY 	(SRAM_AWREADY  ),
+    .AWADDR  	(SRAM_AWADDR   ),
+    .WVALID  	(SRAM_WVALID   ),
+    .WREADY  	(SRAM_WREADY   ),
+    .WDATA   	(SRAM_WDATA    ),
+    .WSTRB   	(SRAM_WSTRB    ),
+    .BREADY  	(SRAM_BREADY   ),
+    .BVALID  	(SRAM_BVALID   ),
+    .BRESP   	(SRAM_BRESP    )
+);
+
 
 
 

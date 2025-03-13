@@ -7,7 +7,29 @@ module IFU #(parameter WIDTH = 32) (
 
     output ifu_valid,
     output reg [63 : 0] ifu_data,
-    input idu_ready
+    input idu_ready,
+    
+    // 连接SRAM
+    // output declaration of module axi4_lite_master
+    output [31:0] ARADDR,
+    output ARVALID,
+    output RREADY,
+    output [31:0] AWADDR,
+    output AWVALID,
+    output [31:0] WDATA,
+    output [3:0] WSTRB,
+    output WVALID,
+    output BREADY,
+
+    // input declaration of module SRAM
+    input ARREADY,
+    input RVALID,
+    input [31:0] RDATA,
+    input [1:0] RRESP,
+    input AWREADY,
+    input WREADY,
+    input BVALID,
+    input [1:0] BRESP
 );
 
 import "DPI-C" function int fetch_inst(input int pc);
@@ -47,15 +69,6 @@ wire [31:0] rdata;
 wire [1:0] rresp;
 wire [1:0] wresp;
 wire done;
-wire [31:0] ARADDR;
-wire ARVALID;
-wire RREADY;
-wire [31:0] AWADDR;
-wire AWVALID;
-wire [31:0] WDATA;
-wire [3:0] WSTRB;
-wire WVALID;
-wire BREADY;
 
 axi4_lite_master u_axi4_lite_master(
     .clk        	(clk         ),
@@ -88,41 +101,6 @@ axi4_lite_master u_axi4_lite_master(
     .BRESP      	(BRESP       ),
     .BVALID     	(BVALID      ),
     .BREADY     	(BREADY      )
-);
-
-// output declaration of module SRAM
-wire ARREADY;
-wire RVALID;
-wire [31:0] RDATA;
-wire [1:0] RRESP;
-wire AWREADY;
-wire WREADY;
-wire BVALID;
-reg [1:0] BRESP;
-
-SRAM #(
-    .R_DELAY_TIME 	(1  ),
-    .W_DELAY_TIME 	(1  ))
-u_SRAM(
-    .clk     	(clk      ),
-    .rst     	(rst      ),
-    .ARVALID 	(ARVALID  ),
-    .ARREADY 	(ARREADY  ),
-    .ARADDR  	(ARADDR   ),
-    .RVALID  	(RVALID   ),
-    .RREADY  	(RREADY   ),
-    .RDATA   	(RDATA    ),
-    .RRESP   	(RRESP    ),
-    .AWVALID 	(AWVALID  ),
-    .AWREADY 	(AWREADY  ),
-    .AWADDR  	(AWADDR   ),
-    .WVALID  	(WVALID   ),
-    .WREADY  	(WREADY   ),
-    .WDATA   	(WDATA    ),
-    .WSTRB   	(WSTRB    ),
-    .BREADY  	(BREADY   ),
-    .BVALID  	(BVALID   ),
-    .BRESP   	(BRESP    )
 );
 
 

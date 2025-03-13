@@ -51,8 +51,9 @@ typedef enum logic [2 : 0] {
     R_WAIT_RDATA
 } r_state_t;
 
-typedef enum logic [3 : 0] { 
+typedef enum logic [4 : 0] { 
     W_IDLE,
+    W_WAIT_ALLREADY,
     W_WAIT_AWREADY,
     W_WAIT_WREADY,
     W_WAIT_BRESP
@@ -102,7 +103,15 @@ always_comb begin
                 3'b111: next_w_state = W_WAIT_BRESP;
                 3'b110: next_w_state = W_WAIT_WREADY;
                 3'b101: next_w_state = W_WAIT_AWREADY;
+                3'b100: next_w_state = W_WAIT_ALLREADY;
                 default: next_w_state = W_IDLE;
+            endcase
+        W_WAIT_ALLREADY:
+            case({AWREADY, WREADY})
+                2'b11: next_w_state = W_WAIT_BRESP;
+                2'b10: next_w_state = W_WAIT_WREADY;
+                2'b01: next_w_state = W_WAIT_AWREADY;
+                default: next_w_state = W_WAIT_ALLREADY;
             endcase
         W_WAIT_AWREADY:
             next_w_state = AWREADY ? W_WAIT_BRESP : W_WAIT_AWREADY;
@@ -120,8 +129,8 @@ assign WDATA = wdata;
 assign WSTRB = wmask;
 assign wresp = BRESP;
 
-assign AWVALID = w_state == W_IDLE & wen | w_state == W_WAIT_AWREADY;
-assign WVALID = w_state == W_IDLE & wen | w_state == W_WAIT_WREADY;
+assign AWVALID = w_state == W_IDLE & wen | w_state == W_WAIT_AWREADY | w_state == W_WAIT_ALLREADY;
+assign WVALID = w_state == W_IDLE & wen | w_state == W_WAIT_WREADY | w_state == W_WAIT_ALLREADY;
 assign BREADY = w_state == W_WAIT_BRESP & user_ready;
 
 // 这里可能需要修改，根据user的需要，可能需要修改成rdone和wdone
