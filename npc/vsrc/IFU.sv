@@ -33,8 +33,6 @@ module IFU #(parameter WIDTH = 32) (
     input [1:0] BRESP
 );
 
-import "DPI-C" function int fetch_inst(input int pc);
-
 typedef enum logic { 
     S_IDLE,
     S_WAIT_READY
