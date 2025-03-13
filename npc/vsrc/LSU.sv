@@ -148,6 +148,9 @@ axi4_lite_master u_axi4_lite_master(
 
 assign prerequest = lsu_valid & wbu_ready & pre_lsu_ren | lsu_valid & wbu_ready & pre_lsu_wen;
 
+always_ff @(posedge clk) begin
+    $display("prerequest = %d", prerequest);
+end
 
 
 endmodule

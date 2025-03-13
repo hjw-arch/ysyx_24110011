@@ -148,7 +148,7 @@ assign srready = (state == M1_ACTIVE) ? mrready[1] : mrready[0];
 assign sawaddr = (state == M1_ACTIVE) ? mawaddr[1] : mawaddr[0];
 assign swdata = (state == M1_ACTIVE) ? mwdata[1] : mwdata[0];
 assign swstrb = (state == M1_ACTIVE) ? mwstrb[1] : mwstrb[0];
-assign sbready = (state == M1_ACTIVE) ? mbready[1] : mwvalid[0];
+assign sbready = (state == M1_ACTIVE) ? mbready[1] : mbready[0];
 
 
 endmodule

@@ -56,14 +56,13 @@ void cpu_exec(uint32_t n) {
         vaddr_t old_pc = cpu.pc;
         word_t old_inst = dut.rootp->ysyx__DOT__inst;
 #endif  
-    vaddr_t old_pc = cpu.pc;
 
         // 执行一次
         cpu_exec_one();
 
         if (n < min_num_to_disasm) {
             char p[64];
-            printf("0x%08x: ", old_pc);
+            printf("0x%08x: ", cpu.pc);
             for(int j = 3; j >= 0; j--) {
                 printf("%02x ", ((uint8_t *)&dut.rootp->inst)[j]);
             }
