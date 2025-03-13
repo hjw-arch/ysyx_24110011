@@ -48,7 +48,7 @@ import "DPI-C" function void pmem_write(input int addr, input int data, input in
 
 
 // 读通道
-typedef enum logic [1 : 0] { 
+typedef enum logic [2 : 0] { 
     R_IDLE,
     R_ACTIVE,
     R_WAIT_RREADY
@@ -96,7 +96,7 @@ end
 
 // 写通道
 
-typedef enum logic [2 : 0] { 
+typedef enum logic [4 : 0] { 
     W_IDLE,
     W_WAIT_ADDR,
     W_WAIT_DATA,
