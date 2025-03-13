@@ -10,6 +10,10 @@ module EXU #(parameter WIDTH = 32) (
     output reg [108 : 0] exu_data,
     input lsu_ready,
 
+    // 给到LSU进行仲裁器预准备
+    output pre_lsu_ren,
+    output pre_lsu_wen,
+
 
     // 直通PC
     // 仅仅适用多周期处理器
@@ -20,7 +24,6 @@ module EXU #(parameter WIDTH = 32) (
     input [31 : 0] inst,
     output [31 : 0] pc
 );
-
 
 
 wire [WIDTH - 1 : 0] alu_data1 = idu_data[191 : 160];
@@ -34,6 +37,9 @@ wire [31 : 0] pc_now = idu_data[108 : 77];
 wire [31 : 0] rs1_data = idu_data[76 : 45];
 wire [44 : 0] rest_idu_data = idu_data[44 : 0];
 
+// 给到LSU预取
+assign pre_lsu_ren = idu_data[44];
+assign pre_lsu_wen = idu_data[43];
 
 
 typedef enum logic { 

@@ -11,7 +11,7 @@ module WBU #(parameter WIDTH = 32) (
 
     input lsu_valid,
     input [103 : 0] lsu_data,
-    output reg can_start
+    output wbu_valid
 );
 
 
@@ -31,9 +31,7 @@ always_ff @(posedge clk) begin
     has_new_data <= lsu_valid ? 1'b1 : 1'b0;
 end
 
-always_ff @(posedge clk) begin
-    can_start <= has_new_data | rst ? 1'b1 : 1'b0;
-end
+assign wbu_valid = has_new_data;
 
 
 // 若为五级流水线，这里的csr_data需要通过上游模块传过来

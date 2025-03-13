@@ -2,15 +2,16 @@ module IFU #(parameter WIDTH = 32) (
     input clk,
     input rst,
 
-    input start,
+    input wbu_valid,
     input [WIDTH - 1 : 0] pc,
 
     output ifu_valid,
     output reg [63 : 0] ifu_data,
     input idu_ready,
-    
+
     // 连接SRAM
     // output declaration of module axi4_lite_master
+    output prerequest,
     output [31:0] ARADDR,
     output ARVALID,
     output RREADY,
@@ -56,6 +57,11 @@ always_comb begin
     endcase
 end
 
+reg start;
+always_ff @(posedge clk) begin
+    start <= wbu_valid | rst ? 1'b1 : 1'b0;
+end
+
 assign ifu_valid = done | (state == S_WAIT_READY);
 
 // 模拟SRAM取指
@@ -69,6 +75,8 @@ wire [31:0] rdata;
 wire [1:0] rresp;
 wire [1:0] wresp;
 wire done;
+
+assign prerequest = wbu_valid;
 
 axi4_lite_master u_axi4_lite_master(
     .clk        	(clk         ),
