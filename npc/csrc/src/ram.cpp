@@ -51,6 +51,7 @@ int pmem_read(int addr, int len) {
 
 void pmem_write(int addr, int data, int len) {
     // Assert((addr <= RAM_END_ADDR) && (addr >= RAM_START_ADDR), "Addr 0x%08x transbordered the boundary.", addr);
+    puts("here");
     if (len == 0) len = 1;
     else if (len == 1) len = 2;
     else if (len == 3) len = 4;
