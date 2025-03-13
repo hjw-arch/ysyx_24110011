@@ -77,6 +77,10 @@ typedef enum logic [2 : 0]{
     M1_ACTIVE = 3'b100
 } state_t;
 
+always_ff @(posedge clk) begin
+    if(state != IDLE) $display("arbiter = %d", state);
+end
+
 state_t state, next_state;
 
 always_ff @(posedge clk) begin
