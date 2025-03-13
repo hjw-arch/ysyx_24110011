@@ -118,7 +118,7 @@ always_comb begin
 end
 
 always_ff @(posedge clk) begin
-    $display("arbiter state = %d", state);
+    $display("arbiter state = %d, pre[0] = %d, pre[1] = %d", state, prerequest[0], prerequest[1]);
 end
 
 
