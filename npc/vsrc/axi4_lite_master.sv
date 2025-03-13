@@ -91,7 +91,7 @@ assign ARVALID = r_state == R_IDLE & ren | r_state == R_WAIT_ARREADY;
 assign RREADY = r_state == R_WAIT_RDATA & user_ready;
 
 always_ff @(posedge clk) begin
-    if (r_state != R_IDLE) $display("Master state = %d", r_state);
+    $display("Master state = %d", r_state);
 end
 
 

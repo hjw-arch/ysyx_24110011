@@ -78,7 +78,7 @@ typedef enum logic [2 : 0]{
 } state_t;
 
 always_ff @(posedge clk) begin
-    if(state != IDLE) $display("arbiter = %d", state);
+    $display("arbiter state = %d", state);
 end
 
 state_t state, next_state;
@@ -142,14 +142,16 @@ assign marready[1] = (state == M1_ACTIVE) ? sarready : 1'b0;
 assign mawready[1] = (state == M1_ACTIVE) ? sawready : 1'b0;
 assign mwready[1] = (state == M1_ACTIVE) ? swready : 1'b0;
 
+// 要注意时序，对于握手信号，只有仲裁选择之后才能接通
+assign sarvalid = (state == M1_ACTIVE) & marvalid[1] | (state == M0_ACTIVE) & marvalid[0];
+assign sawvalid = (state == M1_ACTIVE) & mawvalid[1] |  (state == M0_ACTIVE) & mawvalid[0];
+assign swvalid = (state == M1_ACTIVE) & mwvalid[1] | (state == M0_ACTIVE) & mwvalid[0];
+
 assign saraddr = (state == M1_ACTIVE) ? maraddr[1] : maraddr[0];
-assign sarvalid = (state == M1_ACTIVE) ? marvalid[1] : marvalid[0];
 assign srready = (state == M1_ACTIVE) ? mrready[1] : mrready[0];
 assign sawaddr = (state == M1_ACTIVE) ? mawaddr[1] : mawaddr[0];
-assign sawvalid = (state == M1_ACTIVE) ? mawvalid[1] : mawvalid[0];
 assign swdata = (state == M1_ACTIVE) ? mwdata[1] : mwdata[0];
 assign swstrb = (state == M1_ACTIVE) ? mwstrb[1] : mwstrb[0];
-assign swvalid = (state == M1_ACTIVE) ? mwvalid[1] : mwvalid[0];
 assign sbready = (state == M1_ACTIVE) ? mbready[1] : mwvalid[0];
 
 

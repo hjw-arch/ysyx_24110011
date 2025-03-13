@@ -49,9 +49,9 @@ import "DPI-C" function void pmem_write(input int addr, input int data, input in
 
 // 读通道
 typedef enum logic [2 : 0] { 
-    R_IDLE,
-    R_ACTIVE,
-    R_WAIT_RREADY
+    R_IDLE = 3'b001,
+    R_ACTIVE = 3'b010,
+    R_WAIT_RREADY = 3'b100
 } r_state_t;
 
 r_state_t r_state, next_r_state;
@@ -90,18 +90,18 @@ assign RDATA = ~is_rcnt_not_zero ? pmem_read(raddr_buf, {28'b0, WSTRB}) : 32'b0;
 assign RRESP = 2'b00;
 
 always_ff @(posedge clk) begin
-    if(w_state != W_IDLE || r_state != R_IDLE) $display("rstate = %d, wstate = %d", r_state == R_WAIT_RREADY, w_state);
+    $display("rstate = %d, wstate = %d", r_state, w_state);
 end
 
 
 // 写通道
 
 typedef enum logic [4 : 0] { 
-    W_IDLE,
-    W_WAIT_ADDR,
-    W_WAIT_DATA,
-    W_ACTIVE,
-    W_WAIT_BREADY
+    W_IDLE = 5'b00001,
+    W_WAIT_ADDR = 5'b00010,
+    W_WAIT_DATA = 5'b00100,
+    W_ACTIVE = 5'b01000,
+    W_WAIT_BREADY = 5'b10000
 } w_state_t;
 
 w_state_t w_state, next_w_state;
