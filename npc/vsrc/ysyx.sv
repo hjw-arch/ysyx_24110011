@@ -241,7 +241,7 @@ wire [1 : 0] mbready = {LSU_BREADY, IFU_BREADY};
 axi4_lite_arbiter u_axi4_lite_arbiter(
     .clk        	(clk         ),
     .rst        	(rst         ),
-    .prerequest 	({ifu_prerequest, lsu_prerequest}),
+    .prerequest 	({lsu_prerequest, ifu_prerequest}),
     .maraddr    	(maraddr     ),
     .marvalid   	(marvalid    ),
     .marready   	(marready    ),
