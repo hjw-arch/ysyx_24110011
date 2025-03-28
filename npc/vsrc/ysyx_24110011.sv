@@ -1,6 +1,6 @@
 module ysyx_24110011 #(parameter WIDTH = 32) (
     input clock,
-    input reset,
+    input reset,/* verilator lint_off UNUSEDSIGNAL */
     input io_interrupt,
 
     // AXI4 Master Interface (connected to external slave)
@@ -38,13 +38,55 @@ module ysyx_24110011 #(parameter WIDTH = 32) (
     input         io_master_rlast,
     input  [3:0]  io_master_rid,
 
-    // 用于测试
-    output [31 : 0] inst,
-    output [31 : 0] PC
+    // AXI4 Slave Interface (added as per request)
+    output        io_slave_awready,
+    input         io_slave_awvalid,
+    input  [31:0] io_slave_awaddr,
+    input  [3:0]  io_slave_awid,
+    input  [7:0]  io_slave_awlen,
+    input  [2:0]  io_slave_awsize,
+    input  [1:0]  io_slave_awburst,
+
+    output        io_slave_wready,
+    input         io_slave_wvalid,
+    input  [31:0] io_slave_wdata,
+    input  [3:0]  io_slave_wstrb,
+    input         io_slave_wlast,
+
+    input         io_slave_bready,
+    output        io_slave_bvalid,
+    output [1:0]  io_slave_bresp,
+    output [3:0]  io_slave_bid,
+
+    output        io_slave_arready,
+    input         io_slave_arvalid,
+    input  [31:0] io_slave_araddr,
+    input  [3:0]  io_slave_arid,
+    input  [7:0]  io_slave_arlen,
+    input  [2:0]  io_slave_arsize,
+    input  [1:0]  io_slave_arburst,
+
+    input         io_slave_rready,
+    output        io_slave_rvalid,
+    output [1:0]  io_slave_rresp,
+    output [31:0] io_slave_rdata,
+    output        io_slave_rlast,
+    output [3:0]  io_slave_rid
 );
 
-assign inst = ifu_data[63 : 32];
-assign PC = ifu_data[31 : 0];
+// 对slave接口做设置
+assign io_slave_awready = 1'b0;
+assign io_slave_wready  = 1'b0;
+assign io_slave_bvalid  = 1'b0;
+assign io_slave_bresp   = 2'b00;
+assign io_slave_bid     = 4'b0000;
+assign io_slave_arready = 1'b0;
+assign io_slave_rvalid  = 1'b0;
+assign io_slave_rresp   = 2'b00;
+assign io_slave_rdata   = 32'b0;
+assign io_slave_rlast   = 1'b0;
+assign io_slave_rid     = 4'b0000;
+
 
 // PC
 // 五级流水线需要修改
@@ -167,17 +209,17 @@ EXU #(WIDTH) EXU_INTER(
 
 // LS
 LSU u_LSU(
-    .clk         	(clock          ),
-    .rst         	(reset          ),
-    .exu_valid   	(exu_valid    ),
-    .exu_data    	(exu_data     ),
-    .lsu_ready   	(lsu_ready    ),
-    .lsu_valid   	(lsu_valid    ),
-    .lsu_data    	(lsu_data     ),
-    .wbu_ready   	(1'b1         ),        // 五级流水线需要更改
-    .pre_lsu_ren 	(pre_lsu_ren  ),
-    .pre_lsu_wen 	(pre_lsu_wen  ),
-    .prerequest  	(lsu_prerequest),
+    .clk         	(clock            ),
+    .rst         	(reset            ),
+    .exu_valid   	(exu_valid    	  ),
+    .exu_data    	(exu_data     	  ),
+    .lsu_ready   	(lsu_ready    	  ),
+    .lsu_valid   	(lsu_valid    	  ),
+    .lsu_data    	(lsu_data     	  ),
+    .wbu_ready   	(1'b1         	  ),        // 五级流水线需要更改
+    .pre_lsu_ren 	(pre_lsu_ren  	  ),
+    .pre_lsu_wen 	(pre_lsu_wen  	  ),
+    .prerequest  	(lsu_prerequest	  ),
     .ARADDR      	(LSU_ARADDR       ),
     .ARVALID     	(LSU_ARVALID      ),
     .ARID        	(LSU_ARID         ),

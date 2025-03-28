@@ -1,3 +1,5 @@
+#ifdef CONFIG_DEVICE
+
 #include "../Include/device.h"
 #include <stdio.h>
 
@@ -14,3 +16,6 @@ void init_serial()
     serial_base = new_space(8);
     add_mmio_map("serial", CONFIG_SERIAL_MMIO, serial_base, 4, serial_io_handler);
 }
+
+
+#endif

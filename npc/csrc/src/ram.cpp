@@ -3,18 +3,21 @@
 #include "../Include/sdb.h"
 #include "../Include/cpu_exec.h"
 #include "../Include/device.h"
-#include "Vysyx___024root.h"
+#include "VysyxSoCFull___024root.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 uint8_t pmem[RAM_SIZE];
 
-extern Vysyx dut;
+extern VysyxSoCFull dut;
 
 void *guest_to_host(uint32_t addr) {
     return ((uint8_t *)pmem + addr - RAM_START_ADDR);
 }
+
+extern "C" void flash_read(int32_t addr, int32_t *data) { assert(0); }
+extern "C" void mrom_read(int32_t addr, int32_t *data) { assert(0); }
 
 int pmem_read(int addr, int len) {
     uint32_t ret = 0;

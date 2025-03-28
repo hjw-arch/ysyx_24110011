@@ -2,11 +2,11 @@
 #define SDB_H
 
 #include <stdint.h>
-#include "Vysyx.h"
+#include "VysyxSoCFull.h"
 #include "common.h"
 #include "ram.h"
 #include "config.h"
-extern Vysyx dut;
+extern VysyxSoCFull dut;
 
 
 // disasm

@@ -6,7 +6,7 @@ module WBU #(parameter WIDTH = 32) (
     output [31 : 0] rs2_data,
 
     // 真正的WBU
-    input clk,
+    input clk,  /* verilator lint_off UNUSEDSIGNAL */
     input rst,
 
     input lsu_valid,

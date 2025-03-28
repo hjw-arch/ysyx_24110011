@@ -16,7 +16,7 @@ module IDU (
     // IDU部分
     output idu_valid,
     output reg [191 : 0] idu_data,
-    input exu_ready,
+    input  exu_ready,
 
 
 
@@ -138,9 +138,9 @@ endmodule
 
 
 
-
+/* verilator lint_off DECLFILENAME */
 // 立即数生成器
-module ImmGen #(parameter WIDTH = 32)(
+module ImmGen #(parameter WIDTH = 32)(  /* verilator lint_off UNUSEDSIGNAL */
     input [31 : 0] inst,
     output [31 : 0] imm
 );

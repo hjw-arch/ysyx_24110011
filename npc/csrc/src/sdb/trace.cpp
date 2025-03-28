@@ -1,7 +1,7 @@
 #include "../Include/sdb.h"
 #include "../Include/log.h"
 #include "../Include/macro.h"
-#include "Vysyx___024root.h"
+#include "VysyxSoCFull___024root.h"
 #include <stdio.h>
 #include "stdint.h"
 

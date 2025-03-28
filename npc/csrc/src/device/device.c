@@ -1,3 +1,5 @@
+#ifdef CONFIG_DEVICE
+
 #include "../Include/device.h"
 #include <stdint.h>
 #include <SDL2/SDL.h>
@@ -58,3 +60,5 @@ void init_device() {
     IFDEF(CONFIG_HAS_KEYBOARD, init_i8042());
     IFDEF(CONFIG_HAS_AUDIO, init_audio());
 }
+
+#endif

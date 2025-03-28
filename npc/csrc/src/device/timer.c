@@ -1,3 +1,5 @@
+#ifdef CONFIG_DEVICE
+
 #include "../Include/device.h"
 #include <sys/time.h>
 
@@ -38,3 +40,5 @@ void init_timer() {
   add_mmio_map("rtc", CONFIG_RTC_MMIO, rtc_port_base, 32, rtc_io_handler);
 }
 
+
+#endif

@@ -4,7 +4,7 @@
 #include "../Include/log.h"
 #include "../Include/common.h"
 #include "../Include/device.h"
-#include "Vysyx___024root.h"
+#include "VysyxSoCFull___024root.h"
 #include "../Include/difftest.h"
 
 #define ebreak      0x00100073
@@ -22,7 +22,7 @@ uint64_t cycle_times = 0;
 void halt() {
     cpu_state = IDLE;
 
-    printf("\n\nTotle cycle times = %llu\n\n", cycle_times);
+    printf("\n\nTotle cycle times = %lu\n\n", cycle_times);
 
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
@@ -38,7 +38,7 @@ void cpu_exec_one() {
 
     cycle_times++;      // 测试CPU性能使用
 
-    if (dut.rootp->inst == ebreak) {
+    if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
         Log("Get 'ebreak' instruction, program over.");
         halt();
     }
@@ -64,9 +64,9 @@ void cpu_exec(uint32_t n) {
             char p[64];
             printf("0x%08x: ", cpu.pc);
             for(int j = 3; j >= 0; j--) {
-                printf("%02x ", ((uint8_t *)&dut.rootp->inst)[j]);
+                printf("%02x ", ((uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst)[j]);
             }
-            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&dut.rootp->inst, 4);
+            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst, 4);
             printf("        %s\n", p);
         }
 

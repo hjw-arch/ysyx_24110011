@@ -1,6 +1,8 @@
 #ifndef DEVICE_H
 #define DEVICE_H
 
+#ifdef CONFIG_DEVICE
+
 #include <config.h>
 #include <stdint.h>
 #include <sys/time.h>
@@ -78,5 +80,6 @@ void init_audio();
 void init_device();
 void device_update();
 
+#endif
 
 #endif

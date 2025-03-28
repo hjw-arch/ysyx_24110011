@@ -1,3 +1,5 @@
+#ifdef CONFIG_DEVICE
+
 #include "../Include/device.h"
 #include "log.h"
 
@@ -49,3 +51,5 @@ void mmio_write(paddr_t addr, int len, word_t data)
 {
     map_write(addr, len, data, fetch_mmio_map(addr));
 }
+
+#endif
