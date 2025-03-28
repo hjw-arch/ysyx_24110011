@@ -72,14 +72,14 @@ always_comb begin
             case({ARVALID, ARREADY})
                 2'b11: next_r_state = R_WAIT_RDATA;
                 2'b10: next_r_state = R_WAIT_ARREADY;
-                default: next_r_state = R_IDLE;
+                default: next_r_state = r_state;
             endcase
         R_WAIT_ARREADY:
-            next_r_state = ARREADY ? R_WAIT_RDATA : R_WAIT_ARREADY;
+            next_r_state = ARREADY ? R_WAIT_RDATA : r_state;
         R_WAIT_RDATA:
-            next_r_state = RVALID & RREADY ? R_IDLE : R_WAIT_RDATA;
+            next_r_state = RVALID & RREADY ? R_IDLE : r_state;
         default: 
-            next_r_state = R_IDLE;
+            next_r_state = r_state;
     endcase
 end
 
@@ -103,7 +103,7 @@ always_comb begin
                 3'b111: next_w_state = W_WAIT_BRESP;
                 3'b110: next_w_state = W_WAIT_WREADY;
                 3'b101: next_w_state = W_WAIT_AWREADY;
-                3'b100: next_w_state = W_WAIT_ALLREADY;
+                3'b100: next_w_state = w_state;
                 default: next_w_state = W_IDLE;
             endcase
         W_WAIT_ALLREADY:
@@ -111,16 +111,16 @@ always_comb begin
                 2'b11: next_w_state = W_WAIT_BRESP;
                 2'b10: next_w_state = W_WAIT_WREADY;
                 2'b01: next_w_state = W_WAIT_AWREADY;
-                default: next_w_state = W_WAIT_ALLREADY;
+                default: next_w_state = w_state;
             endcase
         W_WAIT_AWREADY:
-            next_w_state = AWREADY ? W_WAIT_BRESP : W_WAIT_AWREADY;
+            next_w_state = AWREADY ? W_WAIT_BRESP : w_state;
         W_WAIT_WREADY:
-            next_w_state = WREADY ? W_WAIT_BRESP : W_WAIT_WREADY;
+            next_w_state = WREADY ? W_WAIT_BRESP : w_state;
         W_WAIT_BRESP:
-            next_w_state = BVALID & BREADY ? W_IDLE : W_WAIT_BRESP;
+            next_w_state = BVALID & BREADY ? W_IDLE : w_state;
         default: 
-            next_w_state = W_IDLE;
+            next_w_state = w_state;
     endcase
 end
 

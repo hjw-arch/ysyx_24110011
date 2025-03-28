@@ -42,7 +42,7 @@ run:
 	# @echo "---------------- Verilator running -----------------"
 	@$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_INPUTS) \
 		$(addprefix -CFLAGS , $(CFLAGS)) $(addprefix -LDFLAGS , $(LDFLAGS))\
-		--Wno-UNUSEDSIGNAL -Wno-WIDTHEXPAND -Wno-DECLFILENAME -Wno-NULLPORT
+		--Wno-UNUSEDSIGNAL -Wno-DECLFILENAME -Wno-NULLPORT
 	@# 运行可执行程序
 	@echo
 	@echo "------------------- Simulation ---------------------"
