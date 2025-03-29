@@ -168,6 +168,12 @@ axi4_full_master u_axi4_full_master(
     .BREADY     	(BREADY      )
 );
 
+always_ff @(posedge clk) begin
+	if (done) begin
+		if (ren) $display("Read Operation address at 0x%08x, data = 0x%08x", ARADDR, RDATA);
+		if (wen) $display("Write Operation address at 0x%08x, data = 0x%08x", AWADDR, WDATA);
+	end
+end
 
 
 endmodule
