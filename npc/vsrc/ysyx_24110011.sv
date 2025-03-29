@@ -617,5 +617,9 @@ assign s_rdata = io_master_rdata;
 assign s_rlast = io_master_rlast;
 assign s_rid = io_master_rid;
 
+always_ff @(posedge clock) begin
+	$display("\n\nLSU_RDATA = 0x%08x\n\n", LSU_RDATA);
+end
+
 
 endmodule
