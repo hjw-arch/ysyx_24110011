@@ -95,6 +95,7 @@ always_ff @(posedge clk) begin
     has_new_data <= (exu_valid & lsu_ready) ? 1'b1 : 1'b0;
 end
 
+// 这个有点问题，多级流水线不影响
 assign lsu_ready = wbu_ready;
 assign lsu_valid = done & lsu_ren | done & lsu_wen | ~lsu_ren & ~lsu_wen & has_new_data | (state == S_WAIT_READY);
 
@@ -128,7 +129,7 @@ axi4_full_master u_axi4_full_master(
     .rst        	(rst         ),
     .wen        	(wen         ),
     .ren        	(ren         ),
-    .user_ready 	(lsu_ready   ),
+    .user_ready 	(wbu_ready   ),
     .len        	(lsu_op[1:0] ),
     .waddr      	(lsu_addr    ),
     .wdata      	(lsu_wdata   ),
