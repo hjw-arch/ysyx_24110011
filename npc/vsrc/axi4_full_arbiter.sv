@@ -251,7 +251,7 @@ always_ff @(posedge clk) begin
 		$display("R Channel: RDATA = 0x%08x\nRRESP = %d\nRLAST = %d\nRVALID = %d\nRREADY = %d\n", s_rdata, s_rresp, s_rlast, s_rvalid, s_rready);
 		$display("AW Channel: AWADDR = 0x%08x\nAWLEN = %d\nAWSIZE = %d\nAWVALID = %d\nAWREADY = %d\n", s_awaddr, s_awlen, s_awsize, s_awvalid, s_awready);
 		$display("W Channel: WDATA = 0x%08x\nWSTRB = %d\nWLAST = %d\nWVALID = %d\nWREADY = %d\n", s_wdata, s_wstrb, s_wlast, s_wvalid, s_wready);
-		$display("B Channel: BRESP = 0x%08x\nBVALID = %d\nBREADY = %d\n", s_bresp, s_bvalid, s_bready);
+		$display("B Channel: BRESP = 0x%08x\nBVALID = %d\nBREADY = %d\n\n\n", s_bresp, s_bvalid, s_bready);
 	end
 end
 
