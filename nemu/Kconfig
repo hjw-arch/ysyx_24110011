@@ -248,3 +248,7 @@ config RT_CHECK
   default y
 
 endmenu
+
+config SOC
+	bool "Enable MROM and SRAM to suit NPC in SoC"
+	default y

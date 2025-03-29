@@ -69,7 +69,6 @@ wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
 wire [1:0] rresp;
 wire done;
 
-
 // Not used
 
 
@@ -79,7 +78,7 @@ axi4_full_master u_axi4_full_master(
     .wen        	(1'b0        ),
     .ren        	(start       ),
     .user_ready 	(idu_ready   ),
-    .len        	(2'b11       ),
+    .len        	(2'b10       ),
     .waddr      	(32'b0       ),
     .wdata      	(32'b0       ),
     .raddr      	(pc          ),

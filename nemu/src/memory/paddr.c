@@ -24,13 +24,34 @@
 
 #if   defined(CONFIG_PMEM_MALLOC)
 static uint8_t *pmem = NULL;
+#elif  defined(CONFIG_SOC)
+static uint8_t ROM[ROM_SIZE] PG_ALIGN = {};
+static uint8_t SRAM[SRAM_SIZE] PG_ALIGN = {};
 #else // CONFIG_PMEM_GARRAY
 static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #endif
 
+#ifdef CONFIG_SOC
+
+uint8_t* guest_to_host(paddr_t paddr) {
+	if ((paddr & ROM_MASK) == ROM_BASE) return ROM + paddr - ROM_BASE;
+	if ((paddr & SRAM_MASK) == SRAM_BASE) return SRAM + paddr - SRAM_BASE;
+	panic("Error ADDRESS");
+	return 0;
+}
+
+paddr_t host_to_guest(uint8_t *haddr) { 
+	if (&ROM[ROM_SIZE] - haddr < ROM_SIZE) return haddr - ROM + ROM_BASE;
+	if (&SRAM[SRAM_SIZE] - haddr < SRAM_SIZE) return haddr - SRAM + SRAM_BASE;
+	panic("Error ADDRESS");
+	return 0;
+}
+
+#else
 uint8_t* guest_to_host(paddr_t paddr) { return pmem + paddr - CONFIG_MBASE; }
 paddr_t host_to_guest(uint8_t *haddr) { return haddr - pmem + CONFIG_MBASE; }
 
+#endif
 static word_t pmem_read(paddr_t addr, int len) {
     word_t ret = host_read(guest_to_host(addr), len);
     IFDEF(CONFIG_MTRACE, mtrace_read(addr, len, ret, 0));
@@ -52,8 +73,11 @@ void init_mem() {
     pmem = malloc(CONFIG_MSIZE);
     assert(pmem);
 #endif
+
+#ifndef CONFIG_SOC
     IFDEF(CONFIG_MEM_RANDOM, memset(pmem, rand(), CONFIG_MSIZE));     // 设置pmem初始值为随机值
     Log("physical memory area [" FMT_PADDR ", " FMT_PADDR "]", PMEM_LEFT, PMEM_RIGHT);
+#endif
 }
 
 word_t paddr_read(paddr_t addr, int len) {

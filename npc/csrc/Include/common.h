@@ -20,10 +20,7 @@ do { \
 #define cpu_rst \
 do {    \
     dut.reset = 1;    \
-    dut.clock = 0;    \
-    dut.eval();     \
-    dut.clock = 1;    \
-    dut.eval();     \
+    for(int i = 0; i < 10; i++) cycle;\
     dut.reset = 0;    \
     cpu.pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc;  \
     iringbuf_load(cpu.pc, dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst); \

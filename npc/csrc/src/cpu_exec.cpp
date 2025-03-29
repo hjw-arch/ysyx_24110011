@@ -34,7 +34,10 @@ void halt() {
 }
 
 void cpu_exec_one() {
-    cycle;
+    
+	do {
+		cycle;
+	} while(dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__start != 1 && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak);
 
     cycle_times++;      // 测试CPU性能使用
 
@@ -51,12 +54,6 @@ void cpu_exec(uint32_t n) {
     }
 
     for (int i = 0; i < n; ++i) {
-
-#if defined(CONFIG_FTRACE) || defined(CONFIG_WATCHPOINT) || defined(CONFIG_DIFFTEST)
-        vaddr_t old_pc = cpu.pc;
-        word_t old_inst = dut.rootp->ysyx__DOT__inst;
-#endif  
-
         // 执行一次
         cpu_exec_one();
 
@@ -75,7 +72,7 @@ void cpu_exec(uint32_t n) {
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
         IFDEF(CONFIG_WATCHPOINT, diff_wp(old_pc));
-        IFDEF(CONFIG_DIFFTEST, difftest_step(old_pc));
+        IFDEF(CONFIG_DIFFTEST, difftest_step(cpu.pc));
         IFDEF(CONFIG_DEVICE, device_update());
 
         if (cpu_state != RUNNING) {

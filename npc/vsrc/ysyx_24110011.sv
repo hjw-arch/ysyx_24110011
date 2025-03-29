@@ -618,4 +618,9 @@ assign s_rlast = io_master_rlast;
 assign s_rid = io_master_rid;
 
 
+// always_ff @(posedge clock) begin
+// 	$display("RST = %d", reset);
+// end
+
+
 endmodule

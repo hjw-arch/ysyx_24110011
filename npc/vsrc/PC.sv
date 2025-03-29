@@ -20,6 +20,8 @@ module PC #(parameter WIDTH = 32) (
     output reg [WIDTH - 1 : 0] pc
 );
 
+localparam RST_VECTOR = 32'h20000000;
+
 wire sel_for_adder_right = inst[6] & inst[2] |     // 这条信号会是瓶颈，是关键路径，单多周期不影响，流水线需要单独设置这条信号
                             is_branch & ~inst[14] & ~inst[12] & zero_flag |
                             is_branch & ~inst[14] & inst[12] & ~zero_flag |
@@ -36,7 +38,7 @@ wire [WIDTH - 1 : 0] new_pc = sel == 2'b01 ? mtvec :
                               adder_result;
 
 always_ff @(posedge clk) begin
-    if (rst) pc <= 32'h80000000;
+    if (rst) pc <= RST_VECTOR;
     else if (valid) pc <= new_pc;
     else pc <= pc;
 end
