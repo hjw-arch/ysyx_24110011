@@ -72,7 +72,7 @@ void cpu_exec(uint32_t n) {
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
         IFDEF(CONFIG_WATCHPOINT, diff_wp(old_pc));
-        IFDEF(CONFIG_DIFFTEST, difftest_step(cpu.pc));
+		if (cpu_state != IDLE) IFDEF(CONFIG_DIFFTEST, difftest_step(cpu.pc));
         IFDEF(CONFIG_DEVICE, device_update());
 
         if (cpu_state != RUNNING) {
