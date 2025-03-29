@@ -119,6 +119,11 @@ always_ff @(posedge clk) begin
     RDATA_TEMP <= RVALID & RREADY ? RDATA : RDATA_TEMP;
 end
 
+
+always_ff @(posedge clk) begin
+	if(RVALID & RREADY) $display("\n\n\nRDATA\n\n\n");
+end
+
 // rdata
 always_comb begin
     case ({ARSIZE[1 : 0], ARADDR[1 : 0]})
