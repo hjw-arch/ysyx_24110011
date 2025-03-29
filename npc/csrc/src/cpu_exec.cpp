@@ -54,12 +54,14 @@ void cpu_exec(uint32_t n) {
     }
 
     for (int i = 0; i < n; ++i) {
+		uint32_t old_pc = cpu.pc;
+
         // 执行一次
         cpu_exec_one();
 
         if (n < min_num_to_disasm) {
             char p[64];
-            printf("0x%08x: ", cpu.pc);
+            printf("0x%08x: ", old_pc);
             for(int j = 3; j >= 0; j--) {
                 printf("%02x ", ((uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst)[j]);
             }

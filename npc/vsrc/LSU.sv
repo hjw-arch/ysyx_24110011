@@ -170,8 +170,8 @@ axi4_full_master u_axi4_full_master(
 
 always_ff @(posedge clk) begin
 	if (done) begin
-		if (ren) $display("Read Operation address at 0x%08x, data = 0x%08x", ARADDR, RDATA);
-		if (wen) $display("Write Operation address at 0x%08x, data = 0x%08x", AWADDR, WDATA);
+		if (lsu_ren) $display("Read Operation address at 0x%08x, data = 0x%08x", ARADDR, RDATA);
+		if (lsu_wen) $display("Write Operation address at 0x%08x, data = 0x%08x", AWADDR, WDATA);
 	end
 end
 
