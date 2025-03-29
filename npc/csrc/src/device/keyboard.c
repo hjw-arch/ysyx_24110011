@@ -1,3 +1,5 @@
+#ifdef CONFIG_DEVICE
+
 #include "../Include/device.h"
 #include <SDL2/SDL.h>
 #include "../Include/cpu_exec.h"
@@ -80,3 +82,5 @@ void init_i8042()
     add_mmio_map("keyboard", CONFIG_I8042_DATA_MMIO, i8042_data_port_base, 4, i8042_data_io_handler);
     init_keymap();
 }
+
+#endif

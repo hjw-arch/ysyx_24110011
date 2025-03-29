@@ -1,7 +1,6 @@
 module IFU #(parameter WIDTH = 32) (
     input clk,
     input rst,
-
     input wbu_valid,
     input [WIDTH - 1 : 0] pc,
 
@@ -11,26 +10,22 @@ module IFU #(parameter WIDTH = 32) (
 
     // 连接SRAM
     // output declaration of module axi4_lite_master
-    output prerequest,
+    output prerequest,      // 仅仅适用于多周期处理器
     output [31:0] ARADDR,
     output ARVALID,
     output RREADY,
-    output [31:0] AWADDR,
-    output AWVALID,
-    output [31:0] WDATA,
-    output [3:0] WSTRB,
-    output WVALID,
-    output BREADY,
+    output [3 : 0] ARID,
+    output [7 : 0] ARLEN,
+    output [2 : 0] ARSIZE,
+    output [1 : 0] ARBURST,
 
-    // input declaration of module SRAM
+    // input declaration of slave
     input ARREADY,
     input RVALID,
-    input [31:0] RDATA,
-    input [1:0] RRESP,
-    input AWREADY,
-    input WREADY,
-    input BVALID,
-    input [1:0] BRESP
+    input RLAST,
+    input [3 : 0] RID,
+    input [31 : 0] RDATA,
+    input [1 : 0] RRESP
 );
 
 typedef enum logic { 
@@ -67,47 +62,63 @@ always_ff @(posedge clk) begin
     ifu_data <= (ifu_valid & idu_ready) ? {rdata, pc} : ifu_data;
 end
 
-// AXI4-lite
-// output declaration of module axi4_lite_master
-wire [31:0] rdata;
-wire [1:0] rresp;
-wire [1:0] wresp;
-wire done;
-
 assign prerequest = wbu_valid;
 
-axi4_lite_master u_axi4_lite_master(
+// output declaration of module axi4_full_master
+wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
+wire [1:0] rresp;
+wire done;
+
+// Not used
+
+
+axi4_full_master u_axi4_full_master(
     .clk        	(clk         ),
     .rst        	(rst         ),
     .wen        	(1'b0        ),
     .ren        	(start       ),
     .user_ready 	(idu_ready   ),
-    .wmask      	(4'b0011     ),
+    .len        	(2'b10       ),
     .waddr      	(32'b0       ),
     .wdata      	(32'b0       ),
     .raddr      	(pc          ),
     .rdata      	(rdata       ),
-    .rresp      	(rresp       ),
-    .wresp      	(wresp       ),
+    .rresp      	(rresp       ),/* verilator lint_off PINCONNECTEMPTY */
+    .wresp      	(            ),
     .done       	(done        ),
-    .ARADDR     	(ARADDR      ),
-    .ARVALID    	(ARVALID     ),
     .ARREADY    	(ARREADY     ),
-    .RDATA      	(RDATA       ),
-    .RRESP      	(RRESP       ),
-    .RVALID     	(RVALID      ),
+    .ARVALID    	(ARVALID     ),
+    .ARADDR     	(ARADDR      ),
+    .ARID       	(ARID        ),
+    .ARLEN      	(ARLEN       ),
+    .ARSIZE     	(ARSIZE      ),
+    .ARBURST    	(ARBURST     ),
     .RREADY     	(RREADY      ),
-    .AWADDR     	(AWADDR      ),
-    .AWVALID    	(AWVALID     ),
-    .AWREADY    	(AWREADY     ),
-    .WDATA      	(WDATA       ),
-    .WSTRB      	(WSTRB       ),
-    .WVALID     	(WVALID      ),
-    .WREADY     	(WREADY      ),
-    .BRESP      	(BRESP       ),
-    .BVALID     	(BVALID      ),
-    .BREADY     	(BREADY      )
+    .RVALID     	(RVALID      ),
+    .RDATA      	(RDATA       ),
+    .RLAST      	(RLAST       ),
+    .RID        	(RID         ),
+    .RRESP      	(RRESP       )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWADDR     	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWVALID    	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWID       	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWLEN      	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWSIZE     	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWBURST    	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .AWREADY    	(1'b0        ),
+    .WDATA      	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .WSTRB      	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .WLAST      	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .WVALID     	(            )/* verilator lint_off PINCONNECTEMPTY */,
+    .WREADY     	(1'b0        ),
+    .BRESP      	(2'b00       ),
+    .BVALID     	(1'b0        ),
+    .BID        	(4'b0        ),
+    .BREADY     	(            )/* verilator lint_off PINCONNECTEMPTY */
 );
+
+
+
 
 
 

@@ -1,4 +1,5 @@
-#include "Vysyx.h"
+#include "VysyxSoCFull.h"
+#include "verilated.h"
 #include "../Include/common.h"
 #include "../Include/log.h"
 #include "../Include/ram.h"
@@ -10,9 +11,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <getopt.h>
-#include "Vysyx___024root.h"
+#include "VysyxSoCFull___024root.h"
 
-Vysyx dut;
+VysyxSoCFull dut;
 
 static char *diff_so_file = NULL;
 static char *img_file = NULL;
@@ -96,14 +97,16 @@ static int parse_args(int argc, char *argv[]) {
   return 0;
 }
 
+
 int main(int argc, char *argv[]) {
+    Verilated::commandArgs(argc, argv);
+
+
     parse_args(argc, argv);
     init_disasm("riscv32" "-pc-linux-gnu");
     img_size = load_img();
     init_sdb();
-    // for(int i = 0; i < 10; i++) {
-        cpu_rst;
-    // }
+    cpu_rst;
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));
     IFDEF(CONFIG_DEVICE, init_device());

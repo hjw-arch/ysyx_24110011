@@ -31,4 +31,8 @@ config MEM_RANDOM
   help
     This may help to find undefined behaviors.
 
+config MROM_SRAM
+	bool "Enable MROM and SRAM to suit NPC in SoC"
+	default y
+
 endmenu #MEMORY

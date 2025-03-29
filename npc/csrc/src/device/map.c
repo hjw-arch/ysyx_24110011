@@ -1,3 +1,5 @@
+#ifdef CONFIG_DEVICE
+
 #include "../Include/device.h"
 #include "../Include/ram.h"
 #include "../Include/log.h"
@@ -47,3 +49,5 @@ void map_write(paddr_t addr, int len, word_t data, IOMap *map) {
     invoke_callback(map->callback, offset, len, 1);
     IFDEF(CONFIG_DTRACE, record_dtrace(map->name, 1));
 }
+
+#endif

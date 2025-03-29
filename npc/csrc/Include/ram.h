@@ -5,10 +5,11 @@
 #include "common.h"
 #include "macro.h"
 #include <stdint.h>
-#include "Vysyx.h"
-#include "Vysyx__Dpi.h"
+#include "VysyxSoCFull.h"
+#include "VysyxSoCFull__Dpi.h"
+#include "VysyxSoCFull__Dpi.h"
 
-#define RAM_START_ADDR  0x80000000
+#define RAM_START_ADDR  0x20000000
 #define RAM_SIZE        0x8000000
 #define RAM_END_ADDR    RAM_START_ADDR + RAM_SIZE - 1
 

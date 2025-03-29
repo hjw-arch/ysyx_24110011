@@ -16,7 +16,7 @@ module IDU (
     // IDU部分
     output idu_valid,
     output reg [191 : 0] idu_data,
-    input exu_ready,
+    input  exu_ready,
 
 
 
@@ -110,8 +110,7 @@ wire csr_is_ecall = is_sys & ~inst[29];
 // LSU部分
 wire lsu_wen = ~inst[6] & inst[5] & ~inst[4];      // S
 wire lsu_ren = ~inst[5] & ~inst[4];        // L
-wire [2 : 0] lsu_op = {inst[14], inst[13], inst[13] | inst[12]};
-
+wire [2 : 0] lsu_op = inst[14 : 12];
 
 
 wire is_sys = inst[6] & inst[4] & ~inst[13] & ~inst[12];    // 系统相关指令，ecall、mret，添加指令时可能需要做调整
@@ -139,9 +138,9 @@ endmodule
 
 
 
-
+/* verilator lint_off DECLFILENAME */
 // 立即数生成器
-module ImmGen #(parameter WIDTH = 32)(
+module ImmGen #(parameter WIDTH = 32)(  /* verilator lint_off UNUSEDSIGNAL */
     input [31 : 0] inst,
     output [31 : 0] imm
 );
