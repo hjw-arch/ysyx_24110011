@@ -129,7 +129,7 @@ axi4_full_master u_axi4_full_master(
     .rst        	(rst         ),
     .wen        	(wen         ),
     .ren        	(ren         ),
-    .user_ready 	(wbu_ready   ),
+    .user_ready 	(lsu_ready   ),
     .len        	(lsu_op[1:0] ),
     .waddr      	(lsu_addr    ),
     .wdata      	(lsu_wdata   ),
