@@ -121,7 +121,7 @@ end
 
 
 always_ff @(posedge clk) begin
-	if(RVALID & RREADY) $display("\n\n\nRDATA\n\n\n");
+	if(rdone) $display("\nRDATA_TEMP = 0x%08x", RDATA_TEMP);
 end
 
 // rdata
