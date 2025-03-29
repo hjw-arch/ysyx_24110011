@@ -169,9 +169,9 @@ axi4_full_master u_axi4_full_master(
 );
 
 always_ff @(posedge clk) begin
-	if (done) begin
+	// if (done) begin
 		if (lsu_ren) $display("Read Operation address at 0x%08x, data = 0x%08x", ARADDR, rdata);
-	end
+	// end
 end
 
 
