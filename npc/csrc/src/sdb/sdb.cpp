@@ -88,10 +88,10 @@ static int cmd_x(char *args) {
     int expr_result;
     sscanf(EXPR + 2, "%x", &expr_result);
 
-    if (expr_result > RAM_END_ADDR || expr_result < RAM_START_ADDR) {
-        printf("Start address is out of range of memory size!\n");
-        return 0;
-    }
+    // if (expr_result > RAM_END_ADDR || expr_result < RAM_START_ADDR) {
+    //     printf("Start address is out of range of memory size!\n");
+    //     return 0;
+    // }
 
     for (int i = 0; i < atoi(N); i++) {
         printf("0x%-10x", pmem_read(expr_result, 4));
