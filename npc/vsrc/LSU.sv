@@ -169,10 +169,6 @@ axi4_full_master u_axi4_full_master(
     .BREADY     	(BREADY      )
 );
 
-always_ff @(posedge clk) begin
-	if (lsu_ren) $display("Read Operation address at 0x%08x, data = 0x%08x", ARADDR, rdata);
-end
-
 
 endmodule
 
