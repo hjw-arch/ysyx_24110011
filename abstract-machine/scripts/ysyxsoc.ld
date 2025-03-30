@@ -41,7 +41,7 @@ SECTIONS {
 	_bss_size = SIZEOF(.bss);
 
 
-	. = ALIGN(4);
+	/* . = ALIGN(4); */
   	_stack_top = .;
   	. = _stack_top + 0x400;
   	_stack_pointer = .;              /* 堆栈初始指针 */
