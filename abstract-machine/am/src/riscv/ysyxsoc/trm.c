@@ -24,29 +24,29 @@ void halt(int code) {
 	while (1);
 }
 
-extern uint8_t _data_vma_start[];
-extern uint8_t _data_lma_start[];
-extern uint32_t _data_size;
+// extern uint8_t _data_vma_start[];
+// extern uint8_t _data_lma_start[];
+// extern uint32_t _data_size;
 
-extern uint8_t _bss_start[];
-extern uint32_t _bss_size;
+// extern uint8_t _bss_start[];
+// extern uint32_t _bss_size;
 
-void bootloader(void) {
-	uint8_t *src = _data_lma_start;
-    uint8_t *dst = _data_vma_start;
-    for (uint32_t i = 0; i < _data_size; i++) {
-        dst[i] = src[i];
-    }
+// void bootloader(void) {
+// 	uint8_t *src = _data_lma_start;
+//     uint8_t *dst = _data_vma_start;
+//     for (uint32_t i = 0; i < _data_size; i++) {
+//         dst[i] = src[i];
+//     }
     
-    // 清零.bss段
-    dst = _bss_start;
-    for (uint32_t i = 0; i < _bss_size; i++) {
-        dst[i] = 0;
-    }
-}
+//     // 清零.bss段
+//     dst = _bss_start;
+//     for (uint32_t i = 0; i < _bss_size; i++) {
+//         dst[i] = 0;
+//     }
+// }
 
 void _trm_init() {
-	bootloader();
+	// bootloader();
 	int ret = main(mainargs);
 	halt(ret);
 }

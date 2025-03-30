@@ -6,7 +6,8 @@ AM_SRCS := riscv/ysyxsoc/start.S \
            platform/dummy/mpe.c
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDFLAGS   += -T $(AM_HOME)/scripts/ysyxsoc.ld
+LDFLAGS   += -T $(AM_HOME)/scripts/ysyxsoc.ld \
+						 --defsym=_pmem_start=0x20000000 --defsym=_entry_offset=0x0
 LDFLAGS   += --gc-sections -e _start
 CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/npc/ioe -I$(AM_HOME)/am/src/riscv/
