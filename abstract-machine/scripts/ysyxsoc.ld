@@ -43,7 +43,7 @@ SECTIONS {
 
 	. = ALIGN(4);
   	_stack_top = .;
-  	. = _stack_top + 0x400;
+  	. = _stack_top + 0x800;
   	_stack_pointer = .;              /* 堆栈初始指针 */
 
   	_heap_start = .;        /* 堆起始地址，高地址 */
