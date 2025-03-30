@@ -17,6 +17,7 @@ SECTIONS {
 
   	.rodata : {
     	*(.rodata*)
+		*(.srodata*)
   	} > mrom AT> mrom
 
 	. = ORIGIN(sram);
