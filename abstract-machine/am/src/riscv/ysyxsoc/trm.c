@@ -1,6 +1,6 @@
 #include <am.h>
 #include <klib-macros.h>
-#include <klib-macros.h>
+#include <klib.h>
 #include <riscv.h>
 
 extern char _heap_start, _heap_end;
@@ -24,8 +24,8 @@ void halt(int code) {
 	while (1);
 }
 
-extern uint32_t _data_vma_start, _data_lma_start, _bss_start;
-extern uint32_t _data_size, _bss_size;
+extern uint8_t _data_vma_start[], _data_lma_start[], _bss_start[];
+extern uint8_t _data_size, _bss_size;
 
 void bootloader() {
 	uint8_t* data_vma_start = (uint8_t *)&_data_vma_start;
@@ -36,6 +36,7 @@ void bootloader() {
 
 	for (uint32_t i = 0; i < data_size; i++) {
 		data_vma_start[i] = data_lma_start[i];
+		putch('A');
 	}
 
 	for (uint32_t i = 0; i < bss_size; i++) {
@@ -44,7 +45,7 @@ void bootloader() {
 }
 
 void _trm_init() {
-
+	bootloader();
 	int ret = main(mainargs);
 	halt(ret);
 }
