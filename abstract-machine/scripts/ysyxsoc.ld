@@ -11,7 +11,7 @@ SECTIONS {
   	.text : {
     	*(entry)
     	*(.text*)
-  	} :text > mrom AT> mrom
+  	} > mrom AT> mrom :text
   	etext = .;
   	_etext = .;
 
@@ -24,12 +24,12 @@ SECTIONS {
 		. = ORIGIN(sram);
 		_data_vma_start = .;
     	*(.data)
-  	} :data > sram AT> mrom
+  	} > sram AT> mrom :data
   	edata = .;
   	_data = .;
 
 	_data_lma_start = LOADADDR(.data);
-	_data_size = SIZEOF(.data)
+	_data_size = SIZEOF(.data);
 
   	.bss : {
     	_bss_start = .;
