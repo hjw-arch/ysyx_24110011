@@ -9,7 +9,7 @@
 
 #define ebreak      0x00100073
 
-#define min_num_to_disasm   10
+#define min_num_to_disasm   10000
 
 #define FTRACE_RECORD     record_ftrace(old_pc, old_inst == 0x8067 ? 1 : 0, cpu.pc)
 
