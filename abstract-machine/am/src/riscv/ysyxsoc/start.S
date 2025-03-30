@@ -9,8 +9,10 @@ _test:
 	la a0, 0x0f000000
 	la a1, 0x04030201
 	sw a1, 0(a0)
-	lbu a2, 0(a0)
-	lbu a3, 1(a0)
+	lbu t0, 0(a0)
+	lbu t1, 1(a0)
+	lbu t2, 2(a0)
+	lbu a2, 3(a0)
 _load_data:
   	la a0, _data_vma_start
   	la a1, _data_lma_start
