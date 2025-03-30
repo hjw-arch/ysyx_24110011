@@ -6,10 +6,10 @@ _start:
 	mv s0, zero
   	la sp, _stack_pointer
 _test:
-	la a0, _heap_start
+	la a0, 0x20000000
 	addi a0, a0, 1
-	la a1, 0xff
-	sb a1, 0(a0)
+#	la a1, 0xff
+#	sb a1, 0(a0)
 	lbu a1, 0(a0)
 _load_data:
   	la a0, _data_vma_start
