@@ -28,7 +28,7 @@ SECTIONS {
   	_data = .;
 
 	_data_lma_start = LOADADDR(.data);
-	_data_size = _data - _data_vma_start;
+	_data_size = SIZEOF(.data);
 
   	.bss : {
     	_bss_start = .;
