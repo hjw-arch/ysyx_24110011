@@ -9,7 +9,7 @@
 
 #define ebreak      0x00100073
 
-#define min_num_to_disasm   10
+#define min_num_to_disasm   10000
 
 #define FTRACE_RECORD     record_ftrace(old_pc, old_inst == 0x8067 ? 1 : 0, cpu.pc)
 
@@ -54,25 +54,27 @@ void cpu_exec(uint32_t n) {
     }
 
     for (int i = 0; i < n; ++i) {
+		uint32_t old_pc = cpu.pc;
+
         // 执行一次
         cpu_exec_one();
 
         if (n < min_num_to_disasm) {
             char p[64];
-            printf("0x%08x: ", cpu.pc);
+            printf("0x%08x: ", old_pc);
             for(int j = 3; j >= 0; j--) {
                 printf("%02x ", ((uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst)[j]);
             }
-            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst, 4);
+            disassemble(p, sizeof(p), old_pc, (uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst, 4);
             printf("        %s\n", p);
         }
 
 
-        IFDEF(CONFIG_ITRACE, iringbuf_load(cpu.pc, dut.rootp->ysyx__DOT__inst));
+        IFDEF(CONFIG_ITRACE, iringbuf_load(old_pc, dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst));
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
         IFDEF(CONFIG_WATCHPOINT, diff_wp(old_pc));
-		if (cpu_state != IDLE) IFDEF(CONFIG_DIFFTEST, difftest_step(cpu.pc));
+		if (cpu_state != IDLE) IFDEF(CONFIG_DIFFTEST, difftest_step(old_pc));
         IFDEF(CONFIG_DEVICE, device_update());
 
         if (cpu_state != RUNNING) {

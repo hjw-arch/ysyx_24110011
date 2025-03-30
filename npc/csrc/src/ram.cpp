@@ -20,7 +20,12 @@ void *guest_to_host(uint32_t addr) {
 
 extern "C" void flash_read(int32_t addr, int32_t *data) { assert(0); }
 extern "C" void mrom_read(int32_t addr, int32_t *data) {
-	*data = *(uint32_t *)guest_to_host(addr);
+	uint8_t *_data = (uint8_t *)data;
+	*(_data) = *(uint8_t *)guest_to_host(addr);
+	*(_data + 1) = *(uint8_t *)guest_to_host(addr + 1);
+	*(_data + 2) = *(uint8_t *)guest_to_host(addr + 2);
+	*(_data + 3) = *(uint8_t *)guest_to_host(addr + 3);
+
 	// printf("Receive the load request, addr = 0x%08x\n", addr);
 }
 
