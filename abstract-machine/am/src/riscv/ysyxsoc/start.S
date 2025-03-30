@@ -5,6 +5,12 @@
 _start:
 	mv s0, zero
   	la sp, _stack_pointer
+_test:
+	la a0, _heap_start
+	addi a0, a0, 1
+	la a1, 0x01020304
+	sb a1, 0(a0)
+	lbu a1, 0(a0)
 _load_data:
   	la a0, _data_vma_start
   	la a1, _data_lma_start
