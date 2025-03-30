@@ -1,5 +1,5 @@
 ENTRY(_start)
-PHDRS { text PT_LOAD; data PT_LOAD; }
+/* PHDRS { text PT_LOAD; data PT_LOAD; } */
 
 MEMORY {
 	mrom : ORIGIN = 0x20000000, LENGTH = 4K
@@ -11,7 +11,7 @@ SECTIONS {
   	.text : {
     	*(entry)
     	*(.text*)
-  	} > mrom AT> mrom :text
+  	} > mrom AT> mrom
   	etext = .;
   	_etext = .;
 
@@ -23,7 +23,7 @@ SECTIONS {
   	.data : {
 		_data_vma_start = .;
     	*(.data)
-  	} > sram AT> mrom :data
+  	} > sram AT> mrom
   	edata = .;
   	_data = .;
 
