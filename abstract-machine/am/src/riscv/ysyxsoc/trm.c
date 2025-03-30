@@ -24,24 +24,9 @@ void halt(int code) {
 	while (1);
 }
 
-extern uint8_t _data_vma_start[], _data_lma_start[], _bss_start[];
-extern uint8_t _data_size, _bss_size;
 
-void bootloader() {
-	uint8_t* data_vma_start = (uint8_t *)&_data_vma_start;
-	uint8_t* data_lma_start = (uint8_t *)&_data_lma_start;
-	uint8_t* bss_start = (uint8_t *)&_bss_start;
-	uint32_t data_size = (uint32_t)&_data_size;
-	uint32_t bss_size = (uint32_t)&_bss_size;
-
-	for (uint32_t i = 0; i < data_size; i++) {
-		data_vma_start[i] = data_lma_start[i];
-		putch('A');
-	}
-
-	for (uint32_t i = 0; i < bss_size; i++) {
-		bss_start[i] = 0;
-	}
+void bootloader(void) {
+    
 }
 
 void _trm_init() {
