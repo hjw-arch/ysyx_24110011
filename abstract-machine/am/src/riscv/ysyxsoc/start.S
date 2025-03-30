@@ -5,15 +5,6 @@
 _start:
 	mv s0, zero
   	la sp, _stack_pointer
-_test:
-	la a0, 0x20000000
-#	la a1, 0x04030201
-#	sw a1, 0(a0)
-	lbu t0, 0(a0)
-	lbu t1, 1(a0)
-	lbu t2, 2(a0)
-	lbu a2, 3(a0)
-	lhu	a3, 2(a0)
 _load_data:
   	la a0, _data_vma_start
   	la a1, _data_lma_start
