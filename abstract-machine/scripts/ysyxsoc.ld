@@ -23,6 +23,7 @@ SECTIONS {
   	.data : {
 		_data_vma_start = .;
     	*(.data*)
+		*(.sdata*)
   	} > sram AT> mrom :data
   	edata = .;
   	_data = .;
