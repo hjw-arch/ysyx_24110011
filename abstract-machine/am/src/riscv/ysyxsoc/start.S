@@ -8,7 +8,7 @@ _start:
 _test:
 	la a0, 0x0f000000
 	la a1, 0x04030201
-	sw a1, 0(a0)
+	sw a1, 1(a0)
 	lbu t0, 0(a0)
 	lbu t1, 1(a0)
 	lbu t2, 2(a0)
