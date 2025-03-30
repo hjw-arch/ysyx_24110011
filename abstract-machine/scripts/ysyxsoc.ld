@@ -21,7 +21,6 @@ SECTIONS {
 
 
   	.data : {
-		. = ORIGIN(sram);
 		_data_vma_start = .;
     	*(.data)
   	} > sram AT> mrom :data
@@ -36,14 +35,15 @@ SECTIONS {
     	*(.bss*)
     	*(.sbss*)
     	*(.scommon)
+		_bss_end = .;
   	} > sram
 
-	_bss_size = SIZEOF(.bss);
+	_bss_size = _bss_end - _bss_start;
 
 
 	. = ALIGN(4);
   	_stack_top = .;
-  	. += 0x800;
+  	. = _stack_top + 0x400;
   	_stack_pointer = .;              /* 堆栈初始指针 */
 
   	_heap_start = .;        /* 堆起始地址，高地址 */
