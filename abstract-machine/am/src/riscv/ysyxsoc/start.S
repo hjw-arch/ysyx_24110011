@@ -8,7 +8,7 @@ _start:
 _test:
 	la a0, _heap_start
 	addi a0, a0, 1
-	la a1, 0x01020304
+	la a1, 0xff
 	sb a1, 0(a0)
 	lbu a1, 0(a0)
 _load_data:
