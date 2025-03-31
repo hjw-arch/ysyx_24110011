@@ -32,7 +32,7 @@ SECTIONS {
 	_data_lma_start = LOADADDR(.data);
 	_data_size = SIZEOF(.data);
 
-  	.bss (NOLOAD): {
+  	.bss : {
     	_bss_start = .;
     	*(.bss*)
     	*(.sbss*)
