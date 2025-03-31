@@ -21,16 +21,19 @@ void *guest_to_host(uint32_t addr) {
 
 // Flash
 #define FLASH_SIZE	0x10000000
-#define FLASH_BASE	0x30000000
+#define FLASH_BASE	0x0		// 0x30000000 低24位
 #define FLASH_END	(FLASH_BASE + FLASH_SIZE - 1)
 
 uint8_t flash[FLASH_SIZE];
 
 void *flash_addr(uint32_t addr) {
+	printf("\n\n\nReceive FLASH REQUEST!\n\n\n");
+	printf("ADDR = 0x%08x\n", addr);
     return ((uint8_t *)flash + addr - FLASH_BASE);
 }
 extern "C" void flash_read(int32_t addr, int32_t *data) {
 	*data = *(uint32_t *)flash_addr(addr);
+	printf("111\n\n");
 }
 
 
