@@ -100,8 +100,8 @@ static int parse_args(int argc, char *argv[]) {
 
 extern uint8_t flash[0x10000000];
 void flash_init() {
-	for (int i = 0; i < 10000; i++) {
-		flash[i] = 0xff;
+	for (int i = 0; i < img_size; i++) {
+		flash[i] = ((uint8_t *)(guest_to_host(RESET_VECTOR)))[i];
 	}
 }
 
