@@ -38,7 +38,7 @@ void uart_init() {
 }
 
 void putch(char ch) {
-	while((*(uint8_t *)UART_LSR & UART_FIFO_EMPTY_MASK) == 0);	// 等待
+	while((*(volatile uint8_t *)UART_LSR & UART_FIFO_EMPTY_MASK) == 0);	// 等待
 	outb(UART_TX, ch);
 }
 
