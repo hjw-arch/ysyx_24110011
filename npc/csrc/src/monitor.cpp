@@ -98,9 +98,16 @@ static int parse_args(int argc, char *argv[]) {
 }
 
 
-int main(int argc, char *argv[]) {
-    Verilated::commandArgs(argc, argv);
+extern uint8_t flash[100];
+void flash_init() {
+	for (int i = 0; i < 100; i++) {
+		flash[i] = 0xff;
+	}
+}
 
+
+int main(int argc, char *argv[]) {
+    Verilated::commandArgs(argc, argv);		// For SOC
 
     parse_args(argc, argv);
     init_disasm("riscv32" "-pc-linux-gnu");
@@ -110,6 +117,7 @@ int main(int argc, char *argv[]) {
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));
     IFDEF(CONFIG_DEVICE, init_device());
+	flash_init();
     if (batch_mode_flag) {
         cpu_exec(-1);
         return 0;
