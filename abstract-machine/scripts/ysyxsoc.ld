@@ -38,7 +38,7 @@ SECTIONS {
     	*(.sbss*)
     	*(.scommon)
 		_bss_end = .;
-  	} > sram :bss
+  	} > sram AT> mrom :bss
 
 	_bss_size = _bss_end - _bss_start;
 
