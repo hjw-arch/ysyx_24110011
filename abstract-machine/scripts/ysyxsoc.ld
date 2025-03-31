@@ -1,5 +1,5 @@
 ENTRY(_start)
-PHDRS { text PT_LOAD; data PT_LOAD; }
+/* PHDRS { text PT_LOAD; data PT_LOAD; bss PT_LOAD;} */
 
 MEMORY {
 	mrom : ORIGIN = 0x20000000, LENGTH = 4K
@@ -11,7 +11,7 @@ SECTIONS {
   	.text : {
     	*(entry)
     	*(.text*)
-  	} > mrom AT> mrom :text
+  	} > mrom AT> mrom
   	etext = .;
   	_etext = .;
 
@@ -25,7 +25,7 @@ SECTIONS {
 		_data_vma_start = .;
     	*(.data*)
 		*(.sdata*)
-  	} > sram AT> mrom :data
+  	} > sram AT> mrom
   	edata = .;
   	_data = .;
 
@@ -45,7 +45,7 @@ SECTIONS {
 
 	. = ALIGN(4);
   	_stack_top = .;
-  	. = _stack_top + 0x1000;
+  	. = _stack_top + 0x800;
   	_stack_pointer = .;              /* 堆栈初始指针 */
 
   	_heap_start = .;        /* 堆起始地址，高地址 */
