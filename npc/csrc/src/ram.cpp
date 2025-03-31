@@ -27,13 +27,10 @@ void *guest_to_host(uint32_t addr) {
 uint8_t flash[FLASH_SIZE];
 
 void *flash_addr(uint32_t addr) {
-	printf("\n\n\nReceive FLASH REQUEST!\n\n\n");
-	printf("ADDR = 0x%08x\n", addr);
     return ((uint8_t *)flash + addr - FLASH_BASE);
 }
 extern "C" void flash_read(int32_t addr, int32_t *data) {
 	*data = *(uint32_t *)flash_addr(addr);
-	printf("111\n\n");
 }
 
 
