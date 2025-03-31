@@ -98,7 +98,7 @@ static int parse_args(int argc, char *argv[]) {
 }
 
 
-extern uint8_t flash[100];
+extern uint8_t flash[0x10000000];
 void flash_init() {
 	for (int i = 0; i < 100; i++) {
 		flash[i] = 0xff;

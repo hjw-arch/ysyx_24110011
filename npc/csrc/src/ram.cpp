@@ -20,7 +20,7 @@ void *guest_to_host(uint32_t addr) {
 
 
 // Flash
-#define FLASH_SIZE	0x100
+#define FLASH_SIZE	0x10000000
 #define FLASH_BASE	0x30000000
 #define FLASH_END	(FLASH_BASE + FLASH_SIZE - 1)
 
