@@ -34,6 +34,10 @@ always @(posedge sck or posedge ss) begin
 	endcase
 end
 
+always @(posedge sck) begin
+	if (!ss && counter == 3'b111) $display("data = 0x%2x", data);
+end
+
 // 发送数据
 assign miso = !ss & (state == SEND) ? data[0] : 1'b1;
 
