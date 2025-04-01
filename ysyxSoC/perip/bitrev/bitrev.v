@@ -35,7 +35,7 @@ always @(posedge sck or posedge ss) begin
 end
 
 always @(posedge sck) begin
-	if (!ss && counter == 3'b111) $display("data = 0x%2x", data);
+	if (!ss && counter == 3'b0) $display("data = 0x%2x", data);
 end
 
 // 发送数据
