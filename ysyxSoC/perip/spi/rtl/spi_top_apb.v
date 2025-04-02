@@ -58,7 +58,8 @@ localparam XIP_CONF_DIV			= 2;
 localparam XIP_CONF_SS			= 3;
 localparam XIP_CONF_CTRL_START	= 4;
 localparam XIP_WAIT_DATA		= 5;
-localparam XIP_RESET_SS			= 6;
+localparam XIP_GET_DATA			= 6;
+localparam XIP_RESET_SS			= 7;
 
 reg [3:0] state;
 
@@ -70,8 +71,8 @@ assign in_prdata = is_xip ? xip_prdata : spi_prdata;
 // XIP内部信号
 wire [4:0] xip_paddr;
 wire [31:0] xip_pwdata;
-wire [31:0] xip_prdata;
-reg xip_penable;
+reg  [31:0] xip_prdata;
+reg  xip_penable;
 wire xip_pready;
 wire xip_pwrite;
 
@@ -117,7 +118,9 @@ always @(posedge clock) begin
 			XIP_CONF_CTRL_START:
 				state <= (xip_penable & spi_pready) ? XIP_WAIT_DATA : state;
 			XIP_WAIT_DATA:
-				state <= (xip_penable & spi_pready & !spi_prdata[SPI_CTRL_GO_BUY]) ? XIP_RESET_SS : state;
+				state <= (xip_penable & spi_pready & !spi_prdata[SPI_CTRL_GO_BUY]) ? XIP_GET_DATA : state;
+			XIP_GET_DATA:
+				state <= (xip_penable & spi_pready) ? XIP_RESET_SS : state;
 			XIP_RESET_SS:
 				state <= (xip_penable & spi_pready) ? NORMAL : state;
 			default:
@@ -133,18 +136,20 @@ end
 
 // paddr
 assign xip_paddr = 	{5{(state == XIP_SEND_ADDR)}} & 5'h04 | {5{state == XIP_CONF_DIV}} & 5'h14 | {5{state == XIP_CONF_SS}} & 5'h18 |
-					{5{state == XIP_CONF_CTRL_START}} & 5'h10 | {5{state == XIP_WAIT_DATA}} & 5'h10 | {5{state == XIP_RESET_SS}} & 5'h18;
+					{5{state == XIP_CONF_CTRL_START}} & 5'h10 | {5{state == XIP_WAIT_DATA}} & 5'h10 | {5{state == XIP_GET_DATA}} & 5'h00 | {5{state == XIP_RESET_SS}} & 5'h18;
 
 // pwdata
 assign xip_pwdata = {32{(state == XIP_SEND_ADDR)}} & {8'h03, in_paddr[23:2], 2'b0} | {32{state == XIP_CONF_DIV}} & 32'h01 | {32{state == XIP_CONF_SS}} & 32'h01 |
-					{32{state == XIP_CONF_CTRL_START}} & 32'h540 | {32{state == XIP_RESET_SS}} & 32'h00;			// XIP_WAIT_DATA只读不写
+					{32{state == XIP_CONF_CTRL_START}} & 32'h540 | {32{state == XIP_RESET_SS}} & 32'h00;			// XIP_WAIT_DATA XIP_GET_DATA只读不写
 
 // prdata
 // 大端转小端
-assign xip_prdata = {spi_prdata[7:0], spi_prdata[15:8], spi_prdata[23:16], spi_prdata[31:24]};
+always @(posedge clock) begin
+	xip_prdata <= ((state == XIP_GET_DATA) & spi_pready) ? {spi_prdata[7:0], spi_prdata[15:8], spi_prdata[23:16], spi_prdata[31:24]} : xip_prdata;
+end
 
 // pwrite
-assign xip_pwrite = (state != XIP_WAIT_DATA);		// 只有这个阶段需要读
+assign xip_pwrite = (state != XIP_WAIT_DATA) && (state != XIP_GET_DATA);		// 只有这两个阶段需要读
 
 // pready
 assign xip_pready = (state == XIP_RESET_SS) & spi_pready & in_penable;
@@ -170,16 +175,16 @@ spi_top u0_spi_top (
   .miso_pad_i(spi_miso)
 );
 
-always @(posedge clock) begin
-	if (is_xip & !xip_penable) begin
-		if (state == XIP_SEND_ADDR) $display("NORMAL: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
-		if (state == XIP_CONF_DIV) $display("XIP_SEND_ADDR: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
-		if (state == XIP_CONF_SS) $display("XIP_CONF_DIV: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
-		if (state == XIP_CONF_CTRL_START) $display("XIP_CONF_SS: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
-		if (state == XIP_WAIT_DATA) $display("XIP_CONF_CTRL_START: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
-		if (state == XIP_RESET_SS) $display("XIP_WAIT_DATA: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
-	end
-end
+// always @(posedge clock) begin
+// 	if (is_xip & !xip_penable) begin
+// 		if (state == XIP_SEND_ADDR) $display("NORMAL: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+// 		if (state == XIP_CONF_DIV) $display("XIP_SEND_ADDR: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+// 		if (state == XIP_CONF_SS) $display("XIP_CONF_DIV: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+// 		if (state == XIP_CONF_CTRL_START) $display("XIP_CONF_SS: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+// 		if (state == XIP_WAIT_DATA) $display("XIP_CONF_CTRL_START: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+// 		if (state == XIP_RESET_SS) $display("XIP_WAIT_DATA: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+// 	end
+// end
 
 
 `endif // FAST_FLASH
