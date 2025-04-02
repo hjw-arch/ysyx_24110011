@@ -98,21 +98,21 @@ static int parse_args(int argc, char *argv[]) {
 }
 
 
-extern uint8_t flash[0x10000000];
-void flash_init() {
-	FILE *file = fopen("/home/hjw-arch/ysyx-workbench/npc/ROM/bin/UART.bin", "rb");
-	Assert(file, "Open .bin fail.\n");
-	fseek(file, 0, SEEK_END);
-	uint32_t file_size = ftell(file);
-	fseek(file, 0, SEEK_SET);
+// extern uint8_t flash[0x10000000];
+// void flash_init() {
+// 	FILE *file = fopen("/home/hjw-arch/ysyx-workbench/npc/ROM/bin/UART.bin", "rb");
+// 	Assert(file, "Open .bin fail.\n");
+// 	fseek(file, 0, SEEK_END);
+// 	uint32_t file_size = ftell(file);
+// 	fseek(file, 0, SEEK_SET);
 
-	int ret = fread(flash, file_size, 1, file);
-	if (ret != 1) {
-		Assert(0, "fread fail.\n");
-	}
+// 	int ret = fread(flash, file_size, 1, file);
+// 	if (ret != 1) {
+// 		Assert(0, "fread fail.\n");
+// 	}
 
-	fclose(file);
-}
+// 	fclose(file);
+// }
 
 
 int main(int argc, char *argv[]) {
@@ -126,7 +126,6 @@ int main(int argc, char *argv[]) {
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));
     IFDEF(CONFIG_DEVICE, init_device());
-	flash_init();
     if (batch_mode_flag) {
         cpu_exec(-1);
         return 0;
