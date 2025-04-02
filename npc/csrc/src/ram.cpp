@@ -29,6 +29,7 @@ uint8_t flash[FLASH_SIZE];
 void *flash_addr(uint32_t addr) {
     return ((uint8_t *)flash + addr - FLASH_BASE);
 }
+
 extern "C" void flash_read(int32_t addr, int32_t *data) {
 	*data = *(uint32_t *)flash_addr(addr);
 }
