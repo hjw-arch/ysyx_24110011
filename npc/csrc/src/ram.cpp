@@ -30,7 +30,9 @@ void *flash_addr(uint32_t addr) {
     return ((uint8_t *)flash + addr - FLASH_BASE);
 }
 extern "C" void flash_read(int32_t addr, int32_t *data) {
+	printf("Flash Read address is 0x%08x\n", addr);
 	*data = *(uint32_t *)flash_addr(addr);
+	printf("Flash Read data is 0x%08x\n", *data);
 }
 
 
