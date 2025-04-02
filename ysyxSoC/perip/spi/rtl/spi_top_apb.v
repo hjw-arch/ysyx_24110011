@@ -171,7 +171,7 @@ spi_top u0_spi_top (
 );
 
 always @(posedge clock) begin
-	if (is_xip) begin
+	if (is_xip & !xip_penable) begin
 		if (state == XIP_SEND_ADDR) $display("NORMAL: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
 		if (state == XIP_CONF_DIV) $display("XIP_SEND_ADDR: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
 		if (state == XIP_CONF_SS) $display("XIP_CONF_DIV: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
