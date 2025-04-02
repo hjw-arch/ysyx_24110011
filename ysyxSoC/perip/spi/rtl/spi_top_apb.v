@@ -170,11 +170,16 @@ spi_top u0_spi_top (
   .miso_pad_i(spi_miso)
 );
 
-// always @(posedge clock) begin
-// 	if (is_xip) begin
-// 		if (state == NORMAL) $display("111");
-// 	end
-// end
+always @(posedge clock) begin
+	if (is_xip) begin
+		if (state == XIP_SEND_ADDR) $display("NORMAL: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+		if (state == XIP_CONF_DIV) $display("XIP_SEND_ADDR: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+		if (state == XIP_CONF_SS) $display("XIP_CONF_DIV: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+		if (state == XIP_CONF_CTRL_START) $display("XIP_CONF_SS: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+		if (state == XIP_WAIT_DATA) $display("XIP_CONF_CTRL_START: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+		if (state == XIP_RESET_SS) $display("XIP_WAIT_DATA: address = 0x%08x, wdata = 0x%08x, rdata = 0x%08x, is_write = %d", spi_paddr, spi_pwdata, spi_prdata, spi_pwrite);
+	end
+end
 
 
 `endif // FAST_FLASH
