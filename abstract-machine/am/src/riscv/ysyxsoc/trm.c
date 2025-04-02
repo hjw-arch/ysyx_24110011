@@ -32,7 +32,7 @@ static const char mainargs[] = MAINARGS;
 
 void uart_init() {
 	UART_LCR = 0x83;	// 0b10000011
-	UART_MSB = 0x00;
+	// UART_MSB = 0x00;
 	UART_LSB = 0x01;
 	UART_LCR = 0x03;
 }

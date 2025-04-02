@@ -20,7 +20,7 @@ module PC #(parameter WIDTH = 32) (
     output reg [WIDTH - 1 : 0] pc
 );
 
-localparam RST_VECTOR = 32'h20000000;
+localparam RST_VECTOR = 32'h30000000;
 
 wire sel_for_adder_right = inst[6] & inst[2] |     // 这条信号会是瓶颈，是关键路径，单多周期不影响，流水线需要单独设置这条信号
                             is_branch & ~inst[14] & ~inst[12] & zero_flag |

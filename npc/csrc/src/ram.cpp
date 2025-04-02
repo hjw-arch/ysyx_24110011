@@ -14,15 +14,24 @@ uint8_t pmem[RAM_SIZE];
 
 extern VysyxSoCFull dut;
 
+// Flash
+#define FLASH_SIZE			0x10000000
+#define FLASH_BASE_LOW24	0x0		// 0x30000000 低24位
+#define FLASH_END			(FLASH_BASE + FLASH_SIZE - 1)
+
+uint8_t flash[FLASH_SIZE];
+
 void *guest_to_host(uint32_t addr) {
-    return ((uint8_t *)pmem + addr - RAM_START_ADDR);
+    return ((uint8_t *)flash + (addr & 0x00ffffff) - FLASH_BASE_LOW24);
 }
 
-extern "C" void flash_read(int32_t addr, int32_t *data) { assert(0); }
+extern "C" void flash_read(int32_t addr, int32_t *data) {
+	*data = *(uint32_t *)guest_to_host(addr);
+}
+
 extern "C" void mrom_read(int32_t addr, int32_t *data) {
-	*data = *(uint32_t *)guest_to_host((addr - (addr % 4)));
+	assert(0);
 }
-
 
 
 // 没用了
