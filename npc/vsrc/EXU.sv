@@ -91,16 +91,16 @@ wire [31 : 0] mepc;     // For PC
 wire [31 : 0] csr_data_o;
 wire [31 : 0] csr_data_i = csr_sel ? rs1_data | csr_data_o : rs1_data;
 CSR CSR_INTER(
-    .clk(clk),
-    .rst(rst),
-    .wen_i(csr_wen & has_new_data),
-    .is_ecall_i(csr_is_ecall & has_new_data),
-    .addr_i(csr_addr),
-    .data_i(csr_data_i),
-    .pc_i(pc_now),
-    .data_o(csr_data_o),
-    .mtvec_o(mtvec),
-    .mepc_o(mepc)
+    .clk			(clk							),
+    .rst			(rst							),
+    .wen_i			(csr_wen & has_new_data			),
+    .is_ecall_i		(csr_is_ecall & has_new_data	),
+    .addr_i			(csr_addr						),
+    .data_i			(csr_data_i						),
+    .pc_i			(pc_now							),
+    .data_o			(csr_data_o						),
+    .mtvec_o		(mtvec							),
+    .mepc_o			(mepc							)
 );
 
 always_ff @(posedge clk) begin
