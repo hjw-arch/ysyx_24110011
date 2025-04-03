@@ -1,52 +1,103 @@
-// not a competed version
-// 在五级流水线中，如果需要分步、分别堆CSR进行读和写，需要添加读地址和写地址
-module CSR #(parameter WIDTH = 32) (
-    input clk,
-    input rst,
-    input wen,
-    input is_ecall,
-    input [11 : 0] addr,
-    input [WIDTH - 1 : 0] data_in,
-    input [WIDTH - 1 : 0] pc,
+// 仅仅是简单实现，并不是完整版本，即使是此版本中的寄存器设置也不完整
+module CSR (
+	input  						clk,
+	input  						rst,
+	input  						wen_i,
 
-    output [WIDTH - 1 : 0] data_out,
-    output [WIDTH - 1 : 0] mtvec,
-    output [WIDTH - 1 : 0] mepc
+	input  						is_ecall_i,
+	input  			[11 : 0] 	addr_i,
+	input  			[31 : 0] 	data_i,
+	input 			[31 : 0]	pc_i,
+
+	output 	logic	[31 : 0]	data_o,
+	output 	logic	[31 : 0]	mtvec_o,
+	output	logic	[31 : 0]	mepc_o
 );
 
-reg [WIDTH - 1 : 0] reg_mcause, reg_mstatus, reg_mtvec, reg_mepc;
+// CSR寄存器
+reg		[31 : 0]		mcause;
+reg		[31 : 0]		mstatus;
+reg		[31 : 0]		mtvec;
+reg		[31 : 0]		mepc;
+logic	[31 : 0]		mvendorid;
+logic	[31 : 0]		marchid;
 
-wire is_mcause = (addr[7 : 0] == 8'h42);
-wire is_mstatus = (addr[7 : 0] == 8'h00);
-wire is_mtvec = (addr[7 : 0] == 8'h05);
-wire is_mepc = (addr[7 : 0] == 8'h41);
 
-always @(posedge clk) begin
-    if (rst) begin
-        reg_mcause <= {WIDTH{1'b0}};
-        reg_mtvec <= {WIDTH{1'b0}};
-        reg_mepc <= {WIDTH{1'b0}};
-    end else begin
-        if (is_ecall) begin
-            reg_mcause <= 32'd11;
-            reg_mepc <= pc;
-            reg_mstatus <= 32'h1800;    // for difftest
-        end else begin
-            reg_mcause <= (is_mcause & wen) ? data_in : reg_mcause;
-            reg_mstatus <= (is_mstatus & wen) ? data_in : reg_mstatus;
-            reg_mtvec <= (is_mtvec & wen) ? data_in : reg_mtvec;
-            reg_mepc <= (is_mepc & wen) ? data_in : reg_mepc;
-        end
-    end
+// 标识
+wire is_mcause 		= 	(addr_i[7 : 0] == 8'h42);
+wire is_mstatus 	= 	(addr_i[7 : 0] == 8'h00);
+wire is_mtvec 		= 	(addr_i[7 : 0] == 8'h05);
+wire is_mepc 		= 	(addr_i[7 : 0] == 8'h41);
+
+// 特殊写入操作
+wire special_op	= is_ecall_i;
+
+/******************************* 标识寄存器 ***********************************/
+
+// mvendorid
+assign mvendorid = 32'h79737978;
+
+// mvendorid
+assign marchid = 32'h016FE3BB;
+
+
+/******************************* M寄存器 ***********************************/
+// mcause
+always_ff @(posedge clk) begin
+	if (rst) begin
+		mcause <= 32'b0;
+	end else begin
+		case ({special_op, wen_i, is_mcause})
+			3'b100: mcause <= 32'd11;
+			3'b011: mcause <= data_i;
+			default: mcause <= mcause;
+		endcase
+	end
 end
 
-assign data_out = {32{is_mcause}} & reg_mcause | 
-                  {32{is_mstatus}} & reg_mstatus | 
-                  {32{is_mtvec}} & reg_mtvec | 
-                  {32{is_mepc}} & reg_mepc;
 
-assign mtvec = reg_mtvec;
-assign mepc = reg_mepc;
+// mstatus
+// 简单实现，无复位值
+always_ff @(posedge clk) begin
+	case ({special_op, wen_i, is_mstatus})
+		3'b100: mstatus <= 32'h1800;
+		3'b011: mstatus <= data_i;
+		default: mstatus <= mstatus;
+	endcase
+end
+
+// mtvec
+// 简单实现，无复位值
+always_ff @(posedge clk) begin
+	mtvec <= (wen_i & is_mtvec) ? data_i : mtvec;
+end
+
+// mepc
+// 简单实现，无复位值
+always_ff @(posedge clk) begin
+	case ({special_op, wen_i, is_mepc})
+		3'b100: mepc <= pc_i;
+		3'b011: mepc <= data_i;
+		default: mepc <= mepc;
+	endcase
+end
+
+
+/******************************* 读寄存器 ***********************************/
+always_comb begin
+	case(addr_i[7 : 0])
+		8'h42: data_o = mcause;
+		8'h00: data_o = mstatus;
+		8'h05: data_o = mtvec;
+		8'h41: data_o = mepc;
+		8'h11: data_o = mvendorid;
+		8'h12: data_o = marchid;
+		default: data_o = 32'h0;
+	endcase
+end
+
+assign mtvec_o 	= 	mtvec;
+assign mepc_o	=	mepc;
 
 
 endmodule

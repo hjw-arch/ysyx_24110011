@@ -98,23 +98,6 @@ static int parse_args(int argc, char *argv[]) {
 }
 
 
-// extern uint8_t flash[0x10000000];
-// void flash_init() {
-// 	FILE *file = fopen("/home/hjw-arch/ysyx-workbench/npc/ROM/bin/UART.bin", "rb");
-// 	Assert(file, "Open .bin fail.\n");
-// 	fseek(file, 0, SEEK_END);
-// 	uint32_t file_size = ftell(file);
-// 	fseek(file, 0, SEEK_SET);
-
-// 	int ret = fread(flash, file_size, 1, file);
-// 	if (ret != 1) {
-// 		Assert(0, "fread fail.\n");
-// 	}
-
-// 	fclose(file);
-// }
-
-
 int main(int argc, char *argv[]) {
     Verilated::commandArgs(argc, argv);		// For SOC
 
