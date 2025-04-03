@@ -37,6 +37,13 @@ void uart_init() {
 	UART_LCR = 0x03;
 }
 
+void print_id() {
+	uint32_t mvendorid, marchid;
+	asm volatile("csrr %0, mvendorid" : "=r"(mvendorid));
+	asm volatile("csrr %0, marchid" : "=r"(marchid));
+	printf("%c%c%c%c_%d\n", (char)(mvendorid >> 24), (char)(mvendorid >> 16), (char)(mvendorid >> 8), (char)(mvendorid), marchid);
+}
+
 void putch(char ch) {
 	while((UART_LSR & UART_FIFO_EMPTY_MASK) == 0);	// 等待
 	UART_TX = ch;
@@ -49,6 +56,7 @@ void halt(int code) {
 
 void _trm_init() {
 	uart_init();
+	print_id();
 	int ret = main(mainargs);
 	halt(ret);
 }
