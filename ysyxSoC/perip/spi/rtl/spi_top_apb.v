@@ -131,8 +131,7 @@ end
 
 // penable
 always @(posedge clock) begin
-	// xip_penable <= (xip_penable & spi_pready & !reset) ? 1'b0 : 1'b1;
-	xip_penable <= (xip_penable & spi_pready) | state == XIP_WAIT_DATA ? 1'b0 : 1'b1;
+	xip_penable <= (xip_penable & spi_pready) | (state == XIP_WAIT_DATA & !spi_irq_out) ? 1'b0 : 1'b1;
 end
 
 // paddr
