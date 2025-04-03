@@ -118,7 +118,7 @@ always @(posedge clock) begin
 			XIP_CONF_CTRL_START:
 				state <= (xip_penable & spi_pready) ? XIP_WAIT_DATA : state;
 			XIP_WAIT_DATA:
-				state <= (xip_penable & spi_pready & !spi_prdata[SPI_CTRL_GO_BUY]) ? XIP_GET_DATA : state;
+				state <= spi_irq_out ? XIP_GET_DATA : state;
 			XIP_GET_DATA:
 				state <= (xip_penable & spi_pready) ? XIP_RESET_SS : state;
 			XIP_RESET_SS:
@@ -131,16 +131,16 @@ end
 
 // penable
 always @(posedge clock) begin
-	xip_penable <= (xip_penable & spi_pready & !reset) ? 1'b0 : 1'b1;
+	xip_penable <= (xip_penable & spi_pready) | (state == XIP_WAIT_DATA & !spi_irq_out) ? 1'b0 : 1'b1;
 end
 
 // paddr
 assign xip_paddr = 	{5{(state == XIP_SEND_ADDR)}} & 5'h04 | {5{state == XIP_CONF_DIV}} & 5'h14 | {5{state == XIP_CONF_SS}} & 5'h18 |
-					{5{state == XIP_CONF_CTRL_START}} & 5'h10 | {5{state == XIP_WAIT_DATA}} & 5'h10 | {5{state == XIP_GET_DATA}} & 5'h00 | {5{state == XIP_RESET_SS}} & 5'h18;
+					{5{state == XIP_CONF_CTRL_START}} & 5'h10 | {5{state == XIP_GET_DATA}} & 5'h00 | {5{state == XIP_RESET_SS}} & 5'h18;
 
 // pwdata
 assign xip_pwdata = {32{(state == XIP_SEND_ADDR)}} & {8'h03, in_paddr[23:2], 2'b0} | {32{state == XIP_CONF_DIV}} & 32'h01 | {32{state == XIP_CONF_SS}} & 32'h01 |
-					{32{state == XIP_CONF_CTRL_START}} & 32'h540 | {32{state == XIP_RESET_SS}} & 32'h00;			// XIP_WAIT_DATA XIP_GET_DATA只读不写
+					{32{state == XIP_CONF_CTRL_START}} & 32'h1540 | {32{state == XIP_RESET_SS}} & 32'h00;			// XIP_WAIT_DATA XIP_GET_DATA只读不写
 
 // prdata
 // 大端转小端
