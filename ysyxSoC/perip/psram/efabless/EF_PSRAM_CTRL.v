@@ -119,7 +119,7 @@ module PSRAM_READER (
 			$display("SCK = %d", sck);
 			if(sck) begin
 				data[byte_index] <= {data[byte_index][3:0], din}; // Optimize!
-				$display("byte_index is %d, data is 0x%02x, counter is %d, din is %x", byte_index, {data[byte_index][3:0], din}, counter, din);
+				$display("byte_index is %d, data is 0x%02x, counter is %d, din is %x\n\n", byte_index, {data[byte_index][3:0], din}, counter, din);
 			end
 		end
 
