@@ -115,14 +115,9 @@ module PSRAM_READER (
     // Sample with the negedge of sck
     wire[1:0] byte_index = {counter[7:1] - 8'd10}[1:0];
     always @ (posedge clk)
-        if(counter >= 20 && counter <= FINAL_COUNT) begin
-			$display("SCK = %d", sck);
-			if(sck) begin
-				data[byte_index] <= {data[byte_index][3:0], din}; // Optimize!
-				$display("byte_index is %d, data is 0x%02x, counter is %d, din is %x\n\n", byte_index, {data[byte_index][3:0], din}, counter, din);
-			end
-		end
-
+        if(counter >= 20 && counter <= FINAL_COUNT)
+            if(sck)
+                data[byte_index] <= {data[byte_index][3:0], din}; // Optimize!
 
     assign dout     =   (counter < 8)   ?   {3'b0, CMD_EBH[7 - counter]}:
                         (counter == 8)  ?   saddr[23:20]        :

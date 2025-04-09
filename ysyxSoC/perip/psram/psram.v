@@ -100,12 +100,10 @@ always_ff @(posedge sck) begin
     end
 end
 
-assign dio_out = data_toggle ? read_buf[7 : 4] : read_buf[3 : 0];
-
-// always_ff @(posedge sck) begin
-// 	if (state == S_READ && data_toggle) dio_out <= read_buf[7:4];
-// 	else if (state == S_READ && ~data_toggle) dio_out <= read_buf[3:0];
-// end
+always_ff @(posedge sck) begin
+	if (state == S_READ && data_toggle) dio_out <= read_buf[7:4];
+	else if (state == S_READ && ~data_toggle) dio_out <= read_buf[3:0];
+end
 
 always_ff @(posedge sck) begin
 	if (state == S_READ) begin
