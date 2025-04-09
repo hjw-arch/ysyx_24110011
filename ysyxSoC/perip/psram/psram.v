@@ -105,12 +105,6 @@ always_ff @(posedge sck) begin
 	else if (state == S_READ && ~data_toggle) dio_out <= read_buf[3:0];
 end
 
-always_ff @(posedge sck) begin
-	if (state == S_READ) begin
-		$display("dio_out = %x， data_toggle is %d", dio_out, data_toggle);
-	end
-end
-
 // write
 // 功能仿真
 always_ff @(posedge sck) begin
