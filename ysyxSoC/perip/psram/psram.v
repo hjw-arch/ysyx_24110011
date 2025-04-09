@@ -117,33 +117,5 @@ always_ff @(posedge sck) begin
     end
 end
 
-// always_ff @(posedge sck) begin
-// 	if (state == S_WRITE) begin
-// 		$display("PSRAM ADDR is 0x%08x, DATA is %02x", addr, {write_buf, dio_in});
-// 	end
-// end
-
-// always_ff @(posedge sck) begin
-// 	if (state == S_READ) begin
-// 		$display("PSRAM ADDR is 0x%08x, DATA is %02x", addr, PSRAM[addr[21 : 0]]);
-// 	end
-// end
-
-// always_ff @(posedge sck) begin
-// 	$display("state = %d", state);
-// end
-
-// always_ff @(posedge sck) begin
-// 	$display("cmd = %x, cnt = %d", cmd, cnt);
-// end
-
-// always_ff @(posedge sck) begin
-// 	if (state == S_READ) begin
-// 		for (int i = 0; i < 16; i++) begin
-// 			$display("PSRAM[%d] is %d", i, PSRAM[i]);
-// 		end
-// 	end
-// end
-
 
 endmodule
