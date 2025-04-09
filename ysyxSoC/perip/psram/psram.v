@@ -73,7 +73,7 @@ end
 always_ff @(posedge sck) begin
     if (state == S_ADDR) begin
         addr <= {addr[19 : 0], dio_in};
-    end else if (state == S_READ && ~data_toggle || state == S_WRITE && ~data_toggle) begin
+    end else if (state == S_READ && data_toggle || state == S_WRITE && ~data_toggle) begin
         addr <= addr + 1;
     end else begin
         addr <= addr;
