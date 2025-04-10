@@ -169,7 +169,7 @@ module EF_PSRAM_CTRL_wb (
 	reg is_qpi_mode;
 	reg [2:0] qpi_cnt;
 	reg qpi_sck;
-	// reg qpi_ce_n;
+	reg qpi_ce_n;
 	wire qpi_dout;
 	wire [7:0] qpi_cmd = 8'b11000100;
 	always_ff @(posedge clk_i or posedge rst_i) begin
@@ -186,13 +186,13 @@ module EF_PSRAM_CTRL_wb (
 	always_ff @(posedge clk_i or posedge rst_i) begin
 		if (rst_i) qpi_sck <= 0;
 		else begin
-			qpi_sck <= state == ST_QPI ? ~qpi_sck : 1'b0;
+			qpi_sck <= ~qpi_ce_n ? ~qpi_sck : 1'b0;
 		end
 	end
 
-	// always_ff @(posedge clk_i or posedge rst_i) begin
-	// 	qpi_ce_n <= rst_i ? 1'b1 : state == ST_QPI ? 1'b0 : 1'b1;
-	// end
+	always_ff @(posedge clk_i or posedge rst_i) begin
+		qpi_ce_n <= rst_i ? 1'b1 : state == ST_QPI ? 1'b0 : 1'b1;
+	end
 
 	always_ff @(posedge clk_i or posedge rst_i) begin
 		if(rst_i) is_qpi_mode <= 1'b0;
@@ -204,7 +204,7 @@ module EF_PSRAM_CTRL_wb (
 	assign qpi_dout = qpi_cmd[qpi_cnt];
 
     assign sck  = state == ST_QPI ? qpi_sck : wb_we ? mw_sck  : mr_sck;
-    assign ce_n = state == ST_QPI ? 1'b0 : wb_we ? mw_ce_n : mr_ce_n;
+    assign ce_n = state == ST_QPI ? qpi_ce_n : wb_we ? mw_ce_n : mr_ce_n;
     assign dout = state == ST_QPI ? {3'b0, qpi_dout} : wb_we ? mw_dout : mr_dout;
     assign douten  = state == ST_QPI ? 4'b0001 : wb_we ? {4{mw_doe}}  : {4{mr_doe}};
 
