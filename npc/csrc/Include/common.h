@@ -20,7 +20,7 @@ do { \
 #define cpu_rst \
 do {    \
     dut.reset = 1;    \
-    for(int i = 0; i < 10; i++) cycle;\
+    for(int i = 0; i < 20; i++) cycle;\
     dut.reset = 0;    \
 	for(int i = 0; i < 10; i++) cycle;\
     cpu.pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc;  \
