@@ -186,7 +186,7 @@ module EF_PSRAM_CTRL_wb (
 	always_ff @(posedge clk_i or posedge rst_i) begin
 		if (rst_i) qpi_sck <= 0;
 		else begin
-			qpi_sck <= ~qpi_ce_n ? ~qpi_sck : 1'b0;
+			qpi_sck <= !qpi_ce_n ? ~qpi_sck : 1'b0;
 		end
 	end
 
