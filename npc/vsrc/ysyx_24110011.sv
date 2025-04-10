@@ -74,6 +74,10 @@ module ysyx_24110011 #(parameter WIDTH = 32) (
     output [3:0]  io_slave_rid
 );
 
+always_ff @(posedge clock) begin
+	$display("NPC RESET = %d", reset);
+end
+
 // 对slave接口做设置
 assign io_slave_awready = 1'b0;
 assign io_slave_wready  = 1'b0;
