@@ -176,8 +176,11 @@ module EF_PSRAM_CTRL_wb (
 		if (rst_i) qpi_cnt <= 3'b000;
 		else begin
 			qpi_cnt <= state == ST_QPI && qpi_sck ? qpi_cnt + 1 : qpi_cnt;
-			$display("cnt = %d, cmd = %d", qpi_cnt, qpi_dout);
 		end
+	end
+
+	always_ff @(posedge clk_i) begin
+		$display("is_qpi_mode = %d, qpi_sck = %d, qpi_cnt = %d, qpi_ce_n = %d, qpi_dout = %d", is_qpi_mode, qpi_sck, qpi_cnt, qpi_ce_n, qpi_dout);
 	end
 
 	always_ff @(posedge clk_i or posedge rst_i) begin
