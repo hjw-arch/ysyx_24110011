@@ -190,10 +190,9 @@ module EF_PSRAM_CTRL_wb (
 		end
 	end
 
-	// always_ff @(posedge clk_i or posedge rst_i) begin
-	// 	qpi_ce_n <= rst_i ? 1'b1 : state == ST_QPI ? 1'b0 : 1'b1;
-	// end
-	assign qpi_ce_n = state != ST_QPI;
+	always_ff @(posedge clk_i or posedge rst_i) begin
+		qpi_ce_n <= rst_i ? 1'b1 : state == ST_QPI ? 1'b0 : 1'b1;
+	end
 
 	always_ff @(posedge clk_i or posedge rst_i) begin
 		if(rst_i) is_qpi_mode <= 1'b0;

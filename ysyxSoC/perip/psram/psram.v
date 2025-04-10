@@ -59,7 +59,7 @@ end
 // 模式切换
 always_ff @(posedge sck) begin
 	qpi_mode <= !qpi_mode && cnt == 3'b111 && {cmd[6:0], dio_in[0]} == CMD_ENTER_QPI ? 1'b1 : qpi_mode;
-	$display("cmd = %x, cnt = %d", cmd, cnt);
+	$display("In PSRAM, cmd = %x, cnt = %d, ce = %d", cmd, cnt, ce_n);
 end
 
 // cnt
