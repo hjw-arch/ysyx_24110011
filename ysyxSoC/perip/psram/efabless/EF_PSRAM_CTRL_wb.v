@@ -204,7 +204,7 @@ module EF_PSRAM_CTRL_wb (
 	assign qpi_dout = qpi_cmd[qpi_cnt];
 
     assign sck  = state == ST_QPI ? qpi_sck : wb_we ? mw_sck  : mr_sck;
-    assign ce_n = state == ST_QPI ? qpi_ce_n : wb_we ? mw_ce_n : mr_ce_n;
+    assign ce_n = state == ST_QPI ? 1'b0 : wb_we ? mw_ce_n : mr_ce_n;
     assign dout = state == ST_QPI ? {3'b0, qpi_dout} : wb_we ? mw_dout : mr_dout;
     assign douten  = state == ST_QPI ? 4'b0001 : wb_we ? {4{mw_doe}}  : {4{mr_doe}};
 
