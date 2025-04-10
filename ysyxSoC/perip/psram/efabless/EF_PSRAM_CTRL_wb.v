@@ -171,7 +171,7 @@ module EF_PSRAM_CTRL_wb (
 	reg qpi_sck;
 	reg qpi_ce_n;
 	wire qpi_dout;
-	wire [7:0] qpi_cmd = 8'b11000100;
+	wire [7:0] qpi_cmd = 8'b10101100;
 	always_ff @(posedge clk_i or posedge rst_i) begin
 		if (rst_i) qpi_cnt <= 3'b000;
 		else begin
