@@ -56,9 +56,9 @@ always_comb begin
     endcase
 end
 
-always_ff @(posedge sck) begin
-	$display("In PSRAM, dio_in = %x, cmd = %02x, cnt = %d, ce = %d, mode = %d", dio_in[0], {cmd[6 : 0], dio_in[0]}, cnt, ce_n, qpi_mode);
-end
+// always_ff @(posedge sck) begin
+// 	$display("In PSRAM, dio_in = %x, cmd = %02x, cnt = %d, ce = %d, mode = %d", dio_in[0], {cmd[6 : 0], dio_in[0]}, cnt, ce_n, qpi_mode);
+// end
 
 // 模式切换
 always_ff @(posedge sck) begin

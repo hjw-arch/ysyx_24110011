@@ -179,9 +179,9 @@ module EF_PSRAM_CTRL_wb (
 		end
 	end
 
-	always_ff @(posedge clk_i) begin
-		$display("state = %d, is_qpi_mode = %d, qpi_sck = %d, qpi_cnt = %d, qpi_ce_n = %d, qpi_dout = %d", state, is_qpi_mode, qpi_sck, qpi_cnt, qpi_ce_n, qpi_dout);
-	end
+	// always_ff @(posedge clk_i) begin
+	// 	$display("state = %d, is_qpi_mode = %d, qpi_sck = %d, qpi_cnt = %d, qpi_ce_n = %d, qpi_dout = %d", state, is_qpi_mode, qpi_sck, qpi_cnt, qpi_ce_n, qpi_dout);
+	// end
 
 	always_ff @(posedge clk_i or posedge rst_i) begin
 		if (rst_i) qpi_sck <= 0;
