@@ -1,4 +1,3 @@
-build/
 out/
 .mill-version
 .build*
