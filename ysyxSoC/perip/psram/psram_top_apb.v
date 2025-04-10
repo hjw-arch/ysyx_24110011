@@ -46,8 +46,4 @@ module psram_top_apb (
   assign qspi_dio[3] = douten[3] ? dout[3] : 1'bz;
   assign din = qspi_dio;
 
-  always_ff @(posedge clock) begin
-	$display("CE_N = %d" ,qspi_ce_n);
-  end
-
 endmodule

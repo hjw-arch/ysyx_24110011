@@ -22,7 +22,7 @@ localparam S_WRITE 	= 4;
 // localparam ADDR_BITS  = 24;
 reg [7 : 0] PSRAM[0 : (1 << 22) - 1];
 
-reg qpi_mode = 1'b0;		// 是否QPI模式
+reg qpi_mode = 1'b0;		// 是否QPI模式, 上电默认是0
 logic [2 : 0] state, next_state;
 reg [2 : 0] cnt;
 reg [7 : 0] cmd;
@@ -43,7 +43,7 @@ end
 always_comb begin
     case(state) 
         S_CMD:
-            next_state = (!qpi_mode && cnt == 3'b111 || qpi_mode && cnt == 3'b001) ? S_ADDR : state;
+            next_state = (!qpi_mode && cnt == 3'b111 && {cmd[6:0], dio_in[0]} != CMD_ENTER_QPI || qpi_mode && cnt == 3'b001) ? S_ADDR : state;
         S_ADDR:
             next_state = cnt == 3'b101 && cmd == CMD_Q_READ ? S_DUMMY : cnt == 3'b101 && cmd == CMD_Q_WRITE ? S_WRITE : state;
         S_DUMMY:
@@ -54,6 +54,13 @@ always_comb begin
             next_state = state;
         default: next_state = state;
     endcase
+end
+
+// 模式切换
+always_ff @(posedge sck) begin
+	qpi_mode <= !qpi_mode && cnt == 3'b111 && {cmd[6:0], dio_in[0]} == CMD_ENTER_QPI ? 1'b1 : qpi_mode;
+	$display("cmd = %x", cmd);
+	assert(cnt != 3'b111);
 end
 
 // cnt
