@@ -39,10 +39,6 @@ module EF_PSRAM_CTRL_wb (
     output  wire [3:0]      douten
 );
 
-	always_ff @(posedge clk_i) begin
-		$display("rst = %d", rst_i);
-	end
-
     localparam  ST_QPI	= 2'b00,
 				ST_IDLE = 2'b01,
                 ST_WAIT = 2'b10;
@@ -180,7 +176,7 @@ module EF_PSRAM_CTRL_wb (
 		if (rst_i) qpi_cnt <= 3'b000;
 		else begin
 			qpi_cnt <= state == ST_QPI && qpi_sck ? qpi_cnt + 1 : qpi_cnt;
-			$display("cnt = %d", qpi_cnt);
+			$display("cnt = %d, cmd = %d", qpi_cnt, qpi_dout);
 		end
 	end
 
