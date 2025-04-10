@@ -4,19 +4,25 @@ module psram(
       inout [3:0] dio
 );
 
-// 命令定义
-localparam CMD_Q_READ	=     8'hEB;
-localparam CMD_Q_WRITE	=    8'h38;
+// 模式定义
+localparam M_NORMAL	=	0;
+localparam M_QPI	=	1;
 
-localparam S_CMD    = 1;
-localparam S_ADDR   = 2;
-localparam S_DUMMY  = 3;
-localparam S_READ   = 4;
-localparam S_WRITE 	= 5;
+// 命令定义
+localparam CMD_ENTER_QPI	=	8'h35;
+localparam CMD_Q_READ		=   8'hEB;
+localparam CMD_Q_WRITE		=   8'h38;
+
+localparam S_CMD    = 0;
+localparam S_ADDR   = 1;
+localparam S_DUMMY  = 2;
+localparam S_READ   = 3;
+localparam S_WRITE 	= 4;
 
 // localparam ADDR_BITS  = 24;
 reg [7 : 0] PSRAM[0 : (1 << 22) - 1];
 
+reg qpi_mode = 1'b0;		// 是否QPI模式, 上电默认是0
 logic [2 : 0] state, next_state;
 reg [2 : 0] cnt;
 reg [7 : 0] cmd;
@@ -37,9 +43,9 @@ end
 always_comb begin
     case(state) 
         S_CMD:
-            next_state = cnt == 3'b111 ? S_ADDR : state;
+            next_state = (!qpi_mode && cnt == 3'b111 && {cmd[6:0], dio_in[0]} != CMD_ENTER_QPI || qpi_mode && cnt == 3'b001) ? S_ADDR : state;
         S_ADDR:
-            next_state = cnt == 3'b101 && cmd == CMD_Q_READ ? S_DUMMY : cnt == 3'd5 && cmd == CMD_Q_WRITE ? S_WRITE : state;
+            next_state = cnt == 3'b101 && cmd == CMD_Q_READ ? S_DUMMY : cnt == 3'b101 && cmd == CMD_Q_WRITE ? S_WRITE : state;
         S_DUMMY:
             next_state = cnt == 3'b101 ? S_READ : state;
         S_READ:
@@ -50,13 +56,18 @@ always_comb begin
     endcase
 end
 
+// 模式切换
+always_ff @(posedge sck) begin
+	qpi_mode <= !qpi_mode && cnt == 3'b111 && {cmd[6:0], dio_in[0]} == CMD_ENTER_QPI ? 1'b1 : qpi_mode;
+end
+
 // cnt
 always_ff @(posedge sck or posedge ce_n) begin
     if (ce_n) begin
         cnt <= 0;
     end else begin
         case(state)
-            S_CMD:		cnt <= (cnt == 3'b111 | ce_n) ? 3'b0 : cnt + 1;
+            S_CMD:		cnt <= (!qpi_mode && cnt == 3'b111 || qpi_mode && cnt == 3'b001 || ce_n) ? 3'b0 : cnt + 1;
             S_ADDR:    	cnt <= cnt == 3'b101 ? 3'b0 : cnt + 1;
             S_DUMMY: 	cnt <= cnt == 3'b101 ? 3'b0 : cnt + 1;
             default: 	cnt <= 0;
@@ -66,7 +77,7 @@ end
 
 // cmd
 always_ff @(posedge sck) begin
-    cmd <= (state == S_CMD & !ce_n) ? {cmd[6 : 0], dio_in[0]} : cmd;
+    cmd <= (state == S_CMD && !qpi_mode && !ce_n) ? {cmd[6 : 0], dio_in[0]} : (state == S_CMD && qpi_mode && !ce_n) ? {cmd[3:0], dio} : cmd;
 end
 
 // addr
