@@ -11,10 +11,10 @@ _load_text:
 	la a1, _text_lma_start
 	la a2, _text_vma_end
 _copy_text:
-	lw t0, 0(a1)
-	sw  t0, 0(a0)
-	addi a0, a0, 4
-	addi a1, a1, 4
+	lbu t0, 0(a1)
+	sb  t0, 0(a0)
+	addi a0, a0, 1
+	addi a1, a1, 1
 	blt a0, a2, _copy_text
 
 _load_rodata:
