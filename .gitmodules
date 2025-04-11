@@ -1,0 +1,3 @@
+[submodule "RT-Thread"]
+	path = RT-Thread
+	url = git@github.com:Hjw-Arch/RT-Thread-AM.git
