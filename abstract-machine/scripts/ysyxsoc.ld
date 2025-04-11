@@ -42,24 +42,24 @@ SECTIONS {
 
 	_rodata_lma_start = LOADADDR(.rodata);
 
+	_data_vma_start = .;
   	.data : {
-		_data_vma_start = .;
     	*(.data*)
 		*(.sdata*)
-		_data_vma_end = .;
   	} > psram AT> flash
+	_data_vma_end = .;
   	edata = .;
   	_data = .;
 
 	_data_lma_start = LOADADDR(.data);
 
+	_bss_start = .;
   	.bss : {
-    	_bss_start = .;
     	*(.bss*)
     	*(.sbss*)
     	*(.scommon)
-		_bss_end = .;
   	} > psram
+	_bss_end = .;
 
 	_bss_size = _bss_end - _bss_start;
 
