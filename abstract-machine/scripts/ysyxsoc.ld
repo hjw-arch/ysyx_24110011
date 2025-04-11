@@ -8,9 +8,18 @@ MEMORY {
 }
 
 SECTIONS {
-	.boot : {
-		KEEP(*(.boot))
+	.fsld : {
+		KEEP(*(.fsld))
 	} > flash AT> flash
+
+	. = ORIGIN(sram);
+	.ssld : {
+		_ssld_vma_start = .;
+		KEEP(*(.boot))
+		_ssld_vma_end = .;
+	} > sram AT> flash
+
+	_ssld_lma_start = LOADADDR(.ssld);
 
 	. = ORIGIN(psram);
   	.text : {

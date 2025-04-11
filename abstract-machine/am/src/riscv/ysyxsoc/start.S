@@ -1,20 +1,36 @@
-.section .boot, "ax"
+.section .fsld, "ax"
 .globl _start
 .type _start, @function
 
 _start:
-	mv s0, zero
-  	la sp, _stack_pointer
+_fsld:
+	la a0, _ssld_vma_start
+	la a1, _ssld_lma_start
+	la a2, _ssld_vma_end
+_copy_ssld:
+	lw t0, 0(a1)
+	sw t0, 0(a0)
+	addi a0, a0, 4
+	addi a1, a1, 4
+	blt a0, a2, _copy_ssld
+	la t0, _ssld
+	jalr t0
+
+
+.section .ssld, "ax"
+.globl _ssld
+
+_ssld:
 
 _load_text:
 	la a0, _text_vma_start
 	la a1, _text_lma_start
 	la a2, _text_vma_end
 _copy_text:
-	lbu t0, 0(a1)
-	sb  t0, 0(a0)
-	addi a0, a0, 1
-	addi a1, a1, 1
+	lw t0, 0(a1)
+	sw t0, 0(a0)
+	addi a0, a0, 4
+	addi a1, a1, 4
 	blt a0, a2, _copy_text
 
 _load_rodata:
@@ -51,5 +67,7 @@ _clear_bss:
 	blt a0, a1, _clear_bss
 
 _call_init:
+	mv s0, zero
+  	la sp, _stack_pointer
 	la t0, _trm_init
   	jalr t0
