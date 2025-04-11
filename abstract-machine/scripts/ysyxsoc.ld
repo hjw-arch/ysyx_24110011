@@ -15,7 +15,7 @@ SECTIONS {
 	. = ORIGIN(sram);
 	.ssld : {
 		_ssld_vma_start = .;
-		KEEP(*(.boot))
+		KEEP(*(.ssld))
 		_ssld_vma_end = .;
 	} > sram AT> flash
 
