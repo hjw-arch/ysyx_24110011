@@ -657,7 +657,7 @@ else
 begin
     if (state_q == STATE_WRITE)
         ack_q <= 1'b1;
-    else if (rd_q[SDRAM_READ_LATENCY])
+    else if (rd_q[SDRAM_READ_LATENCY - 1])
         ack_q <= 1'b1;
     else
         ack_q <= 1'b0;
