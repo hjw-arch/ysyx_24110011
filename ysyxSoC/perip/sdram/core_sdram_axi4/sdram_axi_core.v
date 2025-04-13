@@ -625,7 +625,7 @@ else
     rd_q    <= {rd_q[SDRAM_READ_LATENCY:0], (state_q == STATE_READ)};
 
 always_ff @(posedge clk_i) begin
-	if (state_q == STATE_READ) begin
+	if (rd_q) begin
 		$display("sdram_data_in_w = %x", sdram_data_in_w);
 	end
 end
