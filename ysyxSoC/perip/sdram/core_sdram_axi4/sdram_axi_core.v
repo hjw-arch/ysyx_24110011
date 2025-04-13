@@ -624,11 +624,6 @@ if (rst_i)
 else
     rd_q    <= {rd_q[SDRAM_READ_LATENCY:0], (state_q == STATE_READ)};
 
-always_ff @(posedge clk_i) begin
-	if (rd_q != 0) begin
-		$display("sdram_data_in_w = %x, rd = %x", sdram_data_in_w, rd_q);
-	end
-end
 
 // Read data output
 reg [SDRAM_DATA_W-1:0] sample_data_q;
