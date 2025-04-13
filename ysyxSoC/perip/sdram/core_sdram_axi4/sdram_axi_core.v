@@ -62,7 +62,9 @@ module sdram_axi_core
     ,output          sdram_data_out_en_o
 );
 
-
+always_ff @(posedge clk_i) begin
+	if (sdram_data_input_i != 0) $display("sdram = %x", sdram_data_input_i);
+end
 
 //-----------------------------------------------------------------
 // Key Params
