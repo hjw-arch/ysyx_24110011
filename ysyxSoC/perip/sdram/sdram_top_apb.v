@@ -24,10 +24,6 @@ module sdram_top_apb (
   inout  [31:0] sdram_dq
 );
 
-always_ff @(posedge clock) begin
-	if (in_prdata != 0) $display("11111111");
-end
-
   wire sdram_dout_en;
   wire [31:0] sdram_dout;
   assign sdram_dq = sdram_dout_en ? sdram_dout : 32'bz;

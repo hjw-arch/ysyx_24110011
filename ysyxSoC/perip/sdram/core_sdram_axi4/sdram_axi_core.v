@@ -448,23 +448,16 @@ else if (refresh_timer_q == {REFRESH_CNT_W{1'b0}})
 else if (state_q == STATE_REFRESH)
     refresh_q <= 1'b0;
 
-//-----------------------------------------------------------------
-// Input sampling
-//-----------------------------------------------------------------
+// //-----------------------------------------------------------------
+// // Input sampling
+// //-----------------------------------------------------------------
 
-// reg [SDRAM_DATA_W-1:0] sample_data0_q;
+// reg [SDRAM_DATA_W-1:0] sample_data_q;
 // always @ (posedge clk_i or posedge rst_i)
 // if (rst_i)
-//     sample_data0_q <= {SDRAM_DATA_W{1'b0}};
+//     sample_data_q <= {SDRAM_DATA_W{1'b0}};
 // else
-//     sample_data0_q <= sdram_data_in_w;
-
-reg [SDRAM_DATA_W-1:0] sample_data_q;
-always @ (posedge clk_i or posedge rst_i)
-if (rst_i)
-    sample_data_q <= {SDRAM_DATA_W{1'b0}};
-else
-    sample_data_q <= sdram_data_in_w;
+//     sample_data_q <= sdram_data_in_w;
 
 //-----------------------------------------------------------------
 // Command Output
@@ -633,6 +626,20 @@ else
 
 
 // Read data output
+reg [SDRAM_DATA_W-1:0] sample_data_q;
+always @ (posedge clk_i or posedge rst_i)
+if (rst_i) begin
+    sample_data_q <= {SDRAM_DATA_W{1'b0}};
+end else begin
+    // 当 rd_q[SDRAM_READ_LATENCY] 为高时，表示数据在本周期结束时到达输入引脚
+    // 我们在这个时刻锁存 sdram_data_in_w
+    if (rd_q[SDRAM_READ_LATENCY]) begin // <--- 关键的采样条件 (Latency=2时，此为 rd_q[2])
+        sample_data_q <= sdram_data_in_w;
+        // $display($time, " Capturing SDRAM Data: %h", sdram_data_in_w); // DEBUG
+    end
+    // 注意: 在其他时间保持 read_data_valid_q 的值不变
+end
+
 assign ram_read_data_w = sample_data_q;
 
 //-----------------------------------------------------------------
