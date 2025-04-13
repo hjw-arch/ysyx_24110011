@@ -156,7 +156,7 @@ assign data_out_enable = reading;
 // write
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
-		$display("cmd == %d, data = %d", cmd, dq);
+		$display("cmd == %d, data = %x", cmd, dq);
 		row_buffer[ba][col_addr][7 : 0] <= dqm[0] ? row_buffer[ba][col_addr][7 : 0] : dq[7:0];
 		row_buffer[ba][col_addr][15 : 8] <= dqm[1] ? row_buffer[ba][col_addr][15 : 8] : dq[15:8];
 
