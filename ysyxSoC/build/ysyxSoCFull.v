@@ -2036,7 +2036,7 @@ module APBSDRAM(	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:
                 sdram_bundle_ras,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
                 sdram_bundle_cas,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
                 sdram_bundle_we,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
-  output [12:0] sdram_bundle_a,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
+  output [13:0] sdram_bundle_a,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
   output [1:0]  sdram_bundle_ba,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
   output [3:0]  sdram_bundle_dqm,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
   inout  [31:0] sdram_bundle_dq	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
