@@ -2038,8 +2038,8 @@ module APBSDRAM(	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:
                 sdram_bundle_we,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
   output [12:0] sdram_bundle_a,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
   output [1:0]  sdram_bundle_ba,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
-                sdram_bundle_dqm,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
-  inout  [15:0] sdram_bundle_dq	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
+  output [3:0]  sdram_bundle_dqm,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
+  inout  [31:0] sdram_bundle_dq	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:89:26
 );
 
   sdram_top_apb msdram (	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/device/SDRAM.scala:91:24
@@ -3561,8 +3561,8 @@ module ysyxSoCASIC(	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:59:9
                 sdram_we,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
   output [12:0] sdram_a,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
   output [1:0]  sdram_ba,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
-                sdram_dqm,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
-  inout  [15:0] sdram_dq,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
+  output [3:0]  sdram_dqm,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
+  inout  [31:0] sdram_dq,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
   output [15:0] gpio_out,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:90:18
   input  [15:0] gpio_in,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:90:18
   output [7:0]  gpio_seg_0,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:90:18
@@ -4500,9 +4500,9 @@ module ysyxSoCFull(	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:111:9
   wire        _asic_sdram_we;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire [12:0] _asic_sdram_a;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire [1:0]  _asic_sdram_ba;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
-  wire [1:0]  _asic_sdram_dqm;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
+  wire [3:0]  _asic_sdram_dqm;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire [3:0]  _dio_wire;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:143:23
-  wire [15:0] _dq_wire;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:145:23
+  wire [31:0] _dq_wire;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:145:23
   ysyxSoCASIC asic (	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
     .clock      (clock),
     .reset      (reset),

@@ -7,6 +7,82 @@ module sdram(
   	input        we,
   	input [12:0] a,
   	input [ 1:0] ba,
+  	input [ 3:0] dqm,
+  	inout [31:0] dq
+);
+
+// wire cs0, cs1;
+// assign cs0 = ~a[13] & cs;
+// assign cs1 = a[13] & cs;
+
+
+sdram_chip chip00 (
+	.clk(clk),
+	.cke(cke),
+	.cs(cs),
+	.ras(ras),
+	.cas(cas),
+	.we(we),
+	.a(a[12:0]),
+	.ba(ba),
+	.dqm(dqm[1:0]),
+	.dq(dq[15:0])
+);
+
+sdram_chip chip01(
+	.clk(clk),
+	.cke(cke),
+	.cs(cs),
+	.ras(ras),
+	.cas(cas),
+	.we(we),
+	.a(a[12:0]),
+	.ba(ba),
+	.dqm(dqm[3:2]),
+	.dq(dq[31:16])
+);
+
+// sdram_chip chip10(
+// 	.clk(clk),
+// 	.cke(cke),
+// 	.cs(cs1),
+// 	.ras(ras),
+// 	.cas(cas),
+// 	.we(we),
+// 	.a(a[12:0]),
+// 	.ba(ba),
+// 	.dqm(dqm[1:0]),
+// 	.dq(dq[15:0])
+// );
+
+// sdram_chip chip11(
+// 	.clk(clk),
+// 	.cke(cke),
+// 	.cs(cs1),
+// 	.ras(ras),
+// 	.cas(cas),
+// 	.we(we),
+// 	.a(a[12:0]),
+// 	.ba(ba),
+// 	.dqm(dqm[3:2]),
+// 	.dq(dq[31:16])
+// );
+
+endmodule
+
+
+
+
+
+module sdram_chip(
+  	input        clk,
+  	input        cke,
+  	input        cs,
+  	input        ras,
+  	input        cas,
+  	input        we,
+  	input [12:0] a,
+  	input [ 1:0] ba,
   	input [ 1:0] dqm,
   	inout [15:0] dq
 );
@@ -156,6 +232,7 @@ assign data_out_enable = reading;
 // write
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
+		$display("cmd = %d, data = %02x", cmd, dq);
 		row_buffer[ba][col_addr][7 : 0] <= dqm[0] ? row_buffer[ba][col_addr][7 : 0] : dq[7:0];
 		row_buffer[ba][col_addr][15 : 8] <= dqm[1] ? row_buffer[ba][col_addr][15 : 8] : dq[15:8];
 
