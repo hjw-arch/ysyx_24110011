@@ -606,6 +606,7 @@ begin
     //-----------------------------------------
     STATE_WRITE :
     begin
+		$display("here");
         command_q       <= CMD_WRITE;
         addr_q          <= addr_col_w;
         bank_q          <= addr_bank_w;
