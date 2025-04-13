@@ -287,14 +287,14 @@ begin
     begin
         next_state_r = STATE_IDLE;
 
-        // Another pending write request (with no refresh pending)
-        if (!refresh_q && ram_req_w && (ram_wr_w != 4'b0))
-        begin
-			$display("refresh = %d, ram_req_w = %d, ram_wr_w = %x", refresh_q, ram_req_w, ram_wr_w);
-            // Open row hit
-            if (row_open_q[addr_bank_w] && addr_row_w == active_row_q[addr_bank_w])
-                next_state_r = STATE_WRITE;
-        end
+        // // Another pending write request (with no refresh pending)
+        // if (!refresh_q && ram_req_w && (ram_wr_w != 4'b0))
+        // begin
+		// 	$display("refresh = %d, ram_req_w = %d, ram_wr_w = %x", refresh_q, ram_req_w, ram_wr_w);
+        //     // Open row hit
+        //     if (row_open_q[addr_bank_w] && addr_row_w == active_row_q[addr_bank_w])
+        //         next_state_r = STATE_WRITE;
+        // end
     end
     //-----------------------------------------
     // STATE_PRECHARGE
@@ -606,7 +606,6 @@ begin
     //-----------------------------------------
     STATE_WRITE :
     begin
-		$display("here, addr = %x", addr_col_w);
         command_q       <= CMD_WRITE;
         addr_q          <= addr_col_w;
         bank_q          <= addr_bank_w;
