@@ -238,15 +238,16 @@ always_ff @(posedge clk) begin
 end
 
 // write
+wire [8:0] col = cmd == CMD_WRITE && !writing ? a[8 : 0] : col_addr;
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
 		$display("ID = %d, cmd = %d, data = %02x, writing = %d, addr = %x", ID, cmd, dq, writing, col_addr);
-		row_buffer[ba][col_addr][7 : 0] <= dqm[0] ? row_buffer[ba][col_addr][7 : 0] : dq[7:0];
-		row_buffer[ba][col_addr][15 : 8] <= dqm[1] ? row_buffer[ba][col_addr][15 : 8] : dq[15:8];
+		row_buffer[ba][col][7 : 0] <= dqm[0] ? row_buffer[ba][col][7 : 0] : dq[7:0];
+		row_buffer[ba][col][15 : 8] <= dqm[1] ? row_buffer[ba][col][15 : 8] : dq[15:8];
 
-		memory[ba][active_row[ba]][col_addr] <= {
-			dqm[1] ? row_buffer[ba][col_addr][15:8] : dq[15:8],
-          	dqm[0] ? row_buffer[ba][col_addr][7:0] : dq[7:0]
+		memory[ba][active_row[ba]][col] <= {
+			dqm[1] ? row_buffer[ba][col][15:8] : dq[15:8],
+          	dqm[0] ? row_buffer[ba][col][7:0] : dq[7:0]
 		};
 	end
 end
