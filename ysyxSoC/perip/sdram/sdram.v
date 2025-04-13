@@ -23,7 +23,7 @@ wire cs0 = is_global_cmd ? cs : (a[13] == 0 ? cs : 1'b1);
 wire cs1 = is_global_cmd ? cs : (a[13] == 1 ? cs : 1'b1);
 
 
-sdram_chip chip00 (
+sdram_chip #(00) chip00 (
 	.clk(clk),
 	.cke(cke),
 	.cs(cs0),
@@ -36,7 +36,7 @@ sdram_chip chip00 (
 	.dq(dq[15:0])
 );
 
-sdram_chip chip01(
+sdram_chip #(01) chip01(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs0),
@@ -49,7 +49,7 @@ sdram_chip chip01(
 	.dq(dq[31:16])
 );
 
-sdram_chip chip10(
+sdram_chip #(10) chip10(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs1),
@@ -62,7 +62,7 @@ sdram_chip chip10(
 	.dq(dq[15:0])
 );
 
-sdram_chip chip11(
+sdram_chip #(11) chip11(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs1),
@@ -81,7 +81,7 @@ endmodule
 
 
 
-module sdram_chip(
+module sdram_chip (
   	input        clk,
   	input        cke,
   	input        cs,
@@ -93,6 +93,8 @@ module sdram_chip(
   	input [ 1:0] dqm,
   	inout [15:0] dq
 );
+
+parameter ID = 00;
 
 localparam CMD_INHTBIT			= 4'b1xxx;
 localparam CMD_NOP				= 4'b0111;
@@ -240,6 +242,7 @@ assign data_out_enable = reading;
 wire [8:0] col = cmd == CMD_WRITE && !writing ? a[8 : 0] : col_addr;
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
+		$display("ID = %x", ID);
 		row_buffer[ba][col][7 : 0] <= dqm[0] ? row_buffer[ba][col][7 : 0] : dq[7:0];
 		row_buffer[ba][col][15 : 8] <= dqm[1] ? row_buffer[ba][col][15 : 8] : dq[15:8];
 
