@@ -39,10 +39,10 @@ _load_rodata:
 	la a2, _rodata_vma_end
 	beq a0, a2, _load_data
 _copy_rodata:
-	lbu t0, 0(a1)
-	sb  t0, 0(a0)
-	addi a0, a0, 1
-	addi a1, a1, 1
+	lw t0, 0(a1)
+	sw  t0, 0(a0)
+	addi a0, a0, 4
+	addi a1, a1, 4
 	blt a0, a2, _copy_rodata
 
 _load_data:
@@ -51,10 +51,10 @@ _load_data:
   	la a2, _data_vma_end
   	beq a0, a2, _load_bss
 _copy_data:
-	lbu t0, 0(a1)
-	sb	t0, 0(a0)
-	addi a0, a0, 1
-	addi a1, a1, 1
+	lw t0, 0(a1)
+	sw	t0, 0(a0)
+	addi a0, a0, 4
+	addi a1, a1, 4
 	blt a0, a2, _copy_data
 
 _load_bss:
@@ -62,8 +62,8 @@ _load_bss:
 	la a1, _bss_end
 	beq a0, a1, _call_init
 _clear_bss:
-	sb zero, 0(a0)
-	addi a0, a0, 1
+	sw zero, 0(a0)
+	addi a0, a0, 4
 	blt a0, a1, _clear_bss
 
 _call_init:

@@ -7,7 +7,13 @@ AM_SRCS := riscv/ysyxsoc/start.S \
            platform/dummy/mpe.c
 
 CFLAGS    += -fdata-sections -ffunction-sections
-LDFLAGS   += -T $(AM_HOME)/scripts/ysyxsoc.ld
+
+ifeq ($(NAME), rtthread)
+    LDFLAGS += -T $(AM_HOME)/scripts/ysyxsoc-rtt.ld
+else
+    LDFLAGS += -T $(AM_HOME)/scripts/ysyxsoc.ld
+endif
+
 LDFLAGS   += --gc-sections -e _start
 CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/npc/ioe -I$(AM_HOME)/am/src/riscv/
