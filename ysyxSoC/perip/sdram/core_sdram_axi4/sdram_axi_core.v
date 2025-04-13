@@ -292,6 +292,7 @@ begin
         begin
             // Open row hit
             if (row_open_q[addr_bank_w] && addr_row_w == active_row_q[addr_bank_w])
+				$display("111");
                 next_state_r = STATE_WRITE;
         end
     end
