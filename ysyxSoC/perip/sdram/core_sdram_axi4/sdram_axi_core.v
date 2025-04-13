@@ -63,7 +63,7 @@ module sdram_axi_core
 );
 
 always_ff @(posedge clk_i) begin
-	if (sdram_data_input_i != 0) $display("sdram = %x", sdram_data_input_i);
+	if (sdram_data_input_i != 0) $display("111sdram = %x", sdram_data_input_i);
 end
 
 //-----------------------------------------------------------------
