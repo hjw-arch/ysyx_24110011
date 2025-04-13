@@ -153,6 +153,12 @@ end
 assign data_out = row_buffer[bank_addr][col_addr];
 assign data_out_enable = reading;
 
+always_ff @(posedge clk) begin
+	if (reading) begin
+		$display("data_out = %x, data_enable = %d", data_out, data_out_enable);
+	end
+end
+
 // write
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
