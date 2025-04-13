@@ -3559,7 +3559,7 @@ module ysyxSoCASIC(	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:59:9
                 sdram_ras,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
                 sdram_cas,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
                 sdram_we,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
-  output [12:0] sdram_a,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
+  output [13:0] sdram_a,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
   output [1:0]  sdram_ba,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
   output [3:0]  sdram_dqm,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
   inout  [31:0] sdram_dq,	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:89:19
@@ -4498,7 +4498,7 @@ module ysyxSoCFull(	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:111:9
   wire        _asic_sdram_ras;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire        _asic_sdram_cas;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire        _asic_sdram_we;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
-  wire [12:0] _asic_sdram_a;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
+  wire [13:0] _asic_sdram_a;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire [1:0]  _asic_sdram_ba;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire [3:0]  _asic_sdram_dqm;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:107:24
   wire [3:0]  _dio_wire;	// home/hjw-arch/ysyx-workbench/ysyxSoC/src/SoC.scala:143:23

@@ -5,21 +5,28 @@ module sdram(
   	input        ras,
   	input        cas,
   	input        we,
-  	input [12:0] a,
+  	input [13:0] a,
   	input [ 1:0] ba,
   	input [ 3:0] dqm,
   	inout [31:0] dq
 );
 
-// wire cs0, cs1;
-// assign cs0 = ~a[13] & cs;
-// assign cs1 = a[13] & cs;
+// 检测全局命令
+wire [3:0] cmd = {cs, ras, cas, we};
+wire is_global_cmd = (cmd == 4'b0000) || // LOAD_MODE
+                     (cmd == 4'b0001) || // REFRESH
+                     (cmd == 4'b0010);   // PRECHARGE
+    
+
+// 片选逻辑：全局命令时所有颗粒有效，非全局命令时根据地址选择
+wire cs0 = is_global_cmd ? cs : (a[13] == 0 ? cs : 1'b1);
+wire cs1 = is_global_cmd ? cs : (a[13] == 1 ? cs : 1'b1);
 
 
-sdram_chip #(00) chip00 (
+sdram_chip chip00 (
 	.clk(clk),
 	.cke(cke),
-	.cs(cs),
+	.cs(cs0),
 	.ras(ras),
 	.cas(cas),
 	.we(we),
@@ -29,10 +36,10 @@ sdram_chip #(00) chip00 (
 	.dq(dq[15:0])
 );
 
-sdram_chip #(01) chip01(
+sdram_chip chip01(
 	.clk(clk),
 	.cke(cke),
-	.cs(cs),
+	.cs(cs0),
 	.ras(ras),
 	.cas(cas),
 	.we(we),
@@ -42,31 +49,31 @@ sdram_chip #(01) chip01(
 	.dq(dq[31:16])
 );
 
-// sdram_chip chip10(
-// 	.clk(clk),
-// 	.cke(cke),
-// 	.cs(cs1),
-// 	.ras(ras),
-// 	.cas(cas),
-// 	.we(we),
-// 	.a(a[12:0]),
-// 	.ba(ba),
-// 	.dqm(dqm[1:0]),
-// 	.dq(dq[15:0])
-// );
+sdram_chip chip10(
+	.clk(clk),
+	.cke(cke),
+	.cs(cs1),
+	.ras(ras),
+	.cas(cas),
+	.we(we),
+	.a(a[12:0]),
+	.ba(ba),
+	.dqm(dqm[1:0]),
+	.dq(dq[15:0])
+);
 
-// sdram_chip chip11(
-// 	.clk(clk),
-// 	.cke(cke),
-// 	.cs(cs1),
-// 	.ras(ras),
-// 	.cas(cas),
-// 	.we(we),
-// 	.a(a[12:0]),
-// 	.ba(ba),
-// 	.dqm(dqm[3:2]),
-// 	.dq(dq[31:16])
-// );
+sdram_chip chip11(
+	.clk(clk),
+	.cke(cke),
+	.cs(cs1),
+	.ras(ras),
+	.cas(cas),
+	.we(we),
+	.a(a[12:0]),
+	.ba(ba),
+	.dqm(dqm[3:2]),
+	.dq(dq[31:16])
+);
 
 endmodule
 
@@ -86,8 +93,6 @@ module sdram_chip(
   	input [ 1:0] dqm,
   	inout [15:0] dq
 );
-
-parameter ID = 00;
 
 localparam CMD_INHTBIT			= 4'b1xxx;
 localparam CMD_NOP				= 4'b0111;
