@@ -454,19 +454,19 @@ else if (state_q == STATE_REFRESH)
 // Input sampling
 //-----------------------------------------------------------------
 
-reg [SDRAM_DATA_W-1:0] sample_data0_q;
-always @ (posedge clk_i or posedge rst_i)
-if (rst_i)
-    sample_data0_q <= {SDRAM_DATA_W{1'b0}};
-else
-    sample_data0_q <= sdram_data_in_w;
+// reg [SDRAM_DATA_W-1:0] sample_data0_q;
+// always @ (posedge clk_i or posedge rst_i)
+// if (rst_i)
+//     sample_data0_q <= {SDRAM_DATA_W{1'b0}};
+// else
+//     sample_data0_q <= sdram_data_in_w;
 
 reg [SDRAM_DATA_W-1:0] sample_data_q;
 always @ (posedge clk_i or posedge rst_i)
 if (rst_i)
     sample_data_q <= {SDRAM_DATA_W{1'b0}};
 else
-    sample_data_q <= sample_data0_q;
+    sample_data_q <= sdram_data_in_w;
 
 //-----------------------------------------------------------------
 // Command Output
