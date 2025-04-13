@@ -240,7 +240,7 @@ end
 // write
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
-		$display("ID = %d, cmd = %d, data = %02x", ID, cmd, dq);
+		$display("ID = %d, cmd = %d, data = %02x, writing = %d", ID, cmd, dq, writing);
 		row_buffer[ba][col_addr][7 : 0] <= dqm[0] ? row_buffer[ba][col_addr][7 : 0] : dq[7:0];
 		row_buffer[ba][col_addr][15 : 8] <= dqm[1] ? row_buffer[ba][col_addr][15 : 8] : dq[15:8];
 
