@@ -16,7 +16,7 @@ module sdram(
 // assign cs1 = a[13] & cs;
 
 
-sdram_chip chip00 (
+sdram_chip #(00) chip00 (
 	.clk(clk),
 	.cke(cke),
 	.cs(cs),
@@ -29,7 +29,7 @@ sdram_chip chip00 (
 	.dq(dq[15:0])
 );
 
-sdram_chip chip01(
+sdram_chip #(01) chip01(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs),
@@ -86,6 +86,8 @@ module sdram_chip(
   	input [ 1:0] dqm,
   	inout [15:0] dq
 );
+
+parameter ID = 00;
 
 localparam CMD_INHTBIT			= 4'b1xxx;
 localparam CMD_NOP				= 4'b0111;
@@ -238,7 +240,7 @@ end
 // write
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
-		$display("cmd = %d, data = %02x", cmd, dq);
+		$display("ID = %d, cmd = %d, data = %02x", ID, cmd, dq);
 		row_buffer[ba][col_addr][7 : 0] <= dqm[0] ? row_buffer[ba][col_addr][7 : 0] : dq[7:0];
 		row_buffer[ba][col_addr][15 : 8] <= dqm[1] ? row_buffer[ba][col_addr][15 : 8] : dq[15:8];
 
