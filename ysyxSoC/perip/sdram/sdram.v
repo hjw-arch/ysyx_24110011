@@ -42,6 +42,10 @@ sdram_chip #(01) chip01(
 	.dq(dq[31:16])
 );
 
+always_ff @(posedge clk) begin
+	$display("dq = %x", dq);
+end
+
 // sdram_chip chip10(
 // 	.clk(clk),
 // 	.cke(cke),
@@ -231,17 +235,10 @@ end
 assign data_out = row_buffer[bank_addr][col_addr];
 assign data_out_enable = reading;
 
-always_ff @(posedge clk) begin
-	if (reading) begin
-		$display("read cmd = %d, data = %x", cmd, dq);
-	end
-end
-
 // write
 wire [8:0] col = cmd == CMD_WRITE && !writing ? a[8 : 0] : col_addr;
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
-		$display("ID = %d, cmd = %d, data = %02x, writing = %d, addr = %x", ID, cmd, dq, writing, col);
 		row_buffer[ba][col][7 : 0] <= dqm[0] ? row_buffer[ba][col][7 : 0] : dq[7:0];
 		row_buffer[ba][col][15 : 8] <= dqm[1] ? row_buffer[ba][col][15 : 8] : dq[15:8];
 
