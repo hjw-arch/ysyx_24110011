@@ -633,7 +633,7 @@ if (rst_i) begin
 end else begin
     // 当 rd_q[SDRAM_READ_LATENCY] 为高时，表示数据在本周期结束时到达输入引脚
     // 我们在这个时刻锁存 sdram_data_in_w
-    if (rd_q[SDRAM_READ_LATENCY + 1]) begin // <--- 关键的采样条件 (Latency=2时，此为 rd_q[2])
+    if (rd_q[SDRAM_READ_LATENCY + 2]) begin // <--- 关键的采样条件 (Latency=2时，此为 rd_q[2])
         sample_data_q <= sdram_data_in_w;
         // $display($time, " Capturing SDRAM Data: %h", sdram_data_in_w); // DEBUG
     end
