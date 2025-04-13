@@ -222,7 +222,7 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-	writing <= (cmd == CMD_WRITE && !writing) ? 1'b1 : (burst_counter == 1 && writing || cmd == CMD_TERMINATE) ? 1'b0 : writing;
+	writing <= (cmd == CMD_WRITE && !writing && burst_length != 0) ? 1'b1 : (burst_counter == 1 && writing || cmd == CMD_TERMINATE) ? 1'b0 : writing;
 end
 
 // read
