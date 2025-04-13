@@ -353,7 +353,6 @@ begin
     STATE_READ_WAIT :
     begin
         delay_r = SDRAM_READ_LATENCY;
-		$display("here111");
         // Another pending read request (with no refresh pending)
         if (!refresh_q && ram_req_w && ram_rd_w)
         begin
@@ -606,7 +605,7 @@ begin
     //-----------------------------------------
     STATE_WRITE :
     begin
-		$display("here");
+		$display("here, addr = %x", addr_col_w);
         command_q       <= CMD_WRITE;
         addr_q          <= addr_col_w;
         bank_q          <= addr_bank_w;
