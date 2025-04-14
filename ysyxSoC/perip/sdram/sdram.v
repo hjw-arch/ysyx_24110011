@@ -23,7 +23,7 @@ wire cs0 = is_global_cmd ? cs : (a[13] == 0 ? cs : 1'b1);
 wire cs1 = is_global_cmd ? cs : (a[13] == 1 ? cs : 1'b1);
 
 
-sdram_chip #(00) chip00 (
+sdram_chip #(2'b00) chip00 (
 	.clk(clk),
 	.cke(cke),
 	.cs(cs0),
@@ -36,7 +36,7 @@ sdram_chip #(00) chip00 (
 	.dq(dq[15:0])
 );
 
-sdram_chip #(01) chip01(
+sdram_chip #(2'b01) chip01(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs0),
@@ -49,7 +49,7 @@ sdram_chip #(01) chip01(
 	.dq(dq[31:16])
 );
 
-sdram_chip #(10) chip10(
+sdram_chip #(2'b10) chip10(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs1),
@@ -62,7 +62,7 @@ sdram_chip #(10) chip10(
 	.dq(dq[15:0])
 );
 
-sdram_chip #(11) chip11(
+sdram_chip #(2'b11) chip11(
 	.clk(clk),
 	.cke(cke),
 	.cs(cs1),
@@ -81,7 +81,7 @@ endmodule
 
 
 
-module sdram_chip #(parameter ID) (
+module sdram_chip #(parameter ID = 2'b00) (
   	input        clk,
   	input        cke,
   	input        cs,
