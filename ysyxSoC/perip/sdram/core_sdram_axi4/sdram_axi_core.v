@@ -63,7 +63,7 @@ module sdram_axi_core
 );
 
 always_ff @(posedge clk_i) begin
-	if (inport_rd_i) begin
+	if (sdram_addr_o[13]) begin
 		$display("adder = %x", inport_addr_i);
 	end
 end
