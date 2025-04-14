@@ -246,7 +246,7 @@ assign data_out_enable = reading;
 wire [8:0] col = cmd == CMD_WRITE && !writing ? a[8 : 0] : col_addr;
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
-		$display("ID = %x", ID);
+		$display("ID = %x, write address is %x, col is %x", ID, active_row, col);
 		row_buffer[ba][col][7 : 0] <= dqm[0] ? row_buffer[ba][col][7 : 0] : dq[7:0];
 		row_buffer[ba][col][15 : 8] <= dqm[1] ? row_buffer[ba][col][15 : 8] : dq[15:8];
 
