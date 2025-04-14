@@ -177,7 +177,7 @@ reg  [STATE_W-1:0]     delay_state_q;
 // Address bits
 // 一次位扩展，地址+1
 
-wire [SDRAM_ROW_W-1:0]  addr_col_w  = {ram_addr_w[13], {4{1'b0}}, ram_addr_w[10:2]};
+wire [SDRAM_ROW_W-1:0]  addr_col_w  = {ram_addr_w[26], {4{1'b0}}, ram_addr_w[10:2]};
 wire [SDRAM_ROW_W-1:0]  addr_row_w  = ram_addr_w[26:13];
 wire [SDRAM_BANK_W-1:0] addr_bank_w = ram_addr_w[12:11];
 
