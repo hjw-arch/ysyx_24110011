@@ -13,6 +13,7 @@ module sdram(
 
 always_ff @(posedge clk) begin
 	if (a[13]) $display("sdram addr = %x", a);
+	if (cmd == 4'b0100) $display("write address is %x", a);
 end
 
 // 检测全局命令
