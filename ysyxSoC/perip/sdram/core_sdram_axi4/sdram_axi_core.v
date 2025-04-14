@@ -62,6 +62,12 @@ module sdram_axi_core
     ,output          sdram_data_out_en_o
 );
 
+always_ff @(posedge clk_i) begin
+	if (inport_rd_i) begin
+		$display("adder = %x", inport_addr_i);
+	end
+end
+
 //-----------------------------------------------------------------
 // Key Params
 //-----------------------------------------------------------------
