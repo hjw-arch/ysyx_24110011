@@ -81,7 +81,7 @@ endmodule
 
 
 
-module sdram_chip (
+module sdram_chip #(parameter ID) (
   	input        clk,
   	input        cke,
   	input        cs,
@@ -94,7 +94,6 @@ module sdram_chip (
   	inout [15:0] dq
 );
 
-parameter ID = 00;
 
 localparam CMD_INHTBIT			= 4'b1xxx;
 localparam CMD_NOP				= 4'b0111;
