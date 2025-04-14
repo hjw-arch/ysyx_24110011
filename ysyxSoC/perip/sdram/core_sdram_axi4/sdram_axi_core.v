@@ -62,12 +62,6 @@ module sdram_axi_core
     ,output          sdram_data_out_en_o
 );
 
-always_ff @(posedge clk_i) begin
-	if (sdram_addr_o[13]) begin
-		$display("adder = %x", inport_addr_i);
-	end
-end
-
 //-----------------------------------------------------------------
 // Key Params
 //-----------------------------------------------------------------
@@ -186,6 +180,13 @@ reg  [STATE_W-1:0]     delay_state_q;
 wire [SDRAM_ROW_W-1:0]  addr_col_w  = {{(SDRAM_ROW_W-SDRAM_COL_W){1'b0}}, ram_addr_w[10:2]};
 wire [SDRAM_ROW_W-1:0]  addr_row_w  = ram_addr_w[26:13];
 wire [SDRAM_BANK_W-1:0] addr_bank_w = ram_addr_w[12:11];
+
+
+always_ff @(posedge clk_i) begin
+	if (command_q == CMD_ACTIVE || command_q == CMD_READ || command_q == CMD_WRITE) begin
+		$display("col is %x, row is %x", addr_col_w, addr_row_w);
+	end
+end
 
 //-----------------------------------------------------------------
 // SDRAM State Machine
