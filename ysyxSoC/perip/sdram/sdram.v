@@ -11,6 +11,10 @@ module sdram(
   	inout [31:0] dq
 );
 
+always_ff @(posedge clk) begin
+	if (!cs) $display("sdram addr = %x", a);
+end
+
 // 检测全局命令
 wire [3:0] cmd = {cs, ras, cas, we};
 wire is_global_cmd = (cmd == 4'b0000) || // LOAD_MODE
