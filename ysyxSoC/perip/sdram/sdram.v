@@ -11,11 +11,6 @@ module sdram(
   	inout [31:0] dq
 );
 
-always_ff @(posedge clk) begin
-	if (a[13]) $display("sdram addr = %x", a);
-	if (cmd == 4'b0100 || cmd == 4'b0011) $display("write address is %x", a);
-end
-
 // 检测全局命令
 wire [3:0] cmd = {cs, ras, cas, we};
 wire is_global_cmd = (cmd == 4'b0000) || // LOAD_MODE
@@ -246,7 +241,6 @@ assign data_out_enable = reading;
 wire [8:0] col = cmd == CMD_WRITE && !writing ? a[8 : 0] : col_addr;
 always_ff @(posedge clk) begin
 	if (cmd == CMD_WRITE || writing) begin
-		$display("ID = %x, write address is %x, col is %x", ID, active_row, col);
 		row_buffer[ba][col][7 : 0] <= dqm[0] ? row_buffer[ba][col][7 : 0] : dq[7:0];
 		row_buffer[ba][col][15 : 8] <= dqm[1] ? row_buffer[ba][col][15 : 8] : dq[15:8];
 
