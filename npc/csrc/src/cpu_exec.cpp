@@ -33,11 +33,21 @@ void halt() {
     }
 }
 
+#ifdef NVBOARD
+
+#include "nvboard.h"
+
+#endif
+
 void cpu_exec_one() {
     
 	do {
 		cycle;
 	} while(dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__start != 1 && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak);
+
+#ifdef NVBOARD
+	nvboard_update();
+#endif
 
     cycle_times++;      // 测试CPU性能使用
 

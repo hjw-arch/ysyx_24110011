@@ -97,9 +97,22 @@ static int parse_args(int argc, char *argv[]) {
   return 0;
 }
 
+#ifdef NVBOARD
+
+#include "nvboard.h"
+void nvboard_bind_all_pins(VysyxSoCFull* dut);
+
+#endif
 
 int main(int argc, char *argv[]) {
     Verilated::commandArgs(argc, argv);		// For SOC
+
+#ifdef NVBOARD
+
+	nvboard_bind_all_pins(&dut);
+	nvboard_init();
+
+#endif
 
     parse_args(argc, argv);
     init_disasm("riscv32" "-pc-linux-gnu");

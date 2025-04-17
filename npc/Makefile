@@ -68,11 +68,33 @@ run: $(VERILATOR_SRC)
 # --------------------- NVBOARD ----------------------------
 # TODO
 
+include $(NVBOARD_HOME)/scripts/nvboard.mk
+
+NXDC_FILES = $(abspath ./constr/top.nxdc)
+SRC_AUTO_BIND = $(abspath $(BUILD_DIR)/auto_bind.cpp)
+# 生成引脚绑定函数
+$(SRC_AUTO_BIND): $(NXDC_FILES)
+	python3 $(NVBOARD_HOME)/scripts/auto_pin_bind.py $^ $@
+
+NVBOARD_CSRC += $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE)
+
+# INC_PATH += /home/hjw-arch/ysyx_workbench/nvboard/include
+
+NVBOARD_CFLAGS = $(addprefix -CFLAGS , $(addprefix -I, $(INC_PATH)) $(CXXFLAGS))
 
 
-
-
-
+sim: $(SRC_AUTO_BIND)
+	@echo
+	@echo "---------------- Simulation start -----------------"
+	$(VERILATOR) $(VERILATOR_FLAGS) $(NVBOARD_CFLAGS) $(VERILATOR_SRC) $(NVBOARD_CSRC) $(addprefix -LDFLAGS , $(LDFLAGS)) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	@echo
+	@echo
+	@echo "---------------- Simulation running -----------------"
+	@echo
+	@$(OBJ_DIR)/V$(TOP_NAME) $(NPCARGS) $(IMG)
+	@echo
+	$(call git_commit, "sim RTL")
+	@echo "-------------------- Finish -----------------------"
 
 
 clean:
