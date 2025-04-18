@@ -13,7 +13,7 @@ SECTIONS {
 		KEEP(*(.fsld))
 	} > flash AT> flash
 
-	. = ORIGIN(sdram);
+	. = ORIGIN(sram);
 	.ssld : {
 		_ssld_vma_start = .;
 		KEEP(*(.ssld))
