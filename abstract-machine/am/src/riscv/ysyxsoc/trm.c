@@ -29,6 +29,7 @@ static const char mainargs[] = MAINARGS;
 #define UART_MSB	*(volatile uint8_t *)(UART_BASE + 0x01)
 
 #define UART_FIFO_EMPTY_MASK	1 << 5
+#define UART_DATA_READY			1 << 0
 
 void uart_init() {
 	UART_LCR = 0x83;	// 0b10000011
@@ -57,6 +58,7 @@ void halt(int code) {
 void _trm_init() {
 	uart_init();
 	print_id();
+	printf("mainargs = %c\n", mainargs);
 	int ret = main(mainargs);
 	halt(ret);
 }
