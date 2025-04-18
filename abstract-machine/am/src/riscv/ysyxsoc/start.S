@@ -51,10 +51,10 @@ _load_data:
   	la a2, _data_vma_end
   	beq a0, a2, _load_bss
 _copy_data:
-	lw t0, 0(a1)
-	sw	t0, 0(a0)
-	addi a0, a0, 4
-	addi a1, a1, 4
+	lbu t0, 0(a1)
+	sb	t0, 0(a0)
+	addi a0, a0, 1
+	addi a1, a1, 1
 	blt a0, a2, _copy_data
 
 _load_bss:
