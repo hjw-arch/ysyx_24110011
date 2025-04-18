@@ -58,7 +58,6 @@ void halt(int code) {
 void _trm_init() {
 	uart_init();
 	print_id();
-	printf("mainargs = %c\n", mainargs);
 	int ret = main(mainargs);
 	halt(ret);
 }
