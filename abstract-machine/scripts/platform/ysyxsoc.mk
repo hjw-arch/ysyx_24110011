@@ -7,7 +7,7 @@ AM_SRCS := riscv/ysyxsoc/start.S \
            platform/dummy/vme.c \
            platform/dummy/mpe.c
 
-CFLAGS    += -fdata-sections -ffunction-sections
+# CFLAGS    += -fdata-sections -ffunction-sections
 
 ifeq ($(NAME), rtthread)
     LDFLAGS += -T $(AM_HOME)/scripts/ysyxsoc-rtt.ld
