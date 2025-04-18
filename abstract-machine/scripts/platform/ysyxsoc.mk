@@ -7,7 +7,7 @@ AM_SRCS := riscv/ysyxsoc/start.S \
            platform/dummy/vme.c \
            platform/dummy/mpe.c
 
-# CFLAGS    += -fdata-sections -ffunction-sections
+CFLAGS    += -fdata-sections -ffunction-sections
 
 ifeq ($(NAME), rtthread)
     LDFLAGS += -T $(AM_HOME)/scripts/ysyxsoc-rtt.ld
@@ -15,7 +15,7 @@ else
     LDFLAGS += -T $(AM_HOME)/scripts/ysyxsoc.ld
 endif
 
-LDFLAGS   += -e _start
+LDFLAGS   += --gc-sections -e _start
 CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/ysyxsoc/ioe -I$(AM_HOME)/am/src/riscv/
 .PHONY: $(AM_HOME)/am/src/riscv/ysyxsoc/trm.c
