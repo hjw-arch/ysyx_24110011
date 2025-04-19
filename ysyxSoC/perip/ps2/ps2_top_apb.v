@@ -74,11 +74,11 @@ FIFO #(8, 8) fifo (
 	.full(fifo_full)
 );
 
-always_ff @(posedge clock) begin
-	if (sampling && ^rx_data[8:0] && ps2_data_sync && cnt == 4'd9) begin
-		$display("receive data is %x", rx_data[7:0]);
-	end
-end
+// always_ff @(posedge clock) begin
+// 	if (sampling && ^rx_data[8:0] && ps2_data_sync && cnt == 4'd9) begin
+// 		$display("receive data is %x", rx_data[7:0]);
+// 	end
+// end
 
 
 endmodule
