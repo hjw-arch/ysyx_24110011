@@ -108,7 +108,7 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-	if (wen) $display("w_ptr = %d", w_ptr);
+	if (wen) $display("w_ptr = %d, r_ptr = %d", w_ptr, r_ptr);
 end
 
 always_ff @(posedge clk) begin
