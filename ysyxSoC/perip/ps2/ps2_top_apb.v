@@ -17,7 +17,7 @@ module ps2_top_apb(
 );
 
 assign in_pslverr = 1'b0;
-assign in_pready = in_penable & in_psel;
+assign in_pready = 1'b1;
 
 assign in_prdata = {24'b0, fifo_empty ? 8'b0 : fifo_rdata};
 
