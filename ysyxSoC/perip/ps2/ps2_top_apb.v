@@ -17,12 +17,7 @@ module ps2_top_apb(
 );
 
 assign in_pslverr = in_penable & (in_paddr[2] | in_paddr[1] | in_paddr[0]) | fifo_empty;
-assign in_pready = ready_ff;
-
-reg ready_ff;
-always_ff @(posedge clock) begin
-	ready_ff <= in_psel & in_penable;
-end
+assign in_pready = in_penable & in_psel;
 
 assign in_prdata = {24'b0, fifo_empty ? 8'b0 : fifo_rdata};
 
@@ -67,7 +62,7 @@ end
 wire fifo_wen, fifo_ren, fifo_empty, fifo_full;
 wire [7:0] fifo_rdata;
 
-assign fifo_wen = sampling & ^rx_data[8:0] && ps2_data_sync && cnt == 4'd9;
+assign fifo_wen = sampling && ^rx_data[8:0] && ps2_data_sync && cnt == 4'd9;
 assign fifo_ren = in_psel & in_penable & ~in_pwrite & (in_paddr[2:0] == 3'b000);
 
 FIFO #(8, 8) fifo (
