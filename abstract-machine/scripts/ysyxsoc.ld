@@ -1,10 +1,11 @@
 ENTRY(_start)
+/* PHDRS { text PT_LOAD; data PT_LOAD; bss PT_LOAD;} */
 
 MEMORY {
-    sdram : ORIGIN = 0xa0000000, LENGTH = 32M
+    sdram : ORIGIN = 0xa0000000, LENGTH = 128M
     psram : ORIGIN = 0x80000000, LENGTH = 4M
-    flash : ORIGIN = 0x30000000, LENGTH = 64M
-    sram  : ORIGIN = 0x0f000000, LENGTH = 8K
+    flash : ORIGIN = 0x30000000, LENGTH = 64M /* 确保 ORIGIN 是 4 字节对齐的 */
+    sram : ORIGIN = 0x0f000000, LENGTH = 8K   /* 确保 ORIGIN 是 4 字节对齐的 */
 }
 
 SECTIONS {
@@ -12,65 +13,82 @@ SECTIONS {
         KEEP(*(.fsld))
     } > flash AT> flash
 
+    . = ALIGN(4);
+
     . = ORIGIN(sram);
-    .ssld : {
+    .ssld : ALIGN(4)
+    {
         _ssld_vma_start = .;
         KEEP(*(.ssld))
         _ssld_vma_end = .;
-    } > sram AT> flash : ALIGN(4)  /* 确保 .ssld 的 LMA 4 字节对齐 */
+    } > sram AT> flash
 
-    _ssld_lma_start = LOADADDR(.ssld);
+    _ssld_lma_start = LOADADDR(.ssld); 
 
-    . = ORIGIN(sdram);
-    .text : {
+
+    . = ORIGIN(sdram); 
+    .text : ALIGN(4)
+    {
         _text_vma_start = .;
         *(entry)
         *(.text*)
         _text_vma_end = .;
-    } > sdram AT> flash : ALIGN(4)  /* 确保 .text 的 LMA 4 字节对齐 */
+    } > sdram AT> flash
     etext = .;
     _etext = .;
-
     _text_lma_start = LOADADDR(.text);
 
-    .rodata : {
+    . = ALIGN(4);
+
+
+    .rodata : ALIGN(4)
+    {
         _rodata_vma_start = .;
         *(.rodata*)
         *(.srodata*)
         _rodata_vma_end = .;
-    } > sdram AT> flash : ALIGN(4)  /* 确保 .rodata 的 LMA 4 字节对齐 */
-
+    } > sdram AT> flash
     _rodata_lma_start = LOADADDR(.rodata);
 
-    .data : {
+    . = ALIGN(4);
+
+
+    .data : ALIGN(4) 
+    {
         _data_vma_start = .;
         *(.data*)
         *(.sdata*)
         _data_vma_end = .;
-    } > sdram AT> flash : ALIGN(4)  /* 确保 .data 的 LMA 4 字节对齐 */
+    } > sdram AT> flash
     edata = .;
-    _data = .;
+    _data = .; 
+    _data_lma_start = LOADADDR(.data); 
 
-    _data_lma_start = LOADADDR(.data);
 
-    .bss : {
+    . = ALIGN(4);
+
+
+    .bss : 
+    {
         _bss_start = .;
         *(.bss*)
         *(.sbss*)
         *(.scommon)
         _bss_end = .;
     } > sdram
-
     _bss_size = _bss_end - _bss_start;
 
-    . = ALIGN(4);
+
+    . = ALIGN(4); 
     _heap_start = .;
+
     _heap_end = ORIGIN(sdram) + LENGTH(sdram);
 
+
     . = ORIGIN(sram);
-    _stack_top = .;
-    . = _stack_top + LENGTH(sram);
-    _stack_pointer = .;              /* 堆栈初始指针 */
+    _stack_bottom = .; 
+    . = _stack_bottom + LENGTH(sram);
+    _stack_pointer = .; 
 
     end = .;
     _end = .;
