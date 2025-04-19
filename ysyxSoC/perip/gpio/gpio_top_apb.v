@@ -109,8 +109,12 @@ always_ff @(posedge clock) begin
 	endcase
 end
 
+reg pready;
+always_ff @(posedge clock) begin
+	pready <= (in_penable & in_psel);
+end
 
-assign in_pready = (in_penable & in_psel);
+assign in_pready = pready;
 assign in_pslverr = 1'b0;
 
 
