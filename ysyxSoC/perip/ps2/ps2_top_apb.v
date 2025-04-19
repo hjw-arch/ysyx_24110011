@@ -46,12 +46,12 @@ wire ps2_data_sync = ps2_data_ff2;
 
 reg receiving;		// 接收数据中, 其实就是状态机
 always_ff @(posedge clock) begin
-	receiving <= (reset | cnt == 4'd9) ? 1'b0 : 
+	receiving <= reset | (cnt == 4'd9 && sampling) ? 1'b0 : 
 				 (~receiving & sampling & ~ps2_data_sync) ? 1'b1 : receiving;
 end
 
 always_ff @(posedge clock) begin
-	cnt <=		reset | cnt == 4'd9 ? 4'b0 :
+	cnt <=		reset | (cnt == 4'd9 && sampling) ? 4'b0 :
 				receiving & sampling ? cnt + 1 : cnt;
 end
 
