@@ -96,7 +96,7 @@ module FIFO #(
 	output 						empty
 );
 
-reg [DATA_WIDTH - 1 : 0] FIFO [0 : FIFO_DEPTH - 1];
+reg [DATA_WIDTH - 1 : 0] fifo_reg [0 : FIFO_DEPTH - 1];
 reg [INDEX_WIDTH : 0] w_ptr, r_ptr;
 
 assign empty = (w_ptr == r_ptr);
@@ -108,11 +108,16 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-	if (wen) $display("w_ptr = %d, r_ptr = %d", w_ptr, r_ptr);
+	if (wen) begin
+		$display("w_ptr = %d, r_ptr = %d", w_ptr, r_ptr);
+		for (int i = 0; i < 8; i++) begin
+			$display("fifo[%d] = %x", i, fifo_reg[i]);
+		end
+	end
 end
 
 always_ff @(posedge clk) begin
-	FIFO[w_ptr[INDEX_WIDTH-1:0]] <= (wen && !full) ? wdata : FIFO[w_ptr[INDEX_WIDTH-1:0]];
+	fifo_reg[w_ptr[INDEX_WIDTH-1:0]] <= (wen && !full) ? wdata : fifo_reg[w_ptr[INDEX_WIDTH-1:0]];
 end
 
 // 读
@@ -120,7 +125,7 @@ always_ff @(posedge clk) begin
 	r_ptr <= rst ? 0 : (ren && !empty) ? r_ptr + 1 : r_ptr;
 end
 
-assign rdata = FIFO[r_ptr[INDEX_WIDTH-1:0]];
+assign rdata = fifo_reg[r_ptr[INDEX_WIDTH-1:0]];
 
 
 endmodule
