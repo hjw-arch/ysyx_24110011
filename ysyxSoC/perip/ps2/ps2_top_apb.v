@@ -108,6 +108,10 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
+	if (wen) $display("w_ptr = %d", w_ptr);
+end
+
+always_ff @(posedge clk) begin
 	FIFO[w_ptr[INDEX_WIDTH-1:0]] <= (wen && !full) ? wdata : FIFO[w_ptr[INDEX_WIDTH-1:0]];
 end
 
