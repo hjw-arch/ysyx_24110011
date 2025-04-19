@@ -29,6 +29,3 @@ image: $(IMAGE).elf
 
 run: image
 	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" sim IMG=$(IMAGE).bin
-
-# nvboard: image
-# 	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" nvboard IMG=$(IMAGE).bin
