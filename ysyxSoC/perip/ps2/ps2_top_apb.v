@@ -115,6 +115,9 @@ always_ff @(posedge clk) begin
 			$display("fifo[%d] = %x", i, fifo_reg[i]);
 		end
 	end
+	if (ren) begin
+		$display("AAA");
+	end
 end
 
 always_ff @(posedge clk) begin
