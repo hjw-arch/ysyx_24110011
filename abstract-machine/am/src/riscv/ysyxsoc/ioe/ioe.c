@@ -21,7 +21,7 @@ void __am_uart_rx(AM_UART_RX_T *rx);
 
 
 // static void __am_timer_config(AM_TIMER_CONFIG_T *cfg) { cfg->present = true; cfg->has_rtc = true; }
-// static void __am_input_config(AM_INPUT_CONFIG_T *cfg) { cfg->present = false;  }
+static void __am_input_config(AM_INPUT_CONFIG_T *cfg) { cfg->present = false;  }
 static void __am_uart_config(AM_INPUT_CONFIG_T *cfg) { cfg->present = true;  }
 
 typedef void (*handler_t)(void *buf);
@@ -29,7 +29,7 @@ static void *lut[8] = {
 	// [AM_TIMER_CONFIG] = __am_timer_config,
 	// [AM_TIMER_RTC] = __am_timer_rtc,
 	// [AM_TIMER_UPTIME] = __am_timer_uptime,
-	// [AM_INPUT_CONFIG] = __am_input_config,
+	[AM_INPUT_CONFIG] = __am_input_config,
 	// [AM_INPUT_KEYBRD] = __am_input_keybrd,
 	// [AM_GPU_CONFIG] = __am_gpu_config,
 	// [AM_GPU_FBDRAW] = __am_gpu_fbdraw,
@@ -45,16 +45,11 @@ static void *lut[8] = {
 static void fail(void *buf) { panic("access nonexist register"); }
 #include "stdio.h"
 bool ioe_init() {
-	for (int i = 0; i < LENGTH(lut); i++) {
-		printf("lut[%d] = %x\n", i, lut[i]);
-	}
   for (int i = 0; i < LENGTH(lut); i++)
     if (!lut[i]) lut[i] = fail;
 //   __am_timer_init();
 //   __am_gpu_init();
 //   __am_audio_init();
-	// lut[AM_UART_CONFIG] = __am_uart_config;
-	// lut[AM_UART_RX] = __am_uart_rx;
   return true;
 }
 

@@ -25,7 +25,6 @@ SECTIONS {
 
     _ssld_lma_start = LOADADDR(.ssld); 
 
-
     . = ORIGIN(sdram); 
     .text : ALIGN(4)
     {
@@ -40,7 +39,6 @@ SECTIONS {
 
     . = ALIGN(4);
 
-
     .rodata : ALIGN(4)
     {
         _rodata_vma_start = .;
@@ -51,7 +49,6 @@ SECTIONS {
     _rodata_lma_start = LOADADDR(.rodata);
 
     . = ALIGN(4);
-
 
     .data : ALIGN(4) 
     {
@@ -64,9 +61,7 @@ SECTIONS {
     _data = .; 
     _data_lma_start = LOADADDR(.data); 
 
-
     . = ALIGN(4);
-
 
     .bss : 
     {
