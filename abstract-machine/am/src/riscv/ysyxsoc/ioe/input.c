@@ -6,7 +6,6 @@
 
 #include "stdio.h"
 void __am_input_keybrd(AM_INPUT_KEYBRD_T *kbd) {
-	printf("BBB\n");
 	kbd->keycode = KEYBOARD;
     kbd->keydown = (kbd->keycode & KEYDOWN_MASK) >> 15;
     // kbd->keycode = kbd->keycode & (~KEYDOWN_MASK);
