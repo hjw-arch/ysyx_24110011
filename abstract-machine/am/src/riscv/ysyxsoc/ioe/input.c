@@ -79,18 +79,6 @@ const unsigned char scancode_to_keymap[256] = {
     [0x5F] = AM_KEY_APPLICATION,  // 0xE0 0x2F: Application (Menu key, E0 prefix)
     [0x11] = AM_KEY_LALT,         // 0x11: Left Alt
     [0x29] = AM_KEY_SPACE,        // 0x29: Space
-    // [0xE0 + 0x11] = AM_KEY_RALT,         // 0xE0 0x11: Right Alt
-    // [0xE0 + 0x14] = AM_KEY_RCTRL,        // 0xE0 0x14: Right Ctrl
-    // [0xE0 + 0x75] = AM_KEY_UP,           // 0xE0 0x75: Up Arrow
-    // [0xE0 + 0x72] = AM_KEY_DOWN,         // 0xE0 0x72: Down Arrow
-    // [0xE0 + 0x6B] = AM_KEY_LEFT,         // 0xE0 0x6B: Left Arrow
-    // [0xE0 + 0x74] = AM_KEY_RIGHT,        // 0xE0 0x74: Right Arrow
-    // [0xE0 + 0x70] = AM_KEY_INSERT,       // 0xE0 0x70: Insert
-    // [0xE0 + 0x71] = AM_KEY_DELETE,       // 0xE0 0x71: Delete
-    // [0xE0 + 0x6C] = AM_KEY_HOME,         // 0xE0 0x6C: Home
-    // [0xE0 + 0x69] = AM_KEY_END,          // 0xE0 0x69: End
-    // [0xE0 + 0x7D] = AM_KEY_PAGEUP,       // 0xE0 0x7D: Page Up
-    // [0xE0 + 0x7A] = AM_KEY_PAGEDOWN      // 0xE0 0x7A: Page Down
 };
 
 #include "stdio.h"
@@ -132,7 +120,6 @@ void __am_input_keybrd(AM_INPUT_KEYBRD_T *kbd) {
 		case 0x14: // E0 14 -> Right Ctrl
 			kbd->keycode = AM_KEY_RCTRL;
 			break;
-		// 你要求的其他 E0 键:
 		case 0x75: // E0 75 -> Up Arrow
 			kbd->keycode = AM_KEY_UP;
 			break;
