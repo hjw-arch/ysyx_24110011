@@ -3,6 +3,8 @@ AM_SRCS := riscv/ysyxsoc/start.S \
            riscv/ysyxsoc/cte.c \
            riscv/ysyxsoc/trap.S \
 		   riscv/ysyxsoc/ioe/ioe.c \
+		   riscv/ysyxsoc/ioe/uart.c \
+		   riscv/ysyxsoc/ioe/input.c \
            platform/dummy/vme.c \
            platform/dummy/mpe.c
 
@@ -16,8 +18,8 @@ endif
 
 LDFLAGS   += --gc-sections -e _start
 CFLAGS += -DMAINARGS=\"$(mainargs)\"
-CFLAGS += -I$(AM_HOME)/am/src/riscv/npc/ioe -I$(AM_HOME)/am/src/riscv/
-.PHONY: $(AM_HOME)/am/src/riscv/npc/trm.c
+CFLAGS += -I$(AM_HOME)/am/src/riscv/ysyxsoc/ioe -I$(AM_HOME)/am/src/riscv/
+.PHONY: $(AM_HOME)/am/src/riscv/ysyxsoc/trm.c
 
 NPCARGS = -e $(IMAGE).elf -d ./libnemu.so
 
@@ -28,6 +30,3 @@ image: $(IMAGE).elf
 
 run: image
 	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" sim IMG=$(IMAGE).bin
-
-# nvboard: image
-# 	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" nvboard IMG=$(IMAGE).bin

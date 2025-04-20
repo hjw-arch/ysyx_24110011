@@ -83,7 +83,7 @@ NVBOARD_CSRC += $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE)
 NVBOARD_CFLAGS = $(addprefix -CFLAGS , $(addprefix -I, $(INC_PATH)) $(CXXFLAGS))
 
 
-sim: $(SRC_AUTO_BIND)
+sim: $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE)
 	@echo
 	@echo "---------------- Simulation start -----------------"
 	$(VERILATOR) $(VERILATOR_FLAGS) $(NVBOARD_CFLAGS) $(VERILATOR_SRC) $(NVBOARD_CSRC) $(addprefix -LDFLAGS , $(LDFLAGS)) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
