@@ -109,7 +109,7 @@ assign vga_vsync = ~vsync_active;
 reg vsync_active;
 always_ff @(posedge clock) begin
 	if (reset) begin
-		vsync_active <= 1'b1;
+		vsync_active <= 1'b0;
 	end else begin
 		case({(h_cnt == H_TOTAL - 1), (v_cnt == V_DISPLAY + V_FP - 1), (v_cnt == V_DISPLAY + V_FP + V_SYNC - 1)})
 			3'b110: vsync_active <= 1'b1;
