@@ -45,7 +45,7 @@ module CLINT (
 /*************************************** 回复无关信号 ******************************************/
 // 读通道
 assign rid 		= 		arid;
-assign rresp 	= 		{{araddr[15:2] != 16'h0000 | araddr[15:2] != 16'h0004}, 1'b0};
+assign rresp 	= 		{{araddr[15:0] != 16'h0 | araddr[15:0] != 16'h4}, 1'b0};
 assign rlast 	= 		1'b1;
 
 // 写通道
