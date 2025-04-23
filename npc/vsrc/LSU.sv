@@ -169,5 +169,22 @@ axi4_full_master u_axi4_full_master(
 );
 
 
+/************************** 性能计数器 *****************************/
+
+import "DPI-C" function void PerformanceCounter_lsu_fetch();
+import "DPI-C" function void PerformanceCounter_lsu_store();
+
+always_ff @(posedge clk) begin
+	if (done & lsu_ren)  PerformanceCounter_lsu_fetch();
+end
+
+always_ff @(posedge clk) begin
+	if (done & lsu_wen)  PerformanceCounter_lsu_store();
+end
+
+
+/******************************************************************/
+
+
 endmodule
 

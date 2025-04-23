@@ -69,6 +69,18 @@ end
 
 
 
+/************************** 性能计数器 *****************************/
+
+import "DPI-C" function void PerformanceCounter_idu_identify_inst(input int inst);
+
+always_ff @(posedge clk) begin
+	if (idu_valid & (state != S_WAIT_READY)) PerformanceCounter_idu_identify_inst(inst);
+end
+
+
+/******************************************************************/
+
+
 
 // Imm
 wire [31 : 0] imm;

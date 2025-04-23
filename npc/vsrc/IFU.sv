@@ -118,7 +118,16 @@ axi4_full_master u_axi4_full_master(
 );
 
 
+/************************** 性能计数器 *****************************/
 
+import "DPI-C" function void PerformanceCounter_ifu_fetch();
+
+always_ff @(posedge clk) begin
+	if (done) PerformanceCounter_ifu_fetch();
+end
+
+
+/******************************************************************/
 
 
 

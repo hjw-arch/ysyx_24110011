@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include "VysyxSoCFull.h"
 #include "VysyxSoCFull__Dpi.h"
-#include "VysyxSoCFull__Dpi.h"
 
 #define RAM_START_ADDR  0x30000000
 #define RAM_SIZE        0x10000000

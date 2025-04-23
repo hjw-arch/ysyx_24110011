@@ -23,6 +23,8 @@
 // device
 // #define CONFIG_DEVICE       1
 
+#define PERFORMANCE_COUNTER		1
+
 #define NVBOARD				1
 
 
