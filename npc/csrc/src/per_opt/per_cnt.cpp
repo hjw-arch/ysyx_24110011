@@ -20,12 +20,12 @@
 uint64_t ifu_fetch_inst = 0;
 uint64_t lsu_fetch_data = 0;
 uint64_t lsu_store_data = 0;
-uint64_t exu_finish_cal = 0;
+uint64_t exu_finish_cal = 1;		// 最后一条指令 ebreak
 
 uint64_t idu_identify_inst__cal = 0;
 uint64_t idu_identify_inst__ls = 0;
 uint64_t idu_identify_inst__jmp = 0;
-uint64_t idu_identify_inst__csr = 0;
+uint64_t idu_identify_inst__csr = 1;		// 最后一条指令 ebreak
 uint64_t idu_identify_inst__unknown = 0;
 
 void PerformanceCounter_ifu_fetch() {
