@@ -18,11 +18,12 @@ cpu_t cpu;
 uint32_t cpu_state = RUNNING;
 
 uint64_t cycle_times = 0;
+uint64_t dynamic_insts = 0;
 
 void halt() {
     cpu_state = IDLE;
 
-    printf("\n\nTotle cycle times = %lu\n\n", cycle_times);
+    printf(ANSI_FG_RED"\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n"ANSI_NONE, cycle_times, dynamic_insts);
 
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
@@ -43,12 +44,13 @@ void cpu_exec_one() {
     
 	do {
 		cycle;
+		cycle_times++;      // 测试CPU性能使用
 #ifdef NVBOARD
 		nvboard_update();
 #endif
 	} while(dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__start != 1 && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak);
 
-    cycle_times++;      // 测试CPU性能使用
+	dynamic_insts++;
 
     if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
         Log("Get 'ebreak' instruction, program over.");
