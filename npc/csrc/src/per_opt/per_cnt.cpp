@@ -68,17 +68,17 @@ void PerformanceCounter_idu_identify_inst(int inst) {
 
 
 void PerformanceCounter_display() {
-	printf(ANSI_FG_BLUE"PerformanceCounter:\n\n"ANSI_NONE);
-	printf(ANSI_FG_BLUE"ifu_fetch_inst = %ld\n"ANSI_NONE, ifu_fetch_inst);
-	printf(ANSI_FG_BLUE"lsu_fetch_data = %ld\n"ANSI_NONE, lsu_fetch_data);
-	printf(ANSI_FG_BLUE"lsu_store_data = %ld\n"ANSI_NONE, lsu_store_data);
-	printf(ANSI_FG_BLUE"exu_finish_cal = %ld\n"ANSI_NONE, exu_finish_cal);
+	printf(ANSI_FG_YELLOW"PerformanceCounter:\n"ANSI_NONE);
+	printf(ANSI_FG_CYAN"ifu_fetch_inst = %ld\n"ANSI_NONE, ifu_fetch_inst);
+	printf(ANSI_FG_CYAN"lsu_fetch_data = %ld\n"ANSI_NONE, lsu_fetch_data);
+	printf(ANSI_FG_CYAN"lsu_store_data = %ld\n"ANSI_NONE, lsu_store_data);
+	printf(ANSI_FG_CYAN"exu_finish_cal = %ld\n"ANSI_NONE, exu_finish_cal);
 
 	puts("");
 
-	printf(ANSI_FG_BLUE"idu_identify_inst__cal = %ld\n"ANSI_NONE, idu_identify_inst__cal);
-	printf(ANSI_FG_BLUE"idu_identify_inst__ls = %ld\n"ANSI_NONE, idu_identify_inst__ls);
-	printf(ANSI_FG_BLUE"idu_identify_inst__jmp = %ld\n"ANSI_NONE, idu_identify_inst__jmp);
-	printf(ANSI_FG_BLUE"idu_identify_inst__csr = %ld\n"ANSI_NONE, idu_identify_inst__csr);
-	printf(ANSI_FG_BLUE"idu_identify_inst__unknown = %ld\n"ANSI_NONE, idu_identify_inst__unknown);
+	printf(ANSI_FG_CYAN"idu_identify_inst__cal = %ld\n"ANSI_NONE, idu_identify_inst__cal);
+	printf(ANSI_FG_CYAN"idu_identify_inst__ls = %ld\n"ANSI_NONE, idu_identify_inst__ls);
+	printf(ANSI_FG_CYAN"idu_identify_inst__jmp = %ld\n"ANSI_NONE, idu_identify_inst__jmp);
+	printf(ANSI_FG_CYAN"idu_identify_inst__csr = %ld\n"ANSI_NONE, idu_identify_inst__csr);
+	printf(ANSI_FG_CYAN"idu_identify_inst__unknown = %ld\n"ANSI_NONE, idu_identify_inst__unknown);
 }
