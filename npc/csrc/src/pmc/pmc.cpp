@@ -106,7 +106,7 @@ void PerformanceCounter_inst_type_total_cycles(int start, int inst) {
 			if (TYPE_INST_CAL(inst)) {
 				inst_type_cal_cycles_sdram += temp_cnt_inst_type_cycles;
 			} else if (TYPE_INST_LS(inst)) {
-				inst_type_jmp_cycles_sdram += temp_cnt_inst_type_cycles;
+				inst_type_ls_cycles_sdram += temp_cnt_inst_type_cycles;
 			} else if (TYPE_INST_JMP(inst)) {
 				inst_type_jmp_cycles_sdram += temp_cnt_inst_type_cycles;
 			} else if (TYPE_INST_CSR(inst)) {
@@ -118,7 +118,7 @@ void PerformanceCounter_inst_type_total_cycles(int start, int inst) {
 			if (TYPE_INST_CAL(inst)) {
 				inst_type_cal_cycles_flash += temp_cnt_inst_type_cycles;
 			} else if (TYPE_INST_LS(inst)) {
-				inst_type_jmp_cycles_flash += temp_cnt_inst_type_cycles;
+				inst_type_ls_cycles_flash += temp_cnt_inst_type_cycles;
 			} else if (TYPE_INST_JMP(inst)) {
 				inst_type_jmp_cycles_flash += temp_cnt_inst_type_cycles;
 			} else if (TYPE_INST_CSR(inst)) {
