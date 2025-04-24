@@ -38,7 +38,7 @@ uint64_t inst_type_jmp_cycles_flash = 0;
 uint64_t inst_type_jmp_cycles_sdram = 0;
 
 uint64_t inst_type_csr_cycles_flash = 0;
-uint64_t inst_type_csr_cycles_sdram = 0;
+uint64_t inst_type_csr_cycles_sdram = 1;		// EBREAK
 
 uint64_t inst_type_unknown_cycles_flash = 0;
 uint64_t inst_type_unknown_cycles_sdram = 0;
@@ -59,7 +59,7 @@ uint64_t lsu_store_data_cycles_sdram = 0;
 
 // EXU
 uint64_t exu_finish_cal_flash = 0;
-uint64_t exu_finish_cal_sdram = 0;
+uint64_t exu_finish_cal_sdram = 1;		// EBREAK
 
 // IDU
 uint64_t idu_identify_cal_flash = 0;
@@ -71,7 +71,7 @@ uint64_t idu_identify_unknown_flash = 0;
 uint64_t idu_identify_cal_sdram = 0;
 uint64_t idu_identify_ls_sdram  = 0;
 uint64_t idu_identify_jmp_sdram = 0;
-uint64_t idu_identify_csr_sdram = 0;
+uint64_t idu_identify_csr_sdram = 1;		// EBREAK
 uint64_t idu_identify_unknown_sdram = 0;
 
 void is_finish_bootloader(int pc) {
