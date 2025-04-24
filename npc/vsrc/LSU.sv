@@ -171,15 +171,25 @@ axi4_full_master u_axi4_full_master(
 
 /************************** 性能计数器 *****************************/
 
-import "DPI-C" function void PerformanceCounter_lsu_fetch();
+import "DPI-C" function void PerformanceCounter_lsu_load();
 import "DPI-C" function void PerformanceCounter_lsu_store();
+import "DPI-C" function void PerformanceCounter_lsu_load_cycles(int start, int finish);
+import "DPI-C" function void PerformanceCounter_lsu_store_cycles(int start, int finish);
 
 always_ff @(posedge clk) begin
-	if (done & lsu_ren)  PerformanceCounter_lsu_fetch();
+	if (done & lsu_ren)  PerformanceCounter_lsu_load();
 end
 
 always_ff @(posedge clk) begin
 	if (done & lsu_wen)  PerformanceCounter_lsu_store();
+end
+/* verilator lint_off WIDTHEXPAND */
+always_ff @(posedge clk) begin
+	if (!rst & lsu_ren) PerformanceCounter_lsu_load_cycles(has_new_data, done);
+end
+
+always_ff @(posedge clk) begin
+	if (!rst & lsu_wen) PerformanceCounter_lsu_store_cycles(has_new_data, done);
 end
 
 

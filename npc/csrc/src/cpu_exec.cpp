@@ -36,7 +36,7 @@ void PerformanceCounter_display();
 void halt() {
     cpu_state = IDLE;
 
-    printf(ANSI_FG_GREEN"\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n"ANSI_NONE, cycle_times, dynamic_insts);
+    printf(ANSI_FG_CYAN"\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n"ANSI_NONE, cycle_times, dynamic_insts);
 	PerformanceCounter_display();
 
     if (cpu.registerFile[10] != 0) {
