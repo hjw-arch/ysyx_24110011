@@ -53,7 +53,6 @@ void halt() {
 #include "nvboard.h"
 
 #endif
-
 void cpu_exec_one() {
     
 	do {
@@ -65,6 +64,10 @@ void cpu_exec_one() {
 	} while(dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__start != 1 && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak);
 
 	dynamic_insts++;
+
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak) {
+		dynamic_insts--;
+	}
 
     if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
         Log("Get 'ebreak' instruction, program over.");
