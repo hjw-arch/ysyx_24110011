@@ -18,11 +18,26 @@ cpu_t cpu;
 uint32_t cpu_state = RUNNING;
 
 uint64_t cycle_times = 0;
+uint64_t dynamic_insts = 0;
+
+extern uint64_t ifu_fetch_inst;
+extern uint64_t lsu_fetch_data;
+extern uint64_t lsu_store_data;
+extern uint64_t exu_finish_cal;
+
+extern uint64_t idu_identify_inst__cal;
+extern uint64_t idu_identify_inst__ls;
+extern uint64_t idu_identify_inst__jmp;
+extern uint64_t idu_identify_inst__csr;
+extern uint64_t idu_identify_inst__unknown;
+
+void PerformanceCounter_display();
 
 void halt() {
     cpu_state = IDLE;
 
-    printf("\n\nTotle cycle times = %lu\n\n", cycle_times);
+    printf(ANSI_FG_CYAN"\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n"ANSI_NONE, cycle_times, dynamic_insts);
+	PerformanceCounter_display();
 
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
@@ -38,17 +53,21 @@ void halt() {
 #include "nvboard.h"
 
 #endif
-
 void cpu_exec_one() {
     
 	do {
 		cycle;
+		cycle_times++;      // 测试CPU性能使用
 #ifdef NVBOARD
 		nvboard_update();
 #endif
 	} while(dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__start != 1 && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak);
 
-    cycle_times++;      // 测试CPU性能使用
+	dynamic_insts++;
+
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak) {
+		dynamic_insts--;
+	}
 
     if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
         Log("Get 'ebreak' instruction, program over.");

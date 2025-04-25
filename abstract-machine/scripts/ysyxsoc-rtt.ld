@@ -117,13 +117,19 @@ SECTIONS {
 
 	. = ALIGN(4);
 	_heap_start = .;
-	_heap_end = ORIGIN(sdram) + LENGTH(sdram);
+	. = . + 8M;
+	_heap_end = .;
+
+	. = ALIGN(4);
+	_stack_top = .;
+	. = . + 4M;
+	_stack_pointer = .;
 
 
-	. = ORIGIN(sram);
+	/* . = ORIGIN(sram);
   	_stack_top = .;
   	. = _stack_top + LENGTH(sram);
-  	_stack_pointer = .;              /* 堆栈初始指针 */
+  	_stack_pointer = .;              堆栈初始指针 */
 
   	end = .;
   	_end = .;

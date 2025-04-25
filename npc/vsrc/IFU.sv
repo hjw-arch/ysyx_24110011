@@ -118,7 +118,31 @@ axi4_full_master u_axi4_full_master(
 );
 
 
+/************************** 性能计数器 *****************************/
 
+import "DPI-C" function void is_finish_bootloader(input int pc);
+import "DPI-C" function void PerformanceCounter_ifu_fetch();
+import "DPI-C" function void PerformanceCounter_ifu_fetch_cycles(input int start, input int finish);
+import "DPI-C" function void PerformanceCounter_inst_type_total_cycles(input int start, input int inst);
+
+always_ff @(posedge clk) begin
+	if (wbu_valid) is_finish_bootloader(pc);
+end
+
+always_ff @(posedge clk) begin
+	if (done) PerformanceCounter_ifu_fetch();
+end
+/* verilator lint_off WIDTHEXPAND */
+always_ff @(posedge clk) begin
+	if (!rst) PerformanceCounter_ifu_fetch_cycles(start, done);
+end
+
+always_ff @(posedge clk) begin
+	if (!rst) PerformanceCounter_inst_type_total_cycles(start, rdata);
+end
+
+
+/******************************************************************/
 
 
 
