@@ -33,7 +33,7 @@ assign out_pwdata  = in_pwdata;
 assign out_pstrb   = in_pstrb;
 assign in_pready   = (state == WAITING && finish_wait_cnt);
 assign in_prdata   = hold_prdata;
-assign in_pslverr  = 1'b0;
+assign in_pslverr  = hold_pslverr;
 
 localparam R_S			= 115;		// 7.2 * 16
 localparam S_SHIFTER	= 4;
@@ -101,7 +101,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	if(state != IDLE) $display("state = %d, counter = %d, hold timer = %d", state, counter, hold_timer);
+	if(state != IDLE) $display("state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d", state, counter, hold_timer, in_pready, in_pwrite);
 end
 
 endmodule
