@@ -109,8 +109,8 @@ end
 // end
 
 always_ff @(posedge clock) begin
-	if (out_pready)
-	if (in_paddr == 32'h30000030 || in_paddr == 32'h30000034 || in_paddr == 32'h30000038 || in_paddr == 32'h3000002c) $display("addr = %x, data = %x", in_paddr, out_prdata);
+	if (in_pready)
+	if (in_paddr == 32'h30000030 || in_paddr == 32'h30000034 || in_paddr == 32'h30000038 || in_paddr == 32'h3000002c) $display("addr = %x, data = %x", in_paddr, hold_prdata);
 end
 
 endmodule
