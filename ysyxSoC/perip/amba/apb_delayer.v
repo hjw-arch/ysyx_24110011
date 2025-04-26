@@ -52,7 +52,7 @@ logic			hold_penable;
 assign hold_penable = (in_penable && state != WAITING);
 
 logic finish_wait_cnt 	= 	counter == {7'b0, hold_timer};
-logic start_transmit	= 	in_psel & in_penable;
+logic start_transmit	= 	in_psel && in_penable;
 logic finish_transmit	=	out_pready;
 
 /****************************************** 状态机以及状态转移 ***************************************/
