@@ -53,7 +53,7 @@ assign bid 		= 		awid;
 assign awready 	= 		1'b1;
 assign wready	=		1'b1;
 assign bresp	=		2'b10;
-assign bvalid	=		1'b1;
+assign bvalid	=		wvalid | awvalid;
 
 /**************************************** mtime **************************************************/
 

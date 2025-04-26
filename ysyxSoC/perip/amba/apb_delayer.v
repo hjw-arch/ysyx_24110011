@@ -24,91 +24,145 @@ module apb_delayer(
   input         out_pslverr
 );
 
-assign out_paddr   = in_paddr;
-// assign out_psel    = in_psel;
-assign out_psel    = hold_psel;
-assign out_penable = hold_penable;
-// assign out_penable = in_penable;
-assign out_pprot   = in_pprot;
-assign out_pwrite  = in_pwrite;
-assign out_pwdata  = in_pwdata;
-assign out_pstrb   = in_pstrb;
-assign in_pready   = (state == WAITING && finish_wait_cnt);
-assign in_prdata   = hold_prdata;
-assign in_pslverr  = hold_pslverr;
-// assign in_pready   = out_pready;
-// assign in_prdata   = out_prdata;
-// assign in_pslverr  = out_pslverr;
+/************************************** 直连信号 ******************************/
+assign out_paddr	=	in_paddr;
+assign out_pprot	=	in_pprot;
+assign out_pwrite	=	in_pwrite;
+assign out_pwdata	=	in_pwdata;
+assign out_pstrb	=	in_pstrb;
 
-localparam R_S			= 115;		// 7.2 * 16
-localparam S_SHIFTER	= 4;
+/************************************* 接管信号 ********************************/
 
-localparam IDLE			= 2'b00;
-localparam COUNTING		= 2'b01;
-localparam WAITING		= 2'b11;
+wire delayer_pready, delayer_psel, delayer_penable;
+reg [31:0] 	delayer_prdata;
+reg			delayer_pslverr;
 
-logic [1:0]  	state, next_state;
-logic [15:0] 	counter;
-logic [8:0] 	hold_timer;
-logic [31:0] 	hold_prdata;
-logic 		 	hold_pslverr;
-logic			hold_penable;
-logic			hold_psel;
 
-assign hold_penable = (in_penable && state != WAITING);
-assign hold_psel = (in_psel && state != WAITING);
+assign in_pready	=	delayer_pready;
+assign out_psel		=	delayer_psel;
+assign out_penable	=	delayer_penable;
+assign in_prdata	=	delayer_prdata;
+assign in_pslverr	=	delayer_pslverr;
 
-wire finish_wait_cnt 	= 	counter == {7'b0, hold_timer};
-wire start_transmit		= 	in_psel && in_penable;
+/************************************** 状态定义 ******************************/
+localparam 	IDLE	=	2'b00,
+			SETUP	=	2'b01,
+			ACCESS	=	2'b11,
+			DELAY	=	2'b10;
+
+reg [1:0] state;
+logic [1:0] nstate;
+
+reg [15:0] 	total_delay;
+reg [8:0]	dynamic_cnt;
+
+
+/************************************* 辅助信号 ********************************/
+wire delay_finish		=	total_delay == 16'b0;
+wire start_transmit		=	in_psel;
 wire finish_transmit	=	out_pready;
 
-/****************************************** 状态机以及状态转移 ***************************************/
+assign delayer_pready	=	((state == DELAY) & delay_finish);
+assign delayer_psel		=	in_psel && (state != DELAY);
+assign delayer_penable	=	in_penable && (state != DELAY);
+
 always_ff @(posedge clock) begin
-	state <= reset ? IDLE : next_state;
+	delayer_prdata <= finish_transmit ? out_prdata : delayer_prdata;
+end
+
+always_ff @(posedge clock) begin
+	delayer_pslverr <= finish_transmit ? out_pslverr : delayer_pslverr;
+end
+
+/*********************************** 状态转换 ***********************************/
+always_ff @(posedge clock) begin
+	state <= reset ? IDLE : nstate;
 end
 
 always_comb begin
-	case(state) 
-		IDLE: next_state = (start_transmit && !finish_transmit) ? COUNTING : (start_transmit && finish_transmit) ? WAITING : IDLE;
-		COUNTING: next_state = finish_transmit ? WAITING : COUNTING;
-		WAITING: next_state = finish_wait_cnt ? IDLE : WAITING;
-		default: next_state = IDLE;
+	case(state)
+		IDLE:	nstate = in_psel ? SETUP : IDLE;
+		SETUP:	nstate = in_penable & in_psel ? ACCESS : IDLE;
+		ACCESS:	nstate = out_pready ? DELAY : ACCESS;
+		DELAY:	nstate = delay_finish ? IDLE : DELAY;
 	endcase
 end
 
-/********************************************** 计数器 **************************************************/
+/******************************** 计数器 **********************************/
+localparam SR		=		99;		// 6.2*16
+localparam SHIFTER	=		4;
 
 always_ff @(posedge clock) begin
-	if (reset) hold_timer <= 9'b0;
-	else begin
-		if (state == IDLE && start_transmit || state == COUNTING) hold_timer <= hold_timer + 1;
-		else if (state == WAITING && finish_wait_cnt) hold_timer <= 9'b0;
-		else hold_timer <= hold_timer;
+	if (reset) begin
+		dynamic_cnt <= 9'b1;		// 补偿，因为最后一次算不上
+	end else begin
+		if (state == DELAY && delay_finish) dynamic_cnt <= 9'b1;
+		else if (state == IDLE && in_psel || state == SETUP || state == ACCESS)	dynamic_cnt <= dynamic_cnt + 1;
+		else dynamic_cnt <= dynamic_cnt;
 	end
 end
 
 always_ff @(posedge clock) begin
-	if (reset) counter <= 16'b0;
-	else begin
-		if (state == IDLE && start_transmit && finish_transmit) counter <= 16'd7;
-		else if ((state == IDLE) && start_transmit && ~finish_transmit || (state == COUNTING) && ~finish_transmit) counter <= counter + R_S;
-		else if ((state == COUNTING) && finish_transmit) counter <= counter >> S_SHIFTER;
-		else if ((state == WAITING) && !finish_wait_cnt) counter <= counter - 1;
-		else if ((state == WAITING) && finish_wait_cnt) counter <= 16'b0;
-		else counter <= counter;
+	if (reset) begin
+		total_delay <= 16'b0;
+	end else begin
+		if (state == DELAY && delay_finish) begin
+			total_delay <= 16'b0;
+		end else if (state == DELAY && !delay_finish) begin
+			total_delay <= total_delay - 1;
+		end else if (state == ACCESS && finish_transmit) begin
+			total_delay <= (total_delay >> SHIFTER) - {7'b0, dynamic_cnt};
+		end else if (state == IDLE && start_transmit || state == SETUP || state == ACCESS && !finish_transmit) begin
+			total_delay <= total_delay + SR;
+		end else begin
+			total_delay <= total_delay;
+		end
 	end
 end
 
-always_ff @(posedge clock) begin
-	hold_prdata <= finish_transmit ? out_prdata : hold_prdata;
-end
+/************************************* 调试 ***************************************/
+// === 增强的调试逻辑 ===
 
-always_ff @(posedge clock) begin
-	hold_pslverr <= finish_transmit ? out_pslverr : hold_pslverr;
-end
+// reg current_transfer_is_write; // 记录当前活跃传输是否为写操作
 
+// // 在传输开始时锁存是否为写操作
 // always_ff @(posedge clock) begin
-// 	if (state != IDLE) $display("start_transmit = %d, state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d, in_paddr = %x, hold_prdata = %x", start_transmit, state, counter, hold_timer, in_pready, in_pwrite, in_paddr, hold_prdata);
+//   if (reset) begin
+//     current_transfer_is_write <= 1'b0;
+//   end else if (state == IDLE && nstate == SETUP) begin // 检测到新传输开始 (从 IDLE 进入 SETUP)
+//     current_transfer_is_write <= in_pwrite;         // 锁存本次传输的写信号
+//   end else if (nstate == IDLE && state != IDLE) begin // 传输结束，返回 IDLE
+//     current_transfer_is_write <= 1'b0;         // 清除标志，为下次传输准备
+//   // 注：如果需要处理 psel 提前撤销导致的中止，也应在此处或状态机中清除标志
+//   end
+//   // 在 SETUP, ACCESS, DELAY 状态保持不变
 // end
+
+// // 在写传输活跃期间打印调试信息
+// always_ff @(posedge clock) begin
+//   if (!reset && current_transfer_is_write && (state == SETUP || state == ACCESS || state == DELAY)) begin
+//     string state_str;
+//     case(state)
+//       IDLE:   state_str = "IDLE  ";
+//       SETUP:  state_str = "SETUP ";
+//       ACCESS: state_str = "ACCESS";
+//       DELAY:  state_str = "DELAY ";
+//       default: state_str = "XXXX  ";
+//     endcase
+
+//     $display("[%t] WRITE DEBUG | State: %s(%b) | IN(M->D): psel=%b pen=%b pwrite=%b paddr=%h pwdata=%h pstrb=%b | OUT(D->S): psel=%b pen=%b pwrite=%b paddr=%h pwdata=%h pstrb=%b | SLV_RESP: pready=%b pslverr=%b | DELAY_LOGIC: total=%d dyn_cnt=%d fin=%b | OUT(D->M): pready=%b pslverr=%b",
+//              $time,                       // 时间戳
+//              state_str, state,            // 当前状态 (名称 + 二进制值)
+//              in_psel, in_penable, in_pwrite, in_paddr, in_pwdata, in_pstrb, // Master 输入给 Delayer 的信号
+//              out_psel, out_penable, out_pwrite, out_paddr, out_pwdata, out_pstrb, // Delayer 输出给 Slave 的信号
+//              out_pready, out_pslverr,     // Slave 返回给 Delayer 的响应
+//              total_delay, dynamic_cnt, delay_finish, // 内部延迟计算状态
+//              in_pready, in_pslverr        // Delayer 输出给 Master 的最终响应
+//             );
+//   end
+// end
+
+// === 结束增强的调试逻辑 ===
+
 
 endmodule
