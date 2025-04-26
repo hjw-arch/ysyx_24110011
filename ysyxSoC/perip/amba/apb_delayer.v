@@ -25,7 +25,8 @@ module apb_delayer(
 );
 
 assign out_paddr   = in_paddr;
-assign out_psel    = in_psel;
+// assign out_psel    = in_psel;
+assign out_psel    = hold_psel;
 assign out_penable = hold_penable;
 // assign out_penable = in_penable;
 assign out_pprot   = in_pprot;
@@ -52,8 +53,10 @@ logic [8:0] 	hold_timer;
 logic [31:0] 	hold_prdata;
 logic 		 	hold_pslverr;
 logic			hold_penable;
+logic			hold_psel;
 
 assign hold_penable = (in_penable && state != WAITING);
+assign hold_psel = (in_psel && state != WAITING);
 
 wire finish_wait_cnt 	= 	counter == {7'b0, hold_timer};
 wire start_transmit		= 	in_psel && in_penable;
