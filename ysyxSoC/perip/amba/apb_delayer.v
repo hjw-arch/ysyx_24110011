@@ -74,8 +74,8 @@ end
 always_ff @(posedge clock) begin
 	if (reset) hold_timer <= 9'b0;
 	else begin
-		if (state == IDLE & start_transmit | state == COUNTING) hold_timer <= hold_timer + 1;
-		else if (state == WAITING & finish_wait_cnt) hold_timer <= 9'b0;
+		if (state == IDLE && start_transmit || state == COUNTING) hold_timer <= hold_timer + 1;
+		else if (state == WAITING && finish_wait_cnt) hold_timer <= 9'b0;
 		else hold_timer <= hold_timer;
 	end
 end
@@ -83,11 +83,11 @@ end
 always_ff @(posedge clock) begin
 	if (reset) counter <= 16'b0;
 	else begin
-		if (state == IDLE & start_transmit & finish_transmit) counter <= 16'd7;
-		else if ((state == IDLE) & start_transmit & ~finish_transmit | (state == COUNTING) && ~finish_transmit) counter <= counter + R_S;
-		else if ((state == COUNTING) & finish_transmit) counter <= counter >> S_SHIFTER;
-		else if ((state == WAITING) & !finish_wait_cnt) counter <= counter - 1;
-		else if ((state == WAITING) & finish_wait_cnt) counter <= 16'b0;
+		if (state == IDLE && start_transmit && finish_transmit) counter <= 16'd7;
+		else if ((state == IDLE) && start_transmit && ~finish_transmit || (state == COUNTING) && ~finish_transmit) counter <= counter + R_S;
+		else if ((state == COUNTING) && finish_transmit) counter <= counter >> S_SHIFTER;
+		else if ((state == WAITING) && !finish_wait_cnt) counter <= counter - 1;
+		else if ((state == WAITING) && finish_wait_cnt) counter <= 16'b0;
 		else counter <= counter;
 	end
 end
@@ -103,5 +103,19 @@ end
 always_ff @(posedge clock) begin
 	if(state != IDLE) $display("state = %d, counter = %d, hold timer = %d", state, counter, hold_timer);
 end
+
+initial begin
+    // 1. Specify the output VCD file name
+    $dumpfile("apb_delayer_debug.vcd");
+
+    // 2. Specify the signals to dump
+    // Dump all signals within the DUT instance 'dut' and key testbench signals
+    $dumpvars(0, tb_apb_delayer); // Dump all signals in the testbench scope
+
+    // OR more focused: dump DUT and specific TB signals
+    // $dumpvars(0, dut); // Dump DUT internal signals
+    // $dumpvars(1, tb_psel, tb_penable, dut_pready, tb_pready); // Dump specific TB signals (level 1)
+
+  end
 
 endmodule
