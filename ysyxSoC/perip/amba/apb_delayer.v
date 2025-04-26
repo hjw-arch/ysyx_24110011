@@ -162,6 +162,16 @@ end
 //   end
 // end
 
+reg temp;
+always_ff @(posedge clock) begin
+	if (in_psel & in_penable & in_pwrite) begin
+		temp <= temp + 1;
+	end else if(out_pready) begin
+		temp <= 0;
+		$display("clcyes = %d", temp);
+	end
+end
+
 // === 结束增强的调试逻辑 ===
 
 
