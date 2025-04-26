@@ -62,7 +62,7 @@ end
 
 always_comb begin
 	case(state) 
-		IDLE: next_state = (start_transmit & !finish_transmit) ? COUNTING : (start_transmit & finish_transmit) ? WAITING : IDLE;
+		IDLE: next_state = (in_psel && in_penable && !finish_transmit) ? COUNTING : (in_psel && in_penable && finish_transmit) ? WAITING : IDLE;
 		COUNTING: next_state = finish_transmit ? WAITING : COUNTING;
 		WAITING: next_state = finish_wait_cnt ? IDLE : WAITING;
 		default: next_state = IDLE;
@@ -101,7 +101,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	$display("state = %d, start_tr = %d, counter = %d", state, start_transmit, counter);
+	if(state != IDLE) $display("state = %d, counter = %d, hold timer = %d", state, counter, hold_timer);
 end
 
 endmodule
