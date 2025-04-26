@@ -93,7 +93,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	hold_prdata <= finish_transmit ? out_prdata : hold_prdata;
+	hold_prdata <= (state == IDLE && start_transmit && finish_transmit) || ((state == COUNTING) && finish_transmit) ? out_prdata : hold_prdata;
 end
 
 always_ff @(posedge clock) begin
