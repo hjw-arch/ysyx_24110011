@@ -106,7 +106,6 @@ void nvboard_bind_all_pins(VysyxSoCFull* dut);
 
 int main(int argc, char *argv[]) {
     Verilated::commandArgs(argc, argv);		// For SOC
-
 #ifdef NVBOARD
 
 	nvboard_bind_all_pins(&dut);
