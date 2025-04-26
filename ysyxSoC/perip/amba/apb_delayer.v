@@ -101,7 +101,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	if(state != IDLE) $display("state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d", state, counter, hold_timer, in_pready, in_pwrite);
+	$display("start_transmit = %d, state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d", start_transmit, state, counter, hold_timer, in_pready, in_pwrite);
 end
 
 endmodule
