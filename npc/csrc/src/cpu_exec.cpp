@@ -87,7 +87,7 @@ void cpu_exec(uint32_t n) {
         // 执行一次
         cpu_exec_one();
 
-        if (n < min_num_to_disasm) {
+        // if (n < min_num_to_disasm) {
             char p[64];
             printf("0x%08x: ", old_pc);
             for(int j = 3; j >= 0; j--) {
@@ -95,7 +95,7 @@ void cpu_exec(uint32_t n) {
             }
             disassemble(p, sizeof(p), old_pc, (uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst, 4);
             printf("        %s\n", p);
-        }
+        // }
 
 
         IFDEF(CONFIG_ITRACE, iringbuf_load(old_pc, dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst));

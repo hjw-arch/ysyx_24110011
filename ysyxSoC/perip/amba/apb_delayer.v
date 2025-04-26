@@ -107,13 +107,8 @@ always_ff @(posedge clock) begin
 	hold_pslverr <= finish_transmit ? out_pslverr : hold_pslverr;
 end
 
-always_ff @(posedge clock) begin
-	if (state != IDLE) $display("start_transmit = %d, state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d, in_paddr = %x, hold_prdata = %x", start_transmit, state, counter, hold_timer, in_pready, in_pwrite, in_paddr, hold_prdata);
-end
-
-always_ff @(posedge clock) begin
-	if (in_pready)
-	if (in_paddr == 32'h30000030 || in_paddr == 32'h30000034 || in_paddr == 32'h30000038 || in_paddr == 32'h3000002c) $display("addr = %x, data = %x", in_paddr, hold_prdata);
-end
+// always_ff @(posedge clock) begin
+// 	if (state != IDLE) $display("start_transmit = %d, state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d, in_paddr = %x, hold_prdata = %x", start_transmit, state, counter, hold_timer, in_pready, in_pwrite, in_paddr, hold_prdata);
+// end
 
 endmodule
