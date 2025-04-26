@@ -51,9 +51,9 @@ logic			hold_penable;
 
 assign hold_penable = (in_penable && state != WAITING);
 
-logic finish_wait_cnt 	= 	counter == {7'b0, hold_timer};
-logic start_transmit	= 	in_psel && in_penable;
-logic finish_transmit	=	out_pready;
+wire finish_wait_cnt 	= 	counter == {7'b0, hold_timer};
+wire start_transmit		= 	in_psel && in_penable;
+wire finish_transmit	=	out_pready;
 
 /****************************************** 状态机以及状态转移 ***************************************/
 always_ff @(posedge clock) begin
@@ -62,7 +62,7 @@ end
 
 always_comb begin
 	case(state) 
-		IDLE: next_state = (in_psel && in_penable && !finish_transmit) ? COUNTING : (in_psel && in_penable && finish_transmit) ? WAITING : IDLE;
+		IDLE: next_state = (start_transmit && !finish_transmit) ? COUNTING : (start_transmit && finish_transmit) ? WAITING : IDLE;
 		COUNTING: next_state = finish_transmit ? WAITING : COUNTING;
 		WAITING: next_state = finish_wait_cnt ? IDLE : WAITING;
 		default: next_state = IDLE;
@@ -101,7 +101,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	if(state == WAITING) $display("state = %d, counter = %d, hold timer = %d", state, counter, hold_timer);
+	if(state != IDLE) $display("state = %d, counter = %d, hold timer = %d", state, counter, hold_timer);
 end
 
 endmodule
