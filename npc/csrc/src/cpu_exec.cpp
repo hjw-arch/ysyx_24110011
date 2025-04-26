@@ -65,7 +65,7 @@ void cpu_exec_one() {
 
 	dynamic_insts++;
 
-	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak) {
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
 		dynamic_insts--;
 	}
 
