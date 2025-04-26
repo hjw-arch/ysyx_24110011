@@ -93,7 +93,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	hold_prdata <= (state == IDLE && start_transmit && finish_transmit) || ((state == COUNTING) && finish_transmit) ? out_prdata : hold_prdata;
+	hold_prdata <= finish_transmit ? out_prdata : hold_prdata;
 end
 
 always_ff @(posedge clock) begin
@@ -101,7 +101,7 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	$display("start_transmit = %d, state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d", start_transmit, state, counter, hold_timer, in_pready, in_pwrite);
+	if (state != IDLE) $display("start_transmit = %d, state = %d, counter = %d, hold timer = %d, in_pready = %d, in_pwrite = %d, ", start_transmit, state, counter, hold_timer, in_pready, in_pwrite);
 end
 
 endmodule
