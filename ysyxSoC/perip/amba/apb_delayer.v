@@ -28,7 +28,7 @@ module apb_delayer(
   // r=7.2, s=16 => r*s = 115.2
   localparam [15:0] R_S       = 16'd115; // floor(r*s)
   localparam        S_SHIFT   = 4;       // log2(s)
-  // k=1 时的目标 k*r = (1*R_S) >> S_SHIFT = 115 >> 4 = 7
+
   localparam [15:0] K1_TARGET = R_S >> S_SHIFT;
 
   // --- 状态定义 ---
@@ -75,14 +75,12 @@ module apb_delayer(
   // 状态机以及状态转移 (组合逻辑部分)
   //--------------------------------------------------------------------------
   always_comb begin
-    // --- 默认值 ---
     next_state = state;
-    capture_response = 1'b0; // 默认不锁存
+    capture_response = 1'b0;
 
-    // --- 状态转移逻辑 & 计算 capture_response ---
     case(state)
       IDLE: begin
-        if (in_psel && in_penable) begin // Master 发起请求
+        if (in_psel && in_penable) begin
           if (!out_pready) begin // k > 1
             next_state = COUNTING;
           end else begin // k = 1
@@ -91,6 +89,7 @@ module apb_delayer(
           end
         end
       end
+
       COUNTING: begin
         if (out_pready) begin // Slave 响应
           next_state = WAITING;
@@ -99,6 +98,7 @@ module apb_delayer(
           next_state = COUNTING; // 保持
         end
       end
+
       WAITING: begin
         if (transaction_done) begin // 倒计时完成
           next_state = IDLE; // 返回空闲
@@ -106,6 +106,7 @@ module apb_delayer(
           next_state = WAITING; // 保持
         end
       end
+
       default: next_state = IDLE; // 覆盖所有状态，default 其实可以省略
     endcase
   end
@@ -146,26 +147,25 @@ module apb_delayer(
     if (reset) begin
         counter <= 16'b0;
     end else begin
-        // 根据当前状态 state 和 输入 out_pready 更新 counter
         case(state)
             IDLE: begin
                 if (next_state == COUNTING) begin // IDLE -> COUNTING (k>1)
-                    counter <= R_S;       // 加载第一个周期的 r*s
+                    counter <= R_S;
                 end else if (next_state == WAITING) begin // IDLE -> WAITING (k=1)
                     counter <= K1_TARGET; // 加载 k=1 时的目标 k*r 值
                 end else begin // 保持 IDLE 或 Reset
                     counter <= 16'b0;
                 end
             end
+
             COUNTING: begin
                 if (out_pready) begin // COUNTING -> WAITING
-                    // 计算最终 k*r*s 并移位
-                    logic [15:0] final_krs_approx = counter + R_S; // 包含当前周期的累加
-                    counter <= final_krs_approx >> S_SHIFT; // 加载计算出的 k*r
+                    counter <= counter >> S_SHIFT;
                 end else begin // 保持 COUNTING
                     counter <= counter + R_S; // 继续累加
                 end
             end
+
             WAITING: begin
                 if (!transaction_done) begin // WAITING -> WAITING
                     counter <= counter - 1; // 倒计时
@@ -182,8 +182,6 @@ module apb_delayer(
   // 数据锁存 (hold_prdata)
   //--------------------------------------------------------------------------
   always_ff @(posedge clock) begin
-    // capture_response 是组合信号，在时钟沿判断是否锁存
-    // (不处理 reset, 让数据保持直到下次捕获)
     if (capture_response) begin
         hold_prdata <= out_prdata;
     end
@@ -193,11 +191,15 @@ module apb_delayer(
   // 错误锁存 (hold_pslverr)
   //--------------------------------------------------------------------------
   always_ff @(posedge clock) begin
-    // capture_response 是组合信号，在时钟沿判断是否锁存
-    // (不处理 reset)
     if (capture_response) begin
         hold_pslverr <= out_pslverr;
     end
+  end
+
+  always_ff @(posedge clock) begin
+	if (state != IDLE) begin
+		$display("counter = %d", counter);
+	end
   end
 
 endmodule
