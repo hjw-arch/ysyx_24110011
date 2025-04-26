@@ -62,7 +62,7 @@ end
 
 always_comb begin
 	case(state) 
-		IDLE: next_state = (start_transmit & !out_pready) ? COUNTING : (start_transmit & out_pready) ? WAITING : IDLE;
+		IDLE: next_state = (start_transmit & !finish_transmit) ? COUNTING : (start_transmit & finish_transmit) ? WAITING : IDLE;
 		COUNTING: next_state = finish_transmit ? WAITING : COUNTING;
 		WAITING: next_state = finish_wait_cnt ? IDLE : WAITING;
 		default: next_state = IDLE;
@@ -84,10 +84,10 @@ always_ff @(posedge clock) begin
 	if (reset) counter <= 16'b0;
 	else begin
 		if (state == IDLE & start_transmit & finish_transmit) counter <= 16'd7;
-		else if (state == IDLE & start_transmit & ~finish_transmit | state == COUNTING && ~finish_transmit) counter <= counter + R_S;
-		else if (state == COUNTING & finish_transmit) counter <= counter >> S_SHIFTER;
-		else if (state == WAITING && !finish_wait_cnt) counter <= counter - 1;
-		else if (state == WAITING && finish_wait_cnt) counter <= 16'b0;
+		else if ((state == IDLE) & start_transmit & ~finish_transmit | (state == COUNTING) && ~finish_transmit) counter <= counter + R_S;
+		else if ((state == COUNTING) & finish_transmit) counter <= counter >> S_SHIFTER;
+		else if ((state == WAITING) & !finish_wait_cnt) counter <= counter - 1;
+		else if ((state == WAITING) & finish_wait_cnt) counter <= 16'b0;
 		else counter <= counter;
 	end
 end
