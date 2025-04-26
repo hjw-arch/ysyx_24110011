@@ -253,7 +253,7 @@ always_ff @(posedge clk) begin
 		$display("W Channel: WDATA = 0x%08x\nWSTRB = %d\nWLAST = %d\nWVALID = %d\nWREADY = %d\n", s_wdata, s_wstrb, s_wlast, s_wvalid, s_wready);
 		$display("B Channel: BRESP = 0x%08x\nBVALID = %d\nBREADY = %d\n\n\n", s_bresp, s_bvalid, s_bready);
 	end
-	if (!rst && s_araddr == 0) assert(0);
+	assert (!rst && s_araddr == 0);
 end
 
 
