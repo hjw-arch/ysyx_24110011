@@ -31,7 +31,7 @@ assign out_pprot   = in_pprot;
 assign out_pwrite  = in_pwrite;
 assign out_pwdata  = in_pwdata;
 assign out_pstrb   = in_pstrb;
-assign in_pready   = (state == WAITING && counter[8:0] == hold_timer && counter[15:9] == 0);
+assign in_pready   = (state == WAITING && finish_wait_cnt);
 assign in_prdata   = hold_prdata;
 assign in_pslverr  = hold_pslverr;
 
@@ -49,7 +49,11 @@ logic [31:0] 	hold_prdata;
 logic 		 	hold_pslverr;
 logic			hold_penable;
 
-logic finish_wait_cnt = counter == {7'b0, hold_timer};
+assign hold_penable = (in_penable && state != WAITING);
+
+logic finish_wait_cnt 	= 	counter == {7'b0, hold_timer};
+logic start_transmit	= 	in_psel & in_penable;
+logic finish_transmit	=	out_pready;
 
 /****************************************** 状态机以及状态转移 ***************************************/
 always_ff @(posedge clock) begin
@@ -58,8 +62,8 @@ end
 
 always_comb begin
 	case(state) 
-		IDLE: next_state = (in_psel & in_penable & !out_pready) ? COUNTING : (in_psel & in_penable & out_pready) ? WAITING : IDLE;
-		COUNTING: next_state = out_pready ? WAITING : COUNTING;
+		IDLE: next_state = (start_transmit & !out_pready) ? COUNTING : (start_transmit & out_pready) ? WAITING : IDLE;
+		COUNTING: next_state = finish_transmit ? WAITING : COUNTING;
 		WAITING: next_state = finish_wait_cnt ? IDLE : WAITING;
 		default: next_state = IDLE;
 	endcase
@@ -70,8 +74,8 @@ end
 always_ff @(posedge clock) begin
 	if (reset) hold_timer <= 9'b0;
 	else begin
-		if (state == IDLE && in_psel && in_penable || state == COUNTING) hold_timer <= hold_timer + 1;
-		else if (state == WAITING && counter == {7'b0, hold_timer}) hold_timer <= 9'b0;
+		if (state == IDLE & start_transmit | state == COUNTING) hold_timer <= hold_timer + 1;
+		else if (state == WAITING & finish_wait_cnt) hold_timer <= 9'b0;
 		else hold_timer <= hold_timer;
 	end
 end
@@ -79,9 +83,9 @@ end
 always_ff @(posedge clock) begin
 	if (reset) counter <= 16'b0;
 	else begin
-		if (state == IDLE && in_psel && in_penable && out_pready) counter <= 16'd7;
-		else if (state == IDLE  && in_psel && in_penable && !out_pready || state == COUNTING && !out_pready) counter <= counter + R_S;
-		else if (state == COUNTING && out_pready) counter <= counter >> 4;
+		if (state == IDLE & start_transmit & finish_transmit) counter <= 16'd7;
+		else if (state == IDLE & start_transmit & ~finish_transmit | state == COUNTING && ~finish_transmit) counter <= counter + R_S;
+		else if (state == COUNTING & finish_transmit) counter <= counter >> S_SHIFTER;
 		else if (state == WAITING && !finish_wait_cnt) counter <= counter - 1;
 		else if (state == WAITING && finish_wait_cnt) counter <= 16'b0;
 		else counter <= counter;
@@ -89,14 +93,15 @@ always_ff @(posedge clock) begin
 end
 
 always_ff @(posedge clock) begin
-	hold_prdata <= out_pready ? out_prdata : hold_prdata;
+	hold_prdata <= finish_transmit ? out_prdata : hold_prdata;
 end
 
 always_ff @(posedge clock) begin
-	hold_pslverr <= out_pready ? out_pslverr : hold_pslverr;
+	hold_pslverr <= finish_transmit ? out_pslverr : hold_pslverr;
 end
 
-assign hold_penable = (in_penable && state != WAITING);
-
+always_ff @(posedge clock) begin
+	if (state != IDLE) $display("counter = %x, hold_timer = %d", counter, hold_timer);
+end
 
 endmodule
