@@ -162,15 +162,59 @@ end
 //   end
 // end
 
-reg temp;
-always_ff @(posedge clock) begin
-	if (in_psel & in_penable & in_pwrite) begin
-		temp <= temp + 1;
-	end else if(out_pready & in_pwrite) begin
-		temp <= 0;
-		$display("clcyes = %d", temp);
-	end
-end
+//--------------------------------------------------------------------------
+//  APB 写操作周期计数逻辑
+//--------------------------------------------------------------------------
+// reg current_apb_transfer_is_write; // 标志：当前D->S传输是否为写
+// reg [15:0] apb_write_cycle_counter; // 计数器：记录APB写访问周期数
+
+// // 1. 判断当前 D->S 传输是否为写操作
+// //    我们在 FSM 进入 ACCESS 状态时，根据当时的 out_pwrite 来锁存
+// always_ff @(posedge clock or posedge reset) begin
+//     if (reset) begin
+//         current_apb_transfer_is_write <= 1'b0;
+//     // 当从 SETUP 进入 ACCESS 时，锁存当前的写状态 (out_pwrite 由 is_write 决定)
+//     // 注意：原始代码is_write的逻辑没有直接给出，但它决定了out_pwrite。
+//     // 我们假设out_pwrite在SETUP->ACCESS转换时是有效的。
+//     // 更稳妥的方式是用 in_pwrite 在IDLE->SETUP时锁存，如果master保证此时pwrite有效。
+//     // 这里我们用更直接的 out_pwrite 在 ACCESS 开始时判断。
+//     end else if (state == SETUP && nstate == ACCESS) begin
+//         current_apb_transfer_is_write <= out_pwrite; // 锁存是否为写
+//     // 当传输结束返回 IDLE 时清除标志
+//     end else if (nstate == IDLE && state != IDLE) begin
+//         current_apb_transfer_is_write <= 1'b0;
+//     end
+//     // 在 ACCESS 和 DELAY 状态保持不变
+// end
+
+// // 2. APB 写周期计数器逻辑
+// always_ff @(posedge clock or posedge reset) begin
+//     if (reset) begin
+//         apb_write_cycle_counter <= 16'b0;
+//     // 当进入 ACCESS 状态且是写操作时，计数器清零（准备开始计数）
+//     // 或者当传输完全结束时也清零
+//     end else if ((state == SETUP && nstate == ACCESS && current_apb_transfer_is_write) || (nstate == IDLE && state != IDLE)) begin
+//          apb_write_cycle_counter <= 16'b0;
+//     // 当处于 ACCESS 状态，是写操作，且 Slave 还没准备好时，计数器递增
+//     end else if (state == ACCESS && current_apb_transfer_is_write && !out_pready) begin
+//         apb_write_cycle_counter <= apb_write_cycle_counter + 1;
+//     end
+//     // 其他情况（如 Slave 准备好了，或处于 DELAY 状态等）保持计数值不变，直到下次清零
+// end
+
+// // 3. 在 APB 写操作完成时打印周期数
+// //    完成标志：在 ACCESS 状态，是写操作，并且本周期 out_pready 变为高
+// wire apb_write_completed_by_slave = (state == ACCESS) && current_apb_transfer_is_write && out_pready;
+
+// always_ff @(posedge clock) begin
+//     // 在非复位状态下，并且刚好是 APB 写完成的那个周期
+//     if (!reset && apb_write_completed_by_slave) begin
+//         // 打印信息。计数器值代表了 pready 为低的周期数，所以实际周期数是 count + 1
+//         $display("[%t] APB_WRITE_STAT: Slave Write @ Addr=0x%h completed in %d cycles (from penable high to pready high).",
+//                  $time, out_paddr, apb_write_cycle_counter + 1);
+//     end
+// end
+//--------------------------------------------------------------------------
 
 // === 结束增强的调试逻辑 ===
 
