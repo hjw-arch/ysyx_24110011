@@ -1,68 +1,78 @@
-// module icache #(
-// 	parameter BLOCK_SIZE	=	4,
-// 	parameter BLOCK_NUM		=	16,
-// 	parameter ADDR_WIDTH	=	32,
-// 	parameter DATA_WIDTH	=	32,
+module icache #(
+	parameter BLOCK_SIZE	=	4,
+	parameter BLOCK_NUM		=	16,
+	parameter ADDR_WIDTH	=	32,
+	parameter DATA_WIDTH	=	32,
 
-// 	parameter INDEX_WIDTH	=	$clog2(BLOCK_NUM),
-// 	parameter OFFSET_WIDTH	=	$clog2(BLOCK_SIZE),
-// 	parameter TAG_WIDTH		=	ADDR_WIDTH - INDEX_WIDTH - OFFSET_WIDTH
+	parameter INDEX_WIDTH	=	$clog2(BLOCK_NUM),
+	parameter OFFSET_WIDTH	=	$clog2(BLOCK_SIZE),
+	parameter TAG_WIDTH		=	ADDR_WIDTH - INDEX_WIDTH - OFFSET_WIDTH
 
-// ) (
-// 	input 							clk,
-// 	input 							rst,
+) (
+	input 							clk,
+	input 							rst,
 
-// 	// 与IFU数据交互
-// 	input	[ADDR_WIDTH-1:0]		c2i_addr,
-// 	input							c2i_valid,
-// 	output 							i2c_ready,
+	// 与IFU数据交互
+	input	[ADDR_WIDTH-1:0]		c2i_addr,
+	input							c2i_valid,
+	output 							i2c_ready,
 
-// 	output 							i2c_valid,
-// 	output 	[DATA_WIDTH-1:0]		i2c_data,
-// 	input 							c2i_ready,
+	output 							i2c_valid,
+	output 	[DATA_WIDTH-1:0]		i2c_data,
+	input 							c2i_ready,
 
-// 	// 与mem交互
-// 	output							i2m_valid,
-// 	output 	[ADDR_WIDTH-1:0]		i2m_addr,
-// 	input							m2i_ready,
+	// 与mem交互
+	output							i2m_valid,
+	output 	[ADDR_WIDTH-1:0]		i2m_addr,
+	input							m2i_ready,
 
-// 	input	[DATA_WIDTH-1:0]		m2i_data,
-// 	input 							m2i_valid,
-// 	output 							i2m_ready
-// );
+	input	[DATA_WIDTH-1:0]		m2i_data,
+	input 							m2i_valid,
+	output 							i2m_ready
+);
 
-// /*********************************************** cache定义 ****************************************/
+/*********************************************** cache定义 ****************************************/
 
-// typedef struct {								// 定义cache块
-// 	logic 					valid;
-// 	logic [TAG_WIDTH-1:0] 	tag;
-// 	logic [DATA_WIDTH-1:0] 	data;
-// } cache_block_t;
+typedef struct {								// 定义cache块
+	logic 					valid;
+	logic [TAG_WIDTH-1:0] 	tag;
+	logic [DATA_WIDTH-1:0] 	data;
+} cache_block_t;
 
-// cache_block_t cache [0:BLOCK_NUM-1];
-
-
-// /******************************************** 地址分解 *********************************************/
-
-// logic	[TAG_WIDTH-1:0]		tag;
-// logic	[INDEX_WIDTH-1:0]	index;
-// logic	[OFFSET_WIDTH-1:0]	offset;
-
-// assign	tag		=	c2i_addr[ADDR_WIDTH - 1 : ADDR_WIDTH - TAG_WIDTH];
-// assign	index	=	c2i_addr[INDEX_WIDTH + OFFSET_WIDTH - 1 : OFFSET_WIDTH];
-// assign	offset	=	c2i_addr[OFFSET_WIDTH - 1 : 0];
+cache_block_t cache [0:BLOCK_NUM-1];
 
 
-// /***************************************** 命中检测 *************************************************/
+/******************************************** 地址分解 *********************************************/
 
-// logic 	hit;
-// assign	hit	=	cache[index].tag == tag && cache[index].valid == 1'b1;
+logic	[TAG_WIDTH-1:0]		tag;
+logic	[INDEX_WIDTH-1:0]	index;
+logic	[OFFSET_WIDTH-1:0]	offset;
+
+assign	tag		=	c2i_addr[ADDR_WIDTH - 1 : ADDR_WIDTH - TAG_WIDTH];
+assign	index	=	c2i_addr[INDEX_WIDTH + OFFSET_WIDTH - 1 : OFFSET_WIDTH];
+assign	offset	=	c2i_addr[OFFSET_WIDTH - 1 : 0];
 
 
-// /***************************************** 状态机 ***************************************************/
+/***************************************** 命中检测 *************************************************/
 
-// localparam		IDLE	=	
+logic 	hit;
+assign	hit	=	cache[index].tag == tag && cache[index].valid;
+
+
+/***************************************** 状态机 ***************************************************/
+
+localparam		IDLE		=	2'b00,		// 这里使用触发器实现cache，因此如果命中则单周期取指，如果需要多周期取指，那么在流水线处理器中，icache也需要设计流水线
+				REQ_MEM		=	2'b01,
+				WAIT_MEM	=	2'b11;
+
+logic	[1:0]	state, nstate;
+
+always_ff @(posedge clk) begin
+	state <= rst ? IDLE : nstate;
+end
+
+
 
 
 	
-// endmodule //icache
+endmodule //icache
