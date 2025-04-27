@@ -31,4 +31,4 @@ image: $(IMAGE).elf
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: image
-	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" run IMG=$(IMAGE).bin
+	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" sim IMG=$(IMAGE).bin
