@@ -25,7 +25,7 @@
 
 #define PERFORMANCE_COUNTER		1
 
-#define NVBOARD				1
+// #define NVBOARD				1
 
 
 #endif
