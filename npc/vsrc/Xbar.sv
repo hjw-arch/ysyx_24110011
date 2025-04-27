@@ -166,7 +166,7 @@ assign m_arready  = select_s1_ar ? s1_arready : s0_arready; // 如果目标是S0
 // 读数据 (R) 通道路由 (Slaves -> Master)
 //--------------------------------------------------------------------------
 // 将来自从设备的读数据复用回主设备。
-assign m_rvalid = s0_rvalid | s1_rvalid;	// assign m_rvalid = select_s1_ar ? s1_rvalid : s0_rvalid;	更规范的写法
+assign m_rvalid = select_s1_ar ? s1_rvalid : s0_rvalid;	// assign m_rvalid = s1_rvalid | s0_rvalid;	更简单的写法
 
 // 从活动的从设备选择数据
 assign m_rid    = select_s1_ar ? s1_rid    : s0_rid;    // 根据选择输出 rid
@@ -244,7 +244,7 @@ assign m_wready  = select_s1_aw ? s1_wready : s0_wready; // 如果 AW 目标是S
 //--------------------------------------------------------------------------
 // 将来自从设备的写响应复用回主设备。
 
-assign m_bvalid = s0_bvalid | s1_bvalid;		// assign m_bvalid = select_s1_aw ? s1_bvalid : s0_bvalid;	更规范的写法
+assign m_bvalid = select_s1_aw ? s1_bvalid : s0_bvalid;		// assign m_bvalid = s1_bvalid | s0_bvalid;	更简单的写法
 
 // 从活动的从设备选择响应
 assign m_bid    = select_s1_aw ? s1_bid    : s0_bid;    // 根据选择输出 bid
