@@ -269,7 +269,8 @@ reg [31 : 0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	$display("P1:   cnt = %d, state = %d", counter, state);
+	if (counter < 100000)
+		$display("P1:   cnt = %d, state = %d", counter, state);
 end
 
 endmodule
@@ -357,7 +358,8 @@ reg [31 : 0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d", counter, state, nstate, has_new_data);
+	if (counter < 100000)
+		$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d", counter, state, nstate, has_new_data);
 end
 
 endmodule
