@@ -50,6 +50,10 @@ registerfile #(32) RF_INTER (
     .rs2_data(rs2_data)
 );
 
+always_ff @(posedge clk) begin
+	if (has_new_data) $display("WBU!\n");
+end
+
 
 endmodule
 

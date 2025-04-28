@@ -133,7 +133,9 @@ PC #(WIDTH) PC_INTER(
 // always_ff @(posedge clk) begin
 // 	if (exu_valid & (state != S_WAIT_READY))  PerformanceCounter_exu_finish_cal();
 // end
-
+always_ff @(posedge clk) begin
+	if (has_new_data) $display("EXU!\n");
+end
 
 /******************************************************************/
 

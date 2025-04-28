@@ -142,15 +142,13 @@ reg [31:0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	if (counter < 22500) begin
+	if (counter < 20500) begin
 		if (c2i_valid) begin
-			$display("TOP:  cnt = %d", counter);
-			$display("c2i addr = %x", c2i_addr);
+			$display("TOP:  cnt = %d, c2i addr = %x", counter, c2i_addr);
 		end
 
 		if (i2c_valid) begin
-			$display("TOP:  cnt = %d", counter);
-			$display("addr = %x, data = %x", c2i_addr, i2c_data);
+			$display("TOP:  cnt = %d, addr = %x, data = %x", counter, c2i_addr, i2c_data);
 		end
 
 	end
@@ -277,7 +275,7 @@ reg [31 : 0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	if (counter < 22500)
+	if (counter < 20500)
 		$display("P1:   cnt = %d, state = %d", counter, state);
 end
 
@@ -366,8 +364,8 @@ reg [31 : 0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	if (counter < 22500)
-		$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d\n\n", counter, state, nstate, has_new_data);
+	if (counter < 20500)
+		$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d, i2m_valid = %d\n", counter, state, nstate, has_new_data, i2m_valid);
 end
 
 endmodule

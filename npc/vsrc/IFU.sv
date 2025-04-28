@@ -62,7 +62,7 @@ always_ff @(posedge clk) begin
     ifu_data <= (ifu_valid & idu_ready) ? {i2c_data, pc} : ifu_data;
 end
 
-assign prerequest = wbu_valid;
+assign prerequest = 1'b0;	// 需要修改，暂时为了cache妥协
 
 // output declaration of module axi4_full_master
 wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */

@@ -77,6 +77,10 @@ end
 // 	if (idu_valid & (state != S_WAIT_READY)) PerformanceCounter_idu_identify_inst(inst);
 // end
 
+always_ff @(posedge clk) begin
+	if (has_new_data) $display("IDU!\n");
+end
+
 
 /******************************************************************/
 
