@@ -265,6 +265,13 @@ always_ff @(posedge clk) begin
     end
 end
 
+reg [31 : 0] counter;
+
+always_ff @(posedge clk) begin
+	if (!rst) counter <= counter + 1;
+	$display("P1:   cnt = %d, state = %d", counter, state);
+end
+
 endmodule
 
 
@@ -344,6 +351,14 @@ assign  sram_wtag   =   i_tag;
 /************************* 返回上层数据 *************************/
 assign  o_valid     =   has_new_data & hit | state & m2i_valid;
 assign  o_data      =   state ? m2i_data : i_cache_data;
+
+
+reg [31 : 0] counter;
+
+always_ff @(posedge clk) begin
+	if (!rst) counter <= counter + 1;
+	$display("P2:   cnt = %d, state = %d, next_state = %d", counter, state, nstate);
+end
 
 endmodule
 
