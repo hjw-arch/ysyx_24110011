@@ -138,13 +138,21 @@ icache_P2 #(
 assign i2c_valid = p2_o_valid_w;
 assign i2c_data = p2_o_data_w;
 
-always_ff @(posedge clk) begin
-	if (c2i_valid) begin
-		$display("c2i addr = %x", c2i_addr);
-	end
+reg [31:0] counter;
 
-	if (i2c_valid) begin
-		$display("addr = %x, data = %x", c2i_addr, i2c_data);
+always_ff @(posedge clk) begin
+	if (!rst) counter <= counter + 1;
+	if (counter < 22500) begin
+		if (c2i_valid) begin
+			$display("TOP:  cnt = %d", counter);
+			$display("c2i addr = %x", c2i_addr);
+		end
+
+		if (i2c_valid) begin
+			$display("TOP:  cnt = %d", counter);
+			$display("addr = %x, data = %x", c2i_addr, i2c_data);
+		end
+
 	end
 end
 
@@ -269,7 +277,7 @@ reg [31 : 0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	if (counter < 100000)
+	if (counter < 22500)
 		$display("P1:   cnt = %d, state = %d", counter, state);
 end
 
@@ -358,8 +366,8 @@ reg [31 : 0] counter;
 
 always_ff @(posedge clk) begin
 	if (!rst) counter <= counter + 1;
-	if (counter < 100000)
-		$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d", counter, state, nstate, has_new_data);
+	if (counter < 22500)
+		$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d\n\n", counter, state, nstate, has_new_data);
 end
 
 endmodule
