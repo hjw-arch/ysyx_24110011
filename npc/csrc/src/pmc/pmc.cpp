@@ -22,6 +22,9 @@
 // 标志位
 bool finish_bootloader = false;
 
+// icache
+uint64_t icache_hit_flash			= 0;
+uint64_t icache_hit_sdram			= 0;
 
 // IFU
 uint64_t ifu_fetch_inst_flash = 0;
@@ -155,6 +158,15 @@ void PerformanceCounter_inst_type_total_cycles(int start, int inst) {
 }
 
 
+void PerformanceCounter_icache_hit() {
+	if (finish_bootloader) {
+		icache_hit_sdram++;
+	} else {
+		icache_hit_flash++;
+	}
+}
+
+
 void PerformanceCounter_lsu_load() {
 	if (finish_bootloader) {
 		lsu_load_data_sdram++;
@@ -270,6 +282,12 @@ void PerformanceCounter_display() {
     printf("Normal (SDRAM):\n");
     printf("  Instruction Fetch Count:        %ld\n", ifu_fetch_inst_sdram);
     printf("  Instruction Fetch Cycles:       %ld\n", ifu_fetch_inst_cycles_sdram);
+
+	printf(ANSI_FG_CYAN"\n[ICACHE]\n"ANSI_NONE);
+    printf("Bootloader (flash & sram):\n");
+    printf("  Hit Times:        			  %ld\n", icache_hit_flash);
+    printf("Normal (SDRAM):\n");
+    printf("  Hit Times:        			  %ld\n", icache_hit_sdram);
 
     // Total Statistics
     printf(ANSI_FG_CYAN"\n[Type - Total Statistics]\n"ANSI_NONE);
