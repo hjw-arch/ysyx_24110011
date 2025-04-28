@@ -161,15 +161,15 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-	if (done) PerformanceCounter_ifu_fetch();
+	if (i2c_valid) PerformanceCounter_ifu_fetch();
 end
 /* verilator lint_off WIDTHEXPAND */
 always_ff @(posedge clk) begin
-	if (!rst) PerformanceCounter_ifu_fetch_cycles(start, done);
+	if (!rst) PerformanceCounter_ifu_fetch_cycles(start, i2c_valid);
 end
 
 always_ff @(posedge clk) begin
-	if (!rst) PerformanceCounter_inst_type_total_cycles(start, rdata);
+	if (!rst) PerformanceCounter_inst_type_total_cycles(start, i2c_data);
 end
 
 
