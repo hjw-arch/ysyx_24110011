@@ -317,7 +317,7 @@ module icache_P2 #(
 assign  o_ready =       ~nstate;        // 只要下个周期还是idle，就应该能够接收新数据
 logic   has_new_data;
 always_ff @(posedge clk) begin
-    has_new_data <= (i_valid & o_ready);
+    has_new_data <= rst ? 1'b0 : (i_valid & o_ready);
 end
 
 
