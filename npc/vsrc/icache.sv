@@ -139,6 +139,10 @@ assign i2c_valid = p2_o_valid_w;
 assign i2c_data = p2_o_data_w;
 
 always_ff @(posedge clk) begin
+	if (c2i_valid) begin
+		$display("c2i addr = %x", c2i_addr);
+	end
+
 	if (i2c_valid) begin
 		$display("addr = %x, data = %x", c2i_addr, i2c_data);
 	end
@@ -338,13 +342,8 @@ assign  sram_wtag   =   i_tag;
 
 
 /************************* 返回上层数据 *************************/
-// assign  o_valid     =   has_new_data & hit | state & m2i_valid;
-// assign  o_data      =   state ? m2i_data : i_cache_data;
-
-always_ff @(posedge clk) begin
-	o_valid <= has_new_data & hit | state & m2i_valid;
-	o_data <= state ? m2i_data : i_cache_data;
-end
+assign  o_valid     =   has_new_data & hit | state & m2i_valid;
+assign  o_data      =   state ? m2i_data : i_cache_data;
 
 endmodule
 

@@ -128,11 +128,11 @@ PC #(WIDTH) PC_INTER(
 
 /************************** 性能计数器 *****************************/
 
-import "DPI-C" function void PerformanceCounter_exu_finish_cal();
+// import "DPI-C" function void PerformanceCounter_exu_finish_cal();
 
-always_ff @(posedge clk) begin
-	if (exu_valid & (state != S_WAIT_READY))  PerformanceCounter_exu_finish_cal();
-end
+// always_ff @(posedge clk) begin
+// 	if (exu_valid & (state != S_WAIT_READY))  PerformanceCounter_exu_finish_cal();
+// end
 
 
 /******************************************************************/
