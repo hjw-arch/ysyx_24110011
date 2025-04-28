@@ -55,11 +55,11 @@ always_ff @(posedge clk) begin
     start <= wbu_valid | rst ? 1'b1 : 1'b0;
 end
 
-assign ifu_valid = done | (state == S_WAIT_READY);
+assign ifu_valid = i2c_valid | (state == S_WAIT_READY);
 
-// 模拟SRAM取指
+
 always_ff @(posedge clk) begin
-    ifu_data <= (ifu_valid & idu_ready) ? {rdata, pc} : ifu_data;
+    ifu_data <= (ifu_valid & idu_ready) ? {i2c_data, pc} : ifu_data;
 end
 
 assign prerequest = wbu_valid;
@@ -71,17 +71,50 @@ wire done;
 
 // Not used
 
+// output declaration of module icache
+wire i2c_ready;
+wire i2c_valid;
+wire [31:0] i2c_data;
+wire i2m_valid;
+wire [31:0] i2m_addr;
+wire i2m_ready;
+
+
+// 流水线时，icache要大改
+icache #(
+	.BLOCK_SIZE 	(4   ),
+	.BLOCK_NUM  	(16  ),
+	.ADDR_WIDTH 	(32  ),
+	.DATA_WIDTH 	(32  ))
+u_icache(
+	.clk       	(clk        ),
+	.rst       	(rst        ),
+	.c2i_addr  	(pc		    ),
+	.c2i_valid 	(start		),
+	.i2c_ready 	(i2c_ready  ),
+	.i2c_valid 	(i2c_valid  ),
+	.i2c_data  	(i2c_data   ),
+	.c2i_ready 	(1'b1 		),
+	.i2m_valid 	(i2m_valid  ),
+	.i2m_addr  	(i2m_addr   ),
+	.m2i_ready 	(1'b1       ),
+	.m2i_data  	(rdata      ),
+	.m2i_valid 	(done       ),
+	.i2m_ready 	(i2m_ready  )
+);
+
+
 
 axi4_full_master u_axi4_full_master(
     .clk        	(clk         ),
     .rst        	(rst         ),
     .wen        	(1'b0        ),
-    .ren        	(start       ),
-    .user_ready 	(idu_ready   ),
+    .ren        	(i2m_valid   ),
+    .user_ready 	(i2m_ready   ),
     .len        	(2'b10       ),
     .waddr      	(32'b0       ),
     .wdata      	(32'b0       ),
-    .raddr      	(pc          ),
+    .raddr      	(i2m_addr    ),
     .rdata      	(rdata       ),
     .rresp      	(rresp       ),/* verilator lint_off PINCONNECTEMPTY */
     .wresp      	(            ),
