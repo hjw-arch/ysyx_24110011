@@ -192,6 +192,10 @@ always_ff @(posedge clk) begin
 	if (!rst & lsu_wen) PerformanceCounter_lsu_store_cycles(has_new_data, done);
 end
 
+// always_ff @(posedge clk) begin
+// 	if (has_new_data) $display("LSU!\n");
+// end
+
 
 /******************************************************************/
 

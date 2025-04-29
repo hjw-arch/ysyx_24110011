@@ -138,6 +138,23 @@ icache_P2 #(
 assign i2c_valid = p2_o_valid_w;
 assign i2c_data = p2_o_data_w;
 
+// reg [31:0] counter;
+
+// always_ff @(posedge clk) begin
+// 	if (!rst) counter <= counter + 1;
+// 	if (counter < 20500) begin
+// 		if (c2i_valid) begin
+// 			$display("TOP:  cnt = %d, c2i addr = %x", counter, c2i_addr);
+// 		end
+
+// 		if (i2c_valid) begin
+// 			$display("TOP:  cnt = %d, addr = %x, data = %x", counter, c2i_addr, i2c_data);
+// 		end
+
+// 	end
+// end
+
+
 endmodule
 
 
@@ -254,6 +271,14 @@ always_ff @(posedge clk) begin
     end
 end
 
+// reg [31 : 0] counter;
+
+// always_ff @(posedge clk) begin
+// 	if (!rst) counter <= counter + 1;
+// 	if (counter < 20500)
+// 		$display("P1:   cnt = %d, state = %d", counter, state);
+// end
+
 endmodule
 
 
@@ -299,7 +324,7 @@ module icache_P2 #(
 assign  o_ready =       ~nstate;        // 只要下个周期还是idle，就应该能够接收新数据
 logic   has_new_data;
 always_ff @(posedge clk) begin
-    has_new_data <= (i_valid & o_ready);
+    has_new_data <= rst ? 1'b0 : (i_valid & o_ready);
 end
 
 
@@ -331,13 +356,25 @@ assign  sram_wtag   =   i_tag;
 
 
 /************************* 返回上层数据 *************************/
-// assign  o_valid     =   has_new_data & hit | state & m2i_valid;
-// assign  o_data      =   state ? m2i_data : i_cache_data;
+assign  o_valid     =   has_new_data & hit | state & m2i_valid;
+assign  o_data      =   state ? m2i_data : i_cache_data;
+
+/************************ 性能计数器 ***************************/
+import "DPI-C" function void PerformanceCounter_icache_hit();
 
 always_ff @(posedge clk) begin
-	o_valid <= has_new_data & hit | state & m2i_valid;
-	o_data <= state ? m2i_data : i_cache_data;
+	if (has_new_data & hit) begin
+		PerformanceCounter_icache_hit();
+	end
 end
+
+// reg [31 : 0] counter;
+
+// always_ff @(posedge clk) begin
+// 	if (!rst) counter <= counter + 1;
+// 	if (counter < 20500)
+// 		$display("P2:   cnt = %d, state = %d, next_state = %d, new_data = %d, i2m_valid = %d\n", counter, state, nstate, has_new_data, i2m_valid);
+// end
 
 endmodule
 
