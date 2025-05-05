@@ -26,6 +26,9 @@ bool finish_bootloader = false;
 uint64_t icache_hit_flash			= 0;
 uint64_t icache_hit_sdram			= 0;
 
+uint64_t icache_amat_flash			= 0;
+uint64_t icache_amat_sdram			= 0;
+
 // IFU
 uint64_t ifu_fetch_inst_flash = 0;
 uint64_t ifu_fetch_inst_sdram = 0;
@@ -166,6 +169,14 @@ void PerformanceCounter_icache_hit() {
 	}
 }
 
+void PerformanceCounter_icache_AMAT() {
+	if (finish_bootloader) {
+		icache_amat_sdram++;
+	} else {
+		icache_amat_flash++;
+	}
+}
+
 
 void PerformanceCounter_lsu_load() {
 	if (finish_bootloader) {
@@ -288,6 +299,15 @@ void PerformanceCounter_display() {
     printf("  Hit Times:        			  %ld\n", icache_hit_flash);
     printf("Normal (SDRAM):\n");
     printf("  Hit Times:        			  %ld\n", icache_hit_sdram);
+	printf("Bootloader (flash & sram):\n");
+    printf("  Miss Penalty:        			  %ld\n", icache_amat_flash);
+    printf("Normal (SDRAM):\n");
+    printf("  Miss Penalty:        			  %ld\n", icache_amat_sdram);
+	printf("Bootloader (flash & sram):\n");
+    printf("  Miss Times:        			  %ld\n", ifu_fetch_inst_flash - icache_hit_flash);
+    printf("Normal (SDRAM):\n");
+    printf("  Miss Times:        			  %ld\n", ifu_fetch_inst_sdram - icache_hit_sdram);
+	
 
     // Total Statistics
     printf(ANSI_FG_CYAN"\n[Type - Total Statistics]\n"ANSI_NONE);
