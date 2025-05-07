@@ -141,7 +141,7 @@ void iringbuf_display() {
     }
     puts("\n");
 
-	IFDEF(CONFIG_ITRACE2FILE, close_itrace_file())
+	IFDEF(CONFIG_ITRACE2FILE, close_itrace_file());
 }
 
 #endif
