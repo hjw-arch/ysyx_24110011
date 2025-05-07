@@ -28,8 +28,8 @@
 	result;	\
 })
 
-#define BIT_MASK(bits)			((1ull << bits) - 1)
-#define GET_BITS(a, hi, lo)		((a & BIT_MASK(hi + 1)) >> lo)
+#define BIT_MASK(bits)			((1ull << (bits)) - 1)
+#define GET_BITS(a, hi, lo)		(((a) & BIT_MASK((hi) + 1)) >> (lo))
 #define GET_OFFSET(addr)		GET_BITS(addr, config.bits_for_offset - 1, 0)
 #define GET_INDEX(addr)			GET_BITS(addr, config.bits_for_offset + config.bits_for_index - 1, config.bits_for_offset)
 #define GET_TAG(addr)			GET_BITS(addr, ADDR_WIDTH - 1, config.bits_for_offset + config.bits_for_index)
@@ -47,6 +47,7 @@ typedef enum {
 } replacement_policy_t;
 
 typedef struct {
+	int total_size;				// cache总大小
 	int block_size;				// cache块大小, 单位：字节
 	int block_num;				// cache块数量
 	int associativity;			// 相联度
@@ -77,15 +78,32 @@ uint32_t is_pow_2(uint32_t n) {
 	return ((n > 0) && ((n & (n - 1)) == 0));
 }
 
+void display_usage(char *prog_name) {
+	fprintf(stderr, "用法: %s -s <cache总大小> -b <块大小> -a <相联度> -p <替换策略> -t <追踪文件名>\n", prog_name);
+    fprintf(stderr, "  参数说明:\n");
+    fprintf(stderr, "    -s <大小>: Cache总大小 (单位: 字节, 必须是2的幂).\n");
+    fprintf(stderr, "    -b <大小>: Cache块大小 (单位: 字节, 必须是2的幂).\n");
+    fprintf(stderr, "    -a <路数>: 相联度 (多少路组相联, 必须是2的幂).\n");
+    fprintf(stderr, "               值为 1 表示直接映射 (Direct Mapped).\n");
+    fprintf(stderr, "               若 块数量 == 相联度, 则为全相联 (Fully Associative).\n");
+    fprintf(stderr, "    -p <策略>: 替换策略。可选值: 'FIFO', 'PLRU', 'RANDOM'.\n");
+    fprintf(stderr, "    -t <文件>: 包含内存访问地址序列的追踪文件的路径。\n");
+    fprintf(stderr, "               文件每行一个十六进制地址值。\n");
+    fprintf(stderr, "    -h        : 显示此帮助信息并退出。\n");
+    fprintf(stderr, "  示例:\n");
+    fprintf(stderr, "    %s -s 4 -n 64 -a 4 -p PLRU -t /path/to/your/trace.bin\n", prog_name);
+}
+
 // 检查cache配置参数是否合适，不支持非2的次幂的参数配置
 // 如果cache的组数和相联度是2的次幂，说明cache的总块数一定是2的次幂
-void check_config() {
-	if (config.associativity == 0 || config.block_num == 0 || config.block_size == 0) {
+void check_config(char *prog_name) {
+	if (config.associativity == 0 || config.total_size == 0 || config.block_size == 0) {
+		display_usage(prog_name);
 		Assert(0, "Missing initialization parameter(s).");
 	}
 
-	if (!is_pow_2(config.block_num)) {
-		Assert(0, "Block number must be power of 2 and block number can not be zero.");
+	if (!is_pow_2(config.total_size)) {
+		Assert(0, "Cache szie must be power of 2 and cache size can not be zero.");
 	}
 
 	if (!is_pow_2(config.block_size)) {
@@ -105,32 +123,16 @@ void check_config() {
 	}
 }
 
-void display_usage(char *prog_name) {
-	fprintf(stderr, "用法: %s -s <cache块大小> -n <块数量> -a <相联度> -p <替换策略> -t <追踪文件名>\n", prog_name);
-    fprintf(stderr, "  参数说明:\n");
-    fprintf(stderr, "    -s <大小>: Cache块大小 (单位: 字节, 必须是2的幂).\n");
-    fprintf(stderr, "    -n <大小>: Cache块数量 (单位: 个, 必须是2的幂).\n");
-    fprintf(stderr, "    -a <路数>: 相联度 (多少路组相联, 必须是2的幂).\n");
-    fprintf(stderr, "               值为 1 表示直接映射 (Direct Mapped).\n");
-    fprintf(stderr, "               若 块数量 == 相联度, 则为全相联 (Fully Associative).\n");
-    fprintf(stderr, "    -p <策略>: 替换策略。可选值: 'FIFO', 'PLRU', 'RANDOM'.\n");
-    fprintf(stderr, "    -t <文件>: 包含内存访问地址序列的追踪文件的路径。\n");
-    fprintf(stderr, "               文件每行一个十六进制地址值。\n");
-    fprintf(stderr, "    -h        : 显示此帮助信息并退出。\n");
-    fprintf(stderr, "  示例:\n");
-    fprintf(stderr, "    %s -s 4 -n 64 -a 4 -p PLRU -t /path/to/your/trace.bin\n", prog_name);
-}
-
 // 解析命令行的命令
 void parse_arguments(int argc, char **argv) {
 	int opt;
-	while ((opt = getopt(argc, argv, "s:n:a:p:t:h")) != -1) {
+	while ((opt = getopt(argc, argv, "s:b:a:p:t:h")) != -1) {
 		switch (opt) {
 			case 's':
-				config.block_size = atoi(optarg);
+				config.total_size = atoi(optarg);
 				break;
-			case 'n':
-				config.block_num = atoi(optarg);
+			case 'b':
+				config.block_size = atoi(optarg);
 				break;
 			case 'a':
 				config.associativity = atoi(optarg);
@@ -158,12 +160,11 @@ void parse_arguments(int argc, char **argv) {
 				break;
 		}
 	}
-
-	check_config();
 }
 
 
-void init_cache() {
+void init_cache(char *prog_name) {
+	config.block_num = config.total_size / config.block_size;
 	config.set_num = config.block_num / config.associativity;		// 组数量
 
 	config.bits_for_offset = LOG2(config.block_size);
@@ -200,16 +201,17 @@ void init_cache() {
 		srand(time(NULL));
 	}
 
+	check_config(prog_name);
 
 	// 打印配置信息
     printf("--- Cache 配置初始化完成 ---\n");
-    printf("总大小:         %d 字节\n", config.block_num * config.block_size);
+    printf("总大小:         %d 字节\n", config.total_size);
     printf("块大小:         %d 字节\n", config.block_size);
+	printf("总行数:         %d\n", config.block_num);
     printf("相联度:         %d 路\n", config.associativity);
+	printf("总组数:         %d\n", config.set_num);
     printf("替换策略:       %s\n", config.policy == POLICY_FIFO ? "FIFO" :
                                      (config.policy == POLICY_PLRU ? "PLRU" : "Random"));
-    printf("总行数:         %d\n", config.block_num);
-    printf("总组数:         %d\n", config.set_num);
     printf("块内偏移位数:   %d\n", config.bits_for_offset);
     printf("组索引位数:     %d\n", config.bits_for_index);
     printf("标签位数:       %d\n", config.bits_for_tag);
@@ -348,7 +350,7 @@ void sim_cache() {
 		access_count++;
 
 		if (access_count % 1000000 == 0) {
-            printf("已处理 %llu 个地址...\n", access_count);
+            printf("已处理 %lu 个地址...\n", access_count);
         }
 	}
 
@@ -357,7 +359,7 @@ void sim_cache() {
 		Assert(0, "Error(s) occurred while reading the trace file.");
 	}
 
-	printf("追踪文件处理完毕。共处理 %llu 个地址。\n", access_count);
+	printf("追踪文件处理完毕。共处理 %lu 个地址。\n", access_count);
 }
 
 // 释放为cache申请的内存
@@ -376,9 +378,9 @@ void cleanup_memory() {
 
 void display_statistics() {
     printf("\n--- 模拟结果统计 ---\n");
-    printf("总访问次数: %llu\n", total_access_times);
-    printf("命中次数:   %llu\n", total_hit_times);
-    printf("缺失次数:   %llu\n", total_access_times - total_hit_times);
+    printf("总访问次数: %lu\n", total_access_times);
+    printf("命中次数:   %lu\n", total_hit_times);
+    printf("缺失次数:   %lu\n", total_access_times - total_hit_times);
 
     if (total_access_times > 0) { // 避免除以零错误。
         double hit_rate = (double)total_hit_times / total_access_times * 100.0;
@@ -392,7 +394,7 @@ void display_statistics() {
 int main(int argc, char **argv) {
 	parse_arguments(argc, argv);
 
-	init_cache();
+	init_cache(argv[0]);
 
 	sim_cache();
 
