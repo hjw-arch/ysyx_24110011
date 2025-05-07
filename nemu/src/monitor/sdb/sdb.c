@@ -46,6 +46,49 @@ static char *rl_gets() {
 
 #ifdef CONFIG_ITRACE
 
+#ifdef CONFIG_ITRACE2FILE
+
+static FILE *itrace_output_file_fp = NULL;
+static char *itrace_file = "/home/hjw-arch/ysyx-workbench/ITRACE.bin";
+
+void open_itrace_file() {
+    if (itrace_output_file_fp) {
+        return;
+    }
+
+    itrace_output_file_fp = fopen(itrace_file, "wb");
+    Assert(itrace_output_file_fp, "Open itrace file failed.");
+}
+
+void close_itrace_file() {
+    if (itrace_output_file_fp) {
+        if (fclose(itrace_output_file_fp) == EOF) {
+            Assert(0, "Close itrace output file failed.");
+        }
+
+        itrace_output_file_fp = NULL;
+    }
+}
+
+void write2itrace(vaddr_t addr) {
+    if (itrace_output_file_fp) {
+        size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
+        if (items_written != 1) {
+            // 错误处理：可以打印错误，或者设置一个标志位，或者终止模拟
+            // 为简单起见，这里只打印错误。在实际模拟器中可能需要更健壮的处理。
+            fprintf(stderr, "Serious error: Failed to write the address to the trace file!\n");
+            if (ferror(itrace_output_file_fp)) {
+                perror("           文件写入错误详情");
+            }
+            // 考虑是否要关闭文件并停止追踪，或者忽略这个错误继续？
+            fclose(itrace_output_file_fp);
+            itrace_output_file_fp = NULL; // 避免后续尝试写入
+        }
+    }
+}
+
+#endif
+
 #define BUFFER_SIZE     16
 // ringbuffer
 typedef struct _ringbuf
@@ -60,6 +103,8 @@ void iringbuf_load(MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr), uint32_t i
     iringbuf[iringbuf_index].addr = addr;
     iringbuf[iringbuf_index++].inst = inst;
     if (iringbuf_index > BUFFER_SIZE - 1) iringbuf_index = 0;
+	IFDEF(CONFIG_ITRACE2FILE, open_itrace_file());
+	IFDEF(CONFIG_ITRACE2FILE, write2itrace(addr));
 }
 
 void iringbuf_display() {
@@ -95,6 +140,8 @@ void iringbuf_display() {
         index++;
     }
     puts("\n");
+
+	IFDEF(CONFIG_ITRACE2FILE, close_itrace_file());
 }
 
 #endif
