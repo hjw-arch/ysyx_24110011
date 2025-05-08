@@ -7,7 +7,7 @@ $(shell mkdir -p $(OBJ_DIR))
 TOP_NAME            ?= ysyx
 SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
 SIM_VINC            = $(abspath ./vsrc)
-SIM_CLFAGS          = -O3 $(SIM_CINC)
+SIM_CLFAGS          = -O3 $(SIM_CINC) -DSOC=1
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
 SIM_VSRC            = $(shell find $(abspath ./vsrc) -name "*.v" -or -name "*.sv")
 SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv, $(SIM_VSRC))
@@ -40,14 +40,14 @@ VERILATOR_VINC      = $(addprefix -y , $(SIM_VINC) $(SOC_VINC))
 VERILATOR_WNO       = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-NULLPORT --Wno-PINCONNECTEMPTY --Wno-ASSIGNDLY --Wno-DEFPARAM --Wno-UNDRIVEN --Wno-UNUSEDPARAM --Wno-SYNCASYNCNET --autoflush --Wno-EOFNEWLINE
 VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace $(VERILATOR_VINC) \
                       $(SOC_VFLAGS)  $(VERILATOR_CFLAGS) $(VERILATOR_LDFLAGS) $(VERILATOR_WNO)  \
-                      --top-module $(TOP_NAME) -DSOC
+                      --top-module $(TOP_NAME) +define+SOC
 
 default: run
 all: run
 run: $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS) -CFLAGS -DSOC $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"
@@ -69,7 +69,7 @@ VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
 
 VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace \
                            $(VERILATOR_VINC_NPC) $(VERILATOR_CFLAGS_NPC) $(VERILATOR_LDFLAGS_NPC) $(VERILATOR_WNO) \
-                           --top-module $(TOP_NAME_FOR_NPC) -DNPC # 注意这里没有 SOC_VFLAGS
+                           --top-module $(TOP_NAME_FOR_NPC) +define+NPC # 注意这里没有 SOC_VFLAGS
 
 npc: $(VERILATOR_SRC_NPC)
 	@echo
