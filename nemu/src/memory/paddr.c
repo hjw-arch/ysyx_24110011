@@ -101,9 +101,10 @@ uint32_t sim_uart_read(uint32_t addr) {
 	return 0;
 }
 
-void sim_uart_write(uint32_t addr, uint8_t data) {
+void sim_uart_write(uint32_t addr, word_t data) {
+	printf("IN UART WRITE!\n");
 	if (addr == UART_TX) {
-		printf("%c", data);
+		printf("%c", (uint8_t)data);
 	}
 }
 
