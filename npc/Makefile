@@ -6,10 +6,7 @@ $(shell mkdir -p $(OBJ_DIR))
 
 LAST_GOALS_FILE = $(OBJ_DIR)/last_make_goals.stamp
 
-# --- 读取上一次的目标 (如果文件存在) ---
-# 如果文件不存在，LAST_MAKED_GOALS 会为空
 LAST_MAKED_GOALS := $(shell cat $(LAST_GOALS_FILE) 2>/dev/null)
-
 CURRENT_MAKECMDGOALS = $(MAKECMDGOALS)
 
 ifeq ($(strip $(CURRENT_MAKECMDGOALS)),)
@@ -18,12 +15,10 @@ else
     CURRENT_GOALS_TO_COMPARE = $(sort $(CURRENT_MAKECMDGOALS)) # 排序以确保 'run npc' 和 'npc run' 被视为相同
 endif
 
-
 # 标志位，指示是否因为目标改变而需要清理
 NEEDS_CLEAN_DUE_TO_GOAL_CHANGE := false
 ifneq ($(strip $(CURRENT_GOALS_TO_COMPARE)), $(strip $(LAST_MAKED_GOALS)))
     ifneq ($(strip $(LAST_MAKED_GOALS)),)
-        $(info INFO: Make goals changed from [$(LAST_MAKED_GOALS)] to [$(CURRENT_GOALS_TO_COMPARE)]. Triggering selective clean.)
         NEEDS_CLEAN_DUE_TO_GOAL_CHANGE := true
     endif
 endif
@@ -32,10 +27,9 @@ endif
 .PHONY: prepare_build
 prepare_build:
 	@echo "--- Preparing build (Current goals: [$(CURRENT_GOALS_TO_COMPARE)]) ---"
-	@# 实际的清理逻辑放在这里，基于 NEEDS_CLEAN_DUE_TO_GOAL_CHANGE
 	@if $(NEEDS_CLEAN_DUE_TO_GOAL_CHANGE); then \
-		echo "INFO: Cleaning C++ objects and executables due to goal change..."; \
-		rm -f $(OBJ_DIR)/*.o $(OBJ_DIR)/V* ; \
+		rm -rf $(OBJ_DIR)/*; \
+		$(shell mkdir -p $(OBJ_DIR)) \
 	fi
 	@# 记录当前的目标到文件，供下次使用
 	@echo "$(CURRENT_GOALS_TO_COMPARE)" > $(LAST_GOALS_FILE)
@@ -83,7 +77,7 @@ VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x
 
 default: run
 all: run
-run: $(VERILATOR_SRC) prepare_build
+run: prepare_build $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
 	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
@@ -110,7 +104,7 @@ VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --
                            $(VERILATOR_VINC_NPC) $(VERILATOR_CFLAGS_NPC) $(VERILATOR_LDFLAGS_NPC) $(VERILATOR_WNO) \
                            --top-module $(TOP_NAME_FOR_NPC) +define+NPC # 注意这里没有 SOC_VFLAGS
 
-npc: $(VERILATOR_SRC_NPC) prepare_build
+npc: prepare_build $(VERILATOR_SRC_NPC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
 	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
