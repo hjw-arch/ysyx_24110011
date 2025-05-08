@@ -13,7 +13,7 @@ all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(SRC) -o $(TARGET)
-	./$(TARGET) -s 1024 -b 64 -a 4 -p RANDOM -t $(TRACE_PATH)
+	./$(TARGET) -s 64 -b 16 -a 4 -p RANDOM -t $(TRACE_PATH)
 
 clean:
 	rm $(TARGET)

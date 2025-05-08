@@ -25,7 +25,8 @@
 #if   defined(CONFIG_PMEM_MALLOC)
 static uint8_t *pmem = NULL;
 #elif  defined(CONFIG_SOC)
-static uint8_t ROM[ROM_SIZE] PG_ALIGN = {};
+static uint8_t FLASH[FLASH_SIZE] PG_ALIGN = {};
+static uint8_t SDRAM[SDRAM_SIZE] PG_ALIGN = {};
 static uint8_t SRAM[SRAM_SIZE] PG_ALIGN = {};
 #else // CONFIG_PMEM_GARRAY
 static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
@@ -33,16 +34,26 @@ static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 
 #ifdef CONFIG_SOC
 
+#define VADDR_IN_FLASH(addr)		((addr) <= FLASH_END && (addr) >= FLASH_BASE)
+#define VADDR_IN_SDRAM(addr)		((addr) <= SDRAM_END && (addr) >= SDRAM_BASE)
+#define VADDR_IN_SRAM(addr)			((addr) <= SRAM_END && (addr) >= SDRAM_BASE)
+
 uint8_t* guest_to_host(paddr_t paddr) {
-	if ((paddr & ROM_MASK) == ROM_BASE) return ROM + paddr - ROM_BASE;
-	if ((paddr & SRAM_MASK) == SRAM_BASE) return SRAM + paddr - SRAM_BASE;
+	if (VADDR_IN_FLASH(paddr)) return FLASH + paddr - FLASH_BASE;
+	if (VADDR_IN_SDRAM(paddr)) return SDRAM + paddr - SDRAM_BASE;
+	if (VADDR_IN_SRAM(paddr))  return SRAM  + paddr - SRAM_BASE;
 	panic("Error ADDRESS");
 	return 0;
 }
 
-paddr_t host_to_guest(uint8_t *haddr) { 
-	if (&ROM[ROM_SIZE] - haddr < ROM_SIZE) return haddr - ROM + ROM_BASE;
-	if (&SRAM[SRAM_SIZE] - haddr < SRAM_SIZE) return haddr - SRAM + SRAM_BASE;
+#define HADDR_IN_FLASH(addr)		(&FLASH[FLASH_SIZE] - (haddr) < FLASH_SIZE)
+#define HADDR_IN_SDRAM(addr)		(&SDRAM[SDRAM_SIZE] - (haddr) < SDRAM_SIZE)
+#define HADDR_IN_SRAM(addr)			(&SRAM[SRAM_SIZE] - (haddr) < SRAM_SIZE)
+
+paddr_t host_to_guest(uint8_t *haddr) {
+	if (HADDR_IN_FLASH(haddr)) return haddr - FLASH + FLASH_BASE;
+	if (HADDR_IN_SDRAM(haddr)) return haddr - SDRAM + SDRAM_BASE;
+	if (HADDR_IN_SRAM(haddr))  return haddr - SRAM  + SRAM_BASE;
 	panic("Error ADDRESS");
 	return 0;
 }
@@ -52,6 +63,7 @@ uint8_t* guest_to_host(paddr_t paddr) { return pmem + paddr - CONFIG_MBASE; }
 paddr_t host_to_guest(uint8_t *haddr) { return haddr - pmem + CONFIG_MBASE; }
 
 #endif
+
 static word_t pmem_read(paddr_t addr, int len) {
     word_t ret = host_read(guest_to_host(addr), len);
     IFDEF(CONFIG_MTRACE, mtrace_read(addr, len, ret, 0));

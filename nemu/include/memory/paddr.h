@@ -20,10 +20,11 @@
 
 #define PMEM_LEFT  ((paddr_t)CONFIG_MBASE)
 #define PMEM_RIGHT ((paddr_t)CONFIG_MBASE + CONFIG_MSIZE - 1)
+
 #ifndef CONFIG_SOC
 #define RESET_VECTOR (PMEM_LEFT + CONFIG_PC_RESET_OFFSET)
 #else
-#define RESET_VECTOR 0x20000000
+#define RESET_VECTOR 0x30000000
 #endif
 
 /* convert the guest physical address in the guest program to host virtual address in NEMU */
@@ -38,17 +39,20 @@ static inline bool in_pmem(paddr_t addr) {
 
 #else
 
-#define ROM_BASE	0x20000000
-#define ROM_SIZE	0x1000
-#define ROM_END		ROM_BASE + ROM_SIZE - 1
-#define ROM_MASK	0xFFFFF000
+#define FLASH_BASE	0x30000000
+#define FLASH_SIZE	0x4000000
+#define FLASH_END	FLASH_BASE + FLASH_SIZE - 1
+
+#define SDRAM_BASE	0xa0000000
+#define SDRAM_SIZE	0x2000000
+#define SDRAM_END	SDRAM_BASE + SDRAM_SIZE - 1
 
 #define SRAM_BASE	0x0f000000
 #define SRAM_SIZE	0x2000
 #define SRAM_END	SRAM_BASE + SRAM_SIZE - 1
-#define SRAM_MASK	0xFFFFE000
+
 static inline bool in_pmem(paddr_t addr) {
-	return (addr - ROM_BASE < ROM_SIZE) || (addr - SRAM_BASE < SRAM_SIZE);
+	return (addr - SDRAM_BASE < SDRAM_SIZE) || (addr - SRAM_BASE < SRAM_SIZE) || (addr - FLASH_BASE < FLASH_SIZE);
 }
 
 #endif
@@ -57,3 +61,4 @@ word_t paddr_read(paddr_t addr, int len);
 void paddr_write(paddr_t addr, int len, word_t data);
 
 #endif
+

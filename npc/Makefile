@@ -4,6 +4,10 @@ OBJ_DIR             = $(BUILD_DIR)/obj_dir
 $(shell mkdir -p $(OBJ_DIR))
 
 
+
+
+
+################################ 当make目标改变时，创造一个纯净的环境 ####################################
 LAST_GOALS_FILE = $(OBJ_DIR)/last_make_goals.stamp
 
 LAST_MAKED_GOALS := $(shell cat $(LAST_GOALS_FILE) 2>/dev/null)
@@ -32,6 +36,15 @@ prepare_build:
 		$(shell mkdir -p $(OBJ_DIR)) \
 	fi
 	@echo "$(CURRENT_GOALS_TO_COMPARE)" > $(LAST_GOALS_FILE)
+
+
+
+
+
+
+
+###########################################################################################################
+
 
 
 
