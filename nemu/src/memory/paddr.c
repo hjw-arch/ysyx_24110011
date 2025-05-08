@@ -82,24 +82,23 @@ paddr_t host_to_guest(uint8_t *haddr) {
 uint32_t delay;
 uint32_t delay_flag = 0;
 uint32_t sim_uart_read(uint32_t addr) {
-	// if (!delay_flag) {
-	// 	delay_flag = 1;
-	// 	delay = 1;
-	// 	return 0;
-	// }
+	if (!delay_flag) {
+		delay_flag = 1;
+		delay = 6;
+		return 0;
+	}
 
-	// if (delay != 0) {
-	// 	delay--;
-	// 	return 0;
-	// }
+	if (delay != 0) {
+		delay--;
+		return 0;
+	}
 
-	// if (delay == 0) {
-	// 	delay_flag = 0;
-	// 	if (addr == UART_LSR) return 0xffffffff;
-	// }
-	return 0xffffffff;
+	if (delay == 0) {
+		delay_flag = 0;
+		if (addr == UART_LSR) return 0xffffffff;
+	}
 
-	// return 0;
+	return 0;
 }
 
 void sim_uart_write(uint32_t addr, word_t data) {
