@@ -82,6 +82,8 @@ paddr_t host_to_guest(uint8_t *haddr) {
 uint32_t delay;
 uint32_t delay_flag = 0;
 uint32_t sim_uart_read(uint32_t addr) {
+	return 0xffffffff;
+
 	if (!delay_flag) {
 		delay_flag = 1;
 		delay = 39;
