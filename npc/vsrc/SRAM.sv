@@ -122,7 +122,7 @@ always_ff @(posedge clk) begin
 end
 
 
-assign RDATA = ~is_rcnt_not_zero ? pmem_read(raddr_buf, {28'b0, WSTRB}) : 32'b0;
+assign RDATA = ~is_rcnt_not_zero ? pmem_read(raddr_buf, {28'b0, 4'b1111}) : 32'b0;
 assign RRESP = 2'b00;
 
 
