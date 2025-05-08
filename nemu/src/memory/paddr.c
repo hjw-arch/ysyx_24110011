@@ -155,7 +155,7 @@ word_t paddr_read(paddr_t addr, int len) {
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
-	if (IN_UART(addr)) printf("PADDR_WRITE\n");
+	if (IN_UART(addr)) printf("PADDR_WRITE, %x\n", addr);
     if (likely(in_pmem(addr))) { pmem_write(addr, len, data); return; }
     IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
 	if(IN_UART(addr)) IFDEF(CONFIG_SOC, sim_uart_write(addr, (uint8_t)data); return);
