@@ -52,7 +52,7 @@ static inline bool in_pmem(paddr_t addr) {
 #define SRAM_END	SRAM_BASE + SRAM_SIZE - 1
 
 static inline bool in_pmem(paddr_t addr) {
-	return (addr - SDRAM_BASE < SDRAM_SIZE) || (addr - SRAM_BASE < SRAM_SIZE) || (addr - FLASH_BASE < FLASH_SIZE);
+	return (addr >= FLASH_BASE && addr <= FLASH_END) || (addr >= SDRAM_BASE && addr <= SDRAM_END) || (addr >= SRAM_BASE && addr <= SRAM_END);
 }
 
 #endif
