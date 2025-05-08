@@ -146,16 +146,16 @@ void init_mem() {
 }
 
 word_t paddr_read(paddr_t addr, int len) {
-	if(IN_UART(addr)) IFDEF(CONFIG_SOC, return sim_uart_read(addr));
     if (likely(in_pmem(addr))) return pmem_read(addr, len);
     IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));
+	if(IN_UART(addr)) IFDEF(CONFIG_SOC, return sim_uart_read(addr));
     out_of_bound(addr);
     return 0;
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
-	if(IN_UART(addr)) IFDEF(CONFIG_SOC, sim_uart_write(addr, (uint8_t)data); return);
     if (likely(in_pmem(addr))) { pmem_write(addr, len, data); return; }
     IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
+	if(IN_UART(addr)) IFDEF(CONFIG_SOC, sim_uart_write(addr, (uint8_t)data); return);
     out_of_bound(addr);
 }
