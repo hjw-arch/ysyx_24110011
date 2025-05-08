@@ -19,7 +19,7 @@ else
 endif
 
 LDFLAGS   += --gc-sections -e _start
-CFLAGS += -DMAINARGS=\"$(mainargs)\" -DSOC
+CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/ysyxsoc/ioe -I$(AM_HOME)/am/src/riscv/
 .PHONY: $(AM_HOME)/am/src/riscv/ysyxsoc/trm.c
 

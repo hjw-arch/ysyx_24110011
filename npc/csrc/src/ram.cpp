@@ -44,8 +44,11 @@ void *guest_to_host(uint32_t addr) {
     return ((uint8_t *)pmem + addr - RAM_START_ADDR);
 }
 
+
+#endif
+
 int pmem_read(int addr, int len) {
-	printf("addr = %x, len = %x\n",addr, len);
+	// printf("addr = %x, len = %x\n",addr, len);
     uint32_t ret = 0;
 
 	if (len == 0) return 0;
@@ -123,6 +126,3 @@ int fetch_inst(int pc) {
     uint32_t inst = pmem_read(pc, 15);
     return inst;
 }
-
-
-#endif

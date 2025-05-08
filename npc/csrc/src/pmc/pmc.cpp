@@ -4,9 +4,20 @@
 #include "log.h"
 #include "common.h"
 #include "device.h"
+
+#ifdef SOC
+
 #include "VysyxSoCFull___024root.h"
 #include "VysyxSoCFull.h"
 #include "VysyxSoCFull__Dpi.h"
+
+#else
+
+#include "Vysyx___024root.h"
+#include "Vysyx.h"
+#include "Vysyx__Dpi.h"
+
+#endif
 
 
 #define BIT_MASK(bits)			((1ull << bits) - 1)

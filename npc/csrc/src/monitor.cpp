@@ -125,7 +125,6 @@ int main(int argc, char *argv[]) {
     init_disasm("riscv32" "-pc-linux-gnu");
     img_size = load_img();
     init_sdb();
-	printf("aaa\n");
     cpu_rst;
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));

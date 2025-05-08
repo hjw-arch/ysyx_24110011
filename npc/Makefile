@@ -35,7 +35,7 @@ export ASAN_OPTIONS = verify_asan_link_order=0    # 关掉内存泄漏检测    
 VERILATOR           = verilator
 VERILATOR_SRC       = $(SIM_CSRC) $(SIM_VSRC_NO_PC) $(SOC_VSRC) $(SOC_TOP_MOD_FILE)
 VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS))
+VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC="1")
 VERILATOR_VINC      = $(addprefix -y , $(SIM_VINC) $(SOC_VINC))
 VERILATOR_WNO       = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-NULLPORT --Wno-PINCONNECTEMPTY --Wno-ASSIGNDLY --Wno-DEFPARAM --Wno-UNDRIVEN --Wno-UNUSEDPARAM --Wno-SYNCASYNCNET --autoflush --Wno-EOFNEWLINE
 VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace $(VERILATOR_VINC) \
@@ -64,7 +64,7 @@ run: $(VERILATOR_SRC)
 TOP_NAME_FOR_NPC    	?= 	ysyx
 VERILATOR_SRC_NPC   	= 	$(SIM_CSRC) $(SIM_VSRC_NO_PC)
 VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS))
+VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC="1")
 VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
 
 VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace \
