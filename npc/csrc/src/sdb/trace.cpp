@@ -1,9 +1,18 @@
 #include "../Include/sdb.h"
 #include "../Include/log.h"
 #include "../Include/macro.h"
-#include "VysyxSoCFull___024root.h"
 #include <stdio.h>
 #include "stdint.h"
+
+#ifdef SOC
+
+#include "VysyxSoCFull___024root.h"
+
+#else
+
+#include "Vysyx___024root.h"
+
+#endif
 
 // ringbuffer
 typedef struct _ringbuf {

@@ -32,11 +32,6 @@ IMG                 ?= $(abspath ./ROM/bin/UART.bin)
 # 整合
 export ASAN_OPTIONS = verify_asan_link_order=0    # 关掉内存泄漏检测    开启设备会存在内存泄漏
 
-TRACE_IS_ON ?= ON
-ifeq ($(TRACE_IS_ON),ON)
-    VERILATOR_FLAGS += --trace
-endif
-
 VERILATOR           = verilator
 VERILATOR_SRC       = $(SIM_CSRC) $(SIM_VSRC_NO_PC) $(SOC_VSRC) $(SOC_TOP_MOD_FILE)
 VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
@@ -64,9 +59,34 @@ run: $(VERILATOR_SRC)
 
 
 
+# ----------------------- NPC ----------------------------
+
+TOP_NAME_FOR_NPC    	?= 	ysyx
+VERILATOR_SRC_NPC   	= 	$(SIM_CSRC) $(SIM_VSRC_NO_PC)
+VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
+VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS))
+VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
+
+VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace \
+                           $(VERILATOR_VINC_NPC) $(VERILATOR_CFLAGS_NPC) $(VERILATOR_LDFLAGS_NPC) $(VERILATOR_WNO) \
+                           --top-module $(TOP_NAME_FOR_NPC) # 注意这里没有 SOC_VFLAGS
+
+npc: $(VERILATOR_SRC_NPC)
+	@echo
+	@echo "---------------- Simulation start -----------------"
+	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	@echo
+	@echo
+	@echo "---------------- Simulation running -----------------"
+	@echo
+	@$(OBJ_DIR)/V$(TOP_NAME_FOR_NPC) $(NPCARGS) $(IMG)
+	@echo
+	$(call git_commit, "sim RTL")
+	@echo "-------------------- Finish -----------------------"
+
+
 
 # --------------------- NVBOARD ----------------------------
-# TODO
 
 include $(NVBOARD_HOME)/scripts/nvboard.mk
 

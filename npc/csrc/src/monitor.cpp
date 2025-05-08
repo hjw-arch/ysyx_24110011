@@ -1,4 +1,3 @@
-#include "VysyxSoCFull.h"
 #include "verilated.h"
 #include "../Include/common.h"
 #include "../Include/log.h"
@@ -11,9 +10,18 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <getopt.h>
-#include "VysyxSoCFull___024root.h"
 
+#ifdef SOC
+
+#include "VysyxSoCFull___024root.h"
 VysyxSoCFull dut;
+
+#else
+
+#include "Vysyx___024root.h"
+Vysyx dut;
+
+#endif
 
 static char *diff_so_file = NULL;
 static char *img_file = NULL;
@@ -117,6 +125,7 @@ int main(int argc, char *argv[]) {
     init_disasm("riscv32" "-pc-linux-gnu");
     img_size = load_img();
     init_sdb();
+	printf("aaa\n");
     cpu_rst;
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));
