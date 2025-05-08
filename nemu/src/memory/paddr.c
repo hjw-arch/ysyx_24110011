@@ -36,7 +36,7 @@ static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 
 #define VADDR_IN_FLASH(addr)		((addr) <= FLASH_END && (addr) >= FLASH_BASE)
 #define VADDR_IN_SDRAM(addr)		((addr) <= SDRAM_END && (addr) >= SDRAM_BASE)
-#define VADDR_IN_SRAM(addr)			((addr) <= SRAM_END && (addr) >= SDRAM_BASE)
+#define VADDR_IN_SRAM(addr)			((addr) <= SRAM_END && (addr) >= SRAM_BASE)
 
 uint8_t* guest_to_host(paddr_t paddr) {
 	if (VADDR_IN_FLASH(paddr)) return FLASH + paddr - FLASH_BASE;
