@@ -31,7 +31,6 @@ prepare_build:
 		rm -rf $(OBJ_DIR)/*; \
 		$(shell mkdir -p $(OBJ_DIR)) \
 	fi
-	@# 记录当前的目标到文件，供下次使用
 	@echo "$(CURRENT_GOALS_TO_COMPARE)" > $(LAST_GOALS_FILE)
 
 
