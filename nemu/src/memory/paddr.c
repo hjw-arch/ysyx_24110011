@@ -58,6 +58,57 @@ paddr_t host_to_guest(uint8_t *haddr) {
 	return 0;
 }
 
+// 接管SOC的UART
+
+#define UART_BASE 	0x10000000
+#define UART_TX		*(volatile uint8_t *)(UART_BASE + 0x00)
+#define UART_RX		*(volatile uint8_t *)(UART_BASE + 0x00)
+#define UART_IER	*(volatile uint8_t *)(UART_BASE + 0x01)
+#define UART_IIR	*(volatile uint8_t *)(UART_BASE + 0x02)
+#define UART_FCR	*(volatile uint8_t *)(UART_BASE + 0x02)
+#define UART_LCR	*(volatile uint8_t *)(UART_BASE + 0x03)
+#define UART_MC		*(volatile uint8_t *)(UART_BASE + 0x04)
+#define	UART_LSR	*(volatile uint8_t *)(UART_BASE + 0x05)
+#define UART_MS		*(volatile uint8_t *)(UART_BASE + 0x06)
+
+#define UART_LSB	*(volatile uint8_t *)(UART_BASE + 0x00)
+#define UART_MSB	*(volatile uint8_t *)(UART_BASE + 0x01)
+
+#define UART_FIFO_EMPTY_MASK	1 << 5
+#define UART_DATA_READY			1 << 0
+
+#define IN_UART(addr)	((addr) >= UART_BASE && (addr) <= UART_BASE + 0x10)
+
+uint32_t delay;
+uint32_t delay_flag = 0;
+uint32_t sim_uart_read(uint32_t addr) {
+	if (!delay_flag) {
+		delay_flag = 1;
+		delay = 39;
+		return 0;
+	}
+
+	if (delay != 0) {
+		delay--;
+		return 0;
+	}
+
+	if (delay == 0) {
+		delay_flag = 0;
+		if (addr == UART_LSR) return 0xffffffff;
+	}
+
+	return 0;
+}
+
+void sim_uart_write(uint32_t addr, uint8_t data) {
+	if (addr == UART_TX) {
+		printf("%c", data);
+	}
+}
+
+
+
 #else
 uint8_t* guest_to_host(paddr_t paddr) { return pmem + paddr - CONFIG_MBASE; }
 paddr_t host_to_guest(uint8_t *haddr) { return haddr - pmem + CONFIG_MBASE; }
@@ -97,6 +148,7 @@ void init_mem() {
 word_t paddr_read(paddr_t addr, int len) {
     if (likely(in_pmem(addr))) return pmem_read(addr, len);
     IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));
+	IFDEF(CONFIG_SOC, sim_uart_read(addr));
     out_of_bound(addr);
     return 0;
 }
@@ -104,5 +156,6 @@ word_t paddr_read(paddr_t addr, int len) {
 void paddr_write(paddr_t addr, int len, word_t data) {
     if (likely(in_pmem(addr))) { pmem_write(addr, len, data); return; }
     IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
+	IFDEF(CONFIG_SOC, sim_uart_write(addr, (uint8_t)data));
     out_of_bound(addr);
 }
