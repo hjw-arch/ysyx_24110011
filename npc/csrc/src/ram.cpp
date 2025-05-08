@@ -45,6 +45,7 @@ void *guest_to_host(uint32_t addr) {
 }
 
 int pmem_read(int addr, int len) {
+	printf("len = %x\n", len);
     uint32_t ret = 0;
 
 	if (len == 0) return 0;
@@ -120,7 +121,6 @@ int fetch_inst(int pc) {
         return 0;
     }
     uint32_t inst = pmem_read(pc, 15);
-	printf("Fetch inst: %x\n", inst);
     return inst;
 }
 
