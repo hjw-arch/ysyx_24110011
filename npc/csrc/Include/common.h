@@ -33,6 +33,8 @@ do { \
 } while(0) \
 
 
+#ifdef SOC
+
 #define cpu_rst \
 do {    \
     dut.reset = 1;    \
@@ -42,6 +44,20 @@ do {    \
     cpu.pc = PC;  \
     iringbuf_load(cpu.pc, INST); \
 } while(0) \
+
+#else
+
+#define cpu_rst \
+do {    \
+    dut.reset = 1;    \
+    for(int i = 0; i < 10; i++) cycle;\
+    dut.reset = 0;    \
+    cpu.pc = PC;  \
+    iringbuf_load(cpu.pc, INST); \
+} while(0) \
+
+#endif
+
 
 typedef MUXDEF(ISA64, uint64_t, uint32_t)   word_t;
 
