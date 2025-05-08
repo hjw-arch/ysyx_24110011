@@ -1,6 +1,3 @@
-// `define SOC 	1
-`define NPC		1
-
 module IFU #(parameter WIDTH = 32) (
     input clk,
     input rst,

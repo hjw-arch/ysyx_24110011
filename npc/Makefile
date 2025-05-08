@@ -47,7 +47,7 @@ all: run
 run: $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv -DSOC
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"
@@ -74,7 +74,7 @@ VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --
 npc: $(VERILATOR_SRC_NPC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv -DNPC
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"

@@ -10,7 +10,7 @@
 // #define RV64
 
 // #define SOC						1
-#define NPC						1
+// #define NPC						1
 
 // #define CONFIG_WATCHPOINT   1
 
