@@ -13,7 +13,7 @@ all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(SRC) -o $(TARGET)
-	./$(TARGET) -s 64 -b 16 -a 2 -p PLRU -t $(TRACE_PATH)
+	./$(TARGET) -s 64 -b 32 -a 1 -p PLRU -t $(TRACE_PATH)
 
 clean:
 	rm $(TARGET)
