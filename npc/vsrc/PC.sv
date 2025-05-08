@@ -2,6 +2,8 @@
 // 五级流水线时，要分别计算无条件跳转和条件跳转，PC的最终值由ID解析出来的sel和ALU计算结果决定
 // 暂时不改动
 
+// `define SOC 1
+
 module PC #(parameter WIDTH = 32) (
     input clk,
     input rst,
@@ -20,7 +22,16 @@ module PC #(parameter WIDTH = 32) (
     output reg [WIDTH - 1 : 0] pc
 );
 
+`ifdef SOC
+
 localparam RST_VECTOR = 32'h30000000;
+	
+`else
+
+localparam RST_VECTOR = 32'h80000000;
+	
+`endif
+
 
 wire sel_for_adder_right = inst[6] & inst[2] |     // 这条信号会是瓶颈，是关键路径，单多周期不影响，流水线需要单独设置这条信号
                             is_branch & ~inst[14] & ~inst[12] & zero_flag |

@@ -1,4 +1,3 @@
-#include "VysyxSoCFull.h"
 #include "verilated.h"
 #include "../Include/common.h"
 #include "../Include/log.h"
@@ -11,9 +10,18 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <getopt.h>
-#include "VysyxSoCFull___024root.h"
 
+#ifdef SOC
+
+#include "VysyxSoCFull___024root.h"
 VysyxSoCFull dut;
+
+#else
+
+#include "Vysyx___024root.h"
+Vysyx dut;
+
+#endif
 
 static char *diff_so_file = NULL;
 static char *img_file = NULL;

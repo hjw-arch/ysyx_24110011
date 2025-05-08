@@ -50,6 +50,7 @@ static char *rl_gets() {
 
 static FILE *itrace_output_file_fp = NULL;
 static char *itrace_file = "/home/hjw-arch/ysyx-workbench/ITRACE.bin";
+static uint64_t normal_mode_total_inst_num = 0;
 
 void open_itrace_file() {
     if (itrace_output_file_fp) {
@@ -65,22 +66,21 @@ void close_itrace_file() {
         if (fclose(itrace_output_file_fp) == EOF) {
             Assert(0, "Close itrace output file failed.");
         }
-
+		printf("Normal mode inst number = %ld\n", normal_mode_total_inst_num);
         itrace_output_file_fp = NULL;
     }
 }
 
 void write2itrace(vaddr_t addr) {
     if (itrace_output_file_fp) {
+		if (addr < 0xa0000000) return;
+		normal_mode_total_inst_num++;
         size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
         if (items_written != 1) {
-            // 错误处理：可以打印错误，或者设置一个标志位，或者终止模拟
-            // 为简单起见，这里只打印错误。在实际模拟器中可能需要更健壮的处理。
             fprintf(stderr, "Serious error: Failed to write the address to the trace file!\n");
             if (ferror(itrace_output_file_fp)) {
                 perror("           文件写入错误详情");
             }
-            // 考虑是否要关闭文件并停止追踪，或者忽略这个错误继续？
             fclose(itrace_output_file_fp);
             itrace_output_file_fp = NULL; // 避免后续尝试写入
         }

@@ -4,12 +4,22 @@
 #include "../Include/log.h"
 #include "../Include/common.h"
 #include "../Include/device.h"
-#include "VysyxSoCFull___024root.h"
 #include "../Include/difftest.h"
+
+#ifdef SOC
+
+#include "VysyxSoCFull___024root.h"
+
+#else
+
+#include "Vysyx___024root.h"
+
+#endif
+
 
 #define ebreak      0x00100073
 
-#define min_num_to_disasm   10000
+#define min_num_to_disasm   10
 
 #define FTRACE_RECORD     record_ftrace(old_pc, old_inst == 0x8067 ? 1 : 0, cpu.pc)
 
@@ -20,25 +30,13 @@ uint32_t cpu_state = RUNNING;
 uint64_t cycle_times = 0;
 uint64_t dynamic_insts = 0;
 
-extern uint64_t ifu_fetch_inst;
-extern uint64_t lsu_fetch_data;
-extern uint64_t lsu_store_data;
-extern uint64_t exu_finish_cal;
-
-extern uint64_t idu_identify_inst__cal;
-extern uint64_t idu_identify_inst__ls;
-extern uint64_t idu_identify_inst__jmp;
-extern uint64_t idu_identify_inst__csr;
-extern uint64_t idu_identify_inst__unknown;
-
 void PerformanceCounter_display();
 
 void halt() {
     cpu_state = IDLE;
 
     printf(ANSI_FG_CYAN"\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n"ANSI_NONE, cycle_times, dynamic_insts);
-	PerformanceCounter_display();
-
+	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_display());
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
         return;
@@ -53,6 +51,7 @@ void halt() {
 #include "nvboard.h"
 
 #endif
+
 void cpu_exec_one() {
     
 	do {
@@ -61,15 +60,15 @@ void cpu_exec_one() {
 #ifdef NVBOARD
 		nvboard_update();
 #endif
-	} while(dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__start != 1 && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst != ebreak);
+	} while(IFU_START != 1 && INST != ebreak);
 
 	dynamic_insts++;
 
-	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
+	if (INST == ebreak) {
 		dynamic_insts--;
 	}
 
-    if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst == ebreak) {
+    if (INST == ebreak) {
         Log("Get 'ebreak' instruction, program over.");
         halt();
     }
@@ -91,14 +90,14 @@ void cpu_exec(uint32_t n) {
             char p[64];
             printf("0x%08x: ", old_pc);
             for(int j = 3; j >= 0; j--) {
-                printf("%02x ", ((uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst)[j]);
+                printf("%02x ", ((uint8_t *)&INST)[j]);
             }
-            disassemble(p, sizeof(p), old_pc, (uint8_t *)&dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst, 4);
+            disassemble(p, sizeof(p), old_pc, (uint8_t *)&INST, 4);
             printf("        %s\n", p);
         }
 
 
-        IFDEF(CONFIG_ITRACE, iringbuf_load(old_pc, dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__pc_inst));
+        IFDEF(CONFIG_ITRACE, iringbuf_load(old_pc, INST));
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
         IFDEF(CONFIG_WATCHPOINT, diff_wp(old_pc));

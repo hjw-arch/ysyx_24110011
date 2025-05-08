@@ -27,7 +27,9 @@
 #define PRR(i)  ((i) == 0x305 ? cpu.mtvec : \
                 (i) == 0x342 ? cpu.mcause : \
                 (i) == 0x341 ? cpu.mepc : \
-                (i) == 0x300 ? cpu.mstate : 0)
+                (i) == 0x300 ? cpu.mstate :	\
+				(i) == 0xffffff11 ? 0x79737978 : \
+				(i) == 0xffffff12 ? 0x016FE3BB : 0)
 
 #define PRW(i, val)  ((i) == 0x305 ? cpu.mtvec = val : \
                 (i) == 0x342 ? cpu.mcause = val : \

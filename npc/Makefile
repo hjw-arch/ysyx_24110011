@@ -3,6 +3,51 @@ OBJ_DIR             = $(BUILD_DIR)/obj_dir
 
 $(shell mkdir -p $(OBJ_DIR))
 
+
+
+
+
+################################ 当make目标改变时，创造一个纯净的环境 ####################################
+LAST_GOALS_FILE = $(OBJ_DIR)/last_make_goals.stamp
+
+LAST_MAKED_GOALS := $(shell cat $(LAST_GOALS_FILE) 2>/dev/null)
+CURRENT_MAKECMDGOALS = $(MAKECMDGOALS)
+
+ifeq ($(strip $(CURRENT_MAKECMDGOALS)),)
+    CURRENT_GOALS_TO_COMPARE = $(firstword $(DEFAULT_GOAL)) # 假设 DEFAULT_GOAL 是 'run' 或 'all'
+else
+    CURRENT_GOALS_TO_COMPARE = $(sort $(CURRENT_MAKECMDGOALS)) # 排序以确保 'run npc' 和 'npc run' 被视为相同
+endif
+
+# 标志位，指示是否因为目标改变而需要清理
+NEEDS_CLEAN_DUE_TO_GOAL_CHANGE := false
+ifneq ($(strip $(CURRENT_GOALS_TO_COMPARE)), $(strip $(LAST_MAKED_GOALS)))
+    ifneq ($(strip $(LAST_MAKED_GOALS)),)
+        NEEDS_CLEAN_DUE_TO_GOAL_CHANGE := true
+    endif
+endif
+
+
+.PHONY: prepare_build
+prepare_build:
+	@echo "--- Preparing build (Current goals: [$(CURRENT_GOALS_TO_COMPARE)]) ---"
+	@if $(NEEDS_CLEAN_DUE_TO_GOAL_CHANGE); then \
+		rm -rf $(OBJ_DIR)/*; \
+		$(shell mkdir -p $(OBJ_DIR)) \
+	fi
+	@echo "$(CURRENT_GOALS_TO_COMPARE)" > $(LAST_GOALS_FILE)
+
+
+
+
+
+
+
+###########################################################################################################
+
+
+
+
 # 本地仿真环境参数
 TOP_NAME            ?= ysyx
 SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
@@ -32,24 +77,19 @@ IMG                 ?= $(abspath ./ROM/bin/UART.bin)
 # 整合
 export ASAN_OPTIONS = verify_asan_link_order=0    # 关掉内存泄漏检测    开启设备会存在内存泄漏
 
-TRACE_IS_ON ?= ON
-ifeq ($(TRACE_IS_ON),ON)
-    VERILATOR_FLAGS += --trace
-endif
-
 VERILATOR           = verilator
 VERILATOR_SRC       = $(SIM_CSRC) $(SIM_VSRC_NO_PC) $(SOC_VSRC) $(SOC_TOP_MOD_FILE)
 VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS))
+VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC)
 VERILATOR_VINC      = $(addprefix -y , $(SIM_VINC) $(SOC_VINC))
 VERILATOR_WNO       = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-NULLPORT --Wno-PINCONNECTEMPTY --Wno-ASSIGNDLY --Wno-DEFPARAM --Wno-UNDRIVEN --Wno-UNUSEDPARAM --Wno-SYNCASYNCNET --autoflush --Wno-EOFNEWLINE
 VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace $(VERILATOR_VINC) \
                       $(SOC_VFLAGS)  $(VERILATOR_CFLAGS) $(VERILATOR_LDFLAGS) $(VERILATOR_WNO)  \
-                      --top-module $(TOP_NAME)
+                      --top-module $(TOP_NAME) +define+SOC
 
 default: run
 all: run
-run: $(VERILATOR_SRC)
+run: prepare_build $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
 	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
@@ -64,9 +104,34 @@ run: $(VERILATOR_SRC)
 
 
 
+# ----------------------- NPC ----------------------------
+
+TOP_NAME_FOR_NPC    	?= 	ysyx
+VERILATOR_SRC_NPC   	= 	$(SIM_CSRC) $(SIM_VSRC_NO_PC)
+VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
+VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC)
+VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
+
+VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace \
+                           $(VERILATOR_VINC_NPC) $(VERILATOR_CFLAGS_NPC) $(VERILATOR_LDFLAGS_NPC) $(VERILATOR_WNO) \
+                           --top-module $(TOP_NAME_FOR_NPC) +define+NPC # 注意这里没有 SOC_VFLAGS
+
+npc: prepare_build $(VERILATOR_SRC_NPC)
+	@echo
+	@echo "---------------- Simulation start -----------------"
+	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	@echo
+	@echo
+	@echo "---------------- Simulation running -----------------"
+	@echo
+	@$(OBJ_DIR)/V$(TOP_NAME_FOR_NPC) $(NPCARGS) $(IMG)
+	@echo
+	$(call git_commit, "sim RTL")
+	@echo "-------------------- Finish -----------------------"
+
+
 
 # --------------------- NVBOARD ----------------------------
-# TODO
 
 include $(NVBOARD_HOME)/scripts/nvboard.mk
 
@@ -83,7 +148,7 @@ NVBOARD_CSRC += $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE)
 NVBOARD_CFLAGS = $(addprefix -CFLAGS , $(addprefix -I, $(INC_PATH)) $(CXXFLAGS))
 
 
-sim: $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE)
+sim: $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE) prepare_build
 	@echo
 	@echo "---------------- Simulation start -----------------"
 	$(VERILATOR) $(VERILATOR_FLAGS) $(NVBOARD_CFLAGS) $(VERILATOR_SRC) $(NVBOARD_CSRC) $(addprefix -LDFLAGS , $(LDFLAGS)) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv

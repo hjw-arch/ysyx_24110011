@@ -18,7 +18,7 @@ CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/npc/ioe -I$(AM_HOME)/am/src/riscv/
 .PHONY: $(AM_HOME)/am/src/riscv/npc/trm.c
 
-NPCARGS = -e $(IMAGE).elf -d ./libnemu.so -b
+NPCARGS = -e $(IMAGE).elf -d ./libnemu.so
 
 image: $(IMAGE).elf
 	@$(OBJDUMP) -d $(IMAGE).elf > $(IMAGE).txt
@@ -26,4 +26,4 @@ image: $(IMAGE).elf
 	@$(OBJCOPY) -S --set-section-flags .bss=alloc,contents -O binary $(IMAGE).elf $(IMAGE).bin
 
 run: image
-	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" run IMG=$(IMAGE).bin
+	$(MAKE) -C $(NPC_HOME) NPCARGS="$(NPCARGS)" npc IMG=$(IMAGE).bin

@@ -2,12 +2,21 @@
 #define SDB_H
 
 #include <stdint.h>
-#include "VysyxSoCFull.h"
 #include "common.h"
 #include "ram.h"
 #include "config.h"
+
+#ifdef SOC
+
+#include "VysyxSoCFull.h"
 extern VysyxSoCFull dut;
 
+#else
+
+#include "Vysyx.h"
+extern Vysyx dut;
+
+#endif
 
 // disasm
 extern "C" void init_disasm(const char *triple);
