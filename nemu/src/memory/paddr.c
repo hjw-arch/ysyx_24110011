@@ -108,6 +108,23 @@ void sim_uart_write(uint32_t addr, word_t data) {
 }
 
 
+// 接管SOC的CLINT
+
+#define IN_CLINT(addr)	((addr) == 0x02000000 || (addr) == 0x02000004)
+
+#define CLINT_BASE		0x02000000
+
+uint32_t sim_clint_read(uint32_t addr) {
+	uint64_t us = get_time();
+	
+	if (addr == CLINT_BASE)  return (uint32_t)us;
+	
+	if (addr == CLINT_BASE + 4)  return (uint32_t)(us >> 32);
+	
+	return 0;
+}
+
+
 
 #else
 uint8_t* guest_to_host(paddr_t paddr) { return pmem + paddr - CONFIG_MBASE; }
@@ -149,7 +166,8 @@ void init_mem() {
 word_t paddr_read(paddr_t addr, int len) {
     if (likely(in_pmem(addr))) return pmem_read(addr, len);
     IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));
-	if(IN_UART(addr)) IFDEF(CONFIG_SOC, return sim_uart_read(addr));
+	IFDEF(CONFIG_SOC, if(IN_CLINT(addr)) return sim_clint_read(addr));
+	IFDEF(CONFIG_SOC, if(IN_UART(addr)) return sim_uart_read(addr));
     out_of_bound(addr);
     return 0;
 }
@@ -157,6 +175,6 @@ word_t paddr_read(paddr_t addr, int len) {
 void paddr_write(paddr_t addr, int len, word_t data) {
     if (likely(in_pmem(addr))) { pmem_write(addr, len, data); return; }
     IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
-	if(IN_UART(addr)) IFDEF(CONFIG_SOC, sim_uart_write(addr, (uint8_t)data); return);
+	IFDEF(CONFIG_SOC, if(IN_UART(addr)) {sim_uart_write(addr, (uint8_t)data); return;});
     out_of_bound(addr);
 }
