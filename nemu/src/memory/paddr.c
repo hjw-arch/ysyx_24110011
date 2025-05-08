@@ -103,7 +103,6 @@ uint32_t sim_uart_read(uint32_t addr) {
 
 void sim_uart_write(uint32_t addr, word_t data) {
 	if (addr == UART_TX) {
-		printf("data = %x\n", (uint8_t)data);
 		printf("%c", (uint8_t)data);
 	}
 }
