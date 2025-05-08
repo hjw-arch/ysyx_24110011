@@ -84,7 +84,7 @@ uint32_t delay_flag = 0;
 uint32_t sim_uart_read(uint32_t addr) {
 	if (!delay_flag) {
 		delay_flag = 1;
-		delay = rand() % 2 + 2;
+		delay = rand() % 2 + 2;		// 模拟UART的延迟，大概是这么多
 		return 0;
 	}
 
