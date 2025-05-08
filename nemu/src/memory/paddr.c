@@ -61,18 +61,18 @@ paddr_t host_to_guest(uint8_t *haddr) {
 // 接管SOC的UART
 
 #define UART_BASE 	0x10000000
-#define UART_TX		*(volatile uint8_t *)(UART_BASE + 0x00)
-#define UART_RX		*(volatile uint8_t *)(UART_BASE + 0x00)
-#define UART_IER	*(volatile uint8_t *)(UART_BASE + 0x01)
-#define UART_IIR	*(volatile uint8_t *)(UART_BASE + 0x02)
-#define UART_FCR	*(volatile uint8_t *)(UART_BASE + 0x02)
-#define UART_LCR	*(volatile uint8_t *)(UART_BASE + 0x03)
-#define UART_MC		*(volatile uint8_t *)(UART_BASE + 0x04)
-#define	UART_LSR	*(volatile uint8_t *)(UART_BASE + 0x05)
-#define UART_MS		*(volatile uint8_t *)(UART_BASE + 0x06)
+#define UART_TX		(UART_BASE + 0x00)
+#define UART_RX		(UART_BASE + 0x00)
+#define UART_IER	(UART_BASE + 0x01)
+#define UART_IIR	(UART_BASE + 0x02)
+#define UART_FCR	(UART_BASE + 0x02)
+#define UART_LCR	(UART_BASE + 0x03)
+#define UART_MC		(UART_BASE + 0x04)
+#define	UART_LSR	(UART_BASE + 0x05)
+#define UART_MS		(UART_BASE + 0x06)
 
-#define UART_LSB	*(volatile uint8_t *)(UART_BASE + 0x00)
-#define UART_MSB	*(volatile uint8_t *)(UART_BASE + 0x01)
+#define UART_LSB	(UART_BASE + 0x00)
+#define UART_MSB	(UART_BASE + 0x01)
 
 #define UART_FIFO_EMPTY_MASK	1 << 5
 #define UART_DATA_READY			1 << 0
