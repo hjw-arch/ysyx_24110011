@@ -68,6 +68,7 @@ assign prerequest = 1'b0;	// 需要修改，暂时为了cache妥协
 
 // output declaration of module axi4_full_master
 wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
+wire rdata_valid;
 wire [1:0] rresp;
 wire done;
 
@@ -111,9 +112,11 @@ axi4_full_master u_axi4_full_master(
     .wen        	(1'b0        ),
     .ren        	(i2m_valid   ),
     .user_ready 	(i2m_ready   ),
-    .len        	(2'b10       ),
+	.size			(2'b10		 ),
+    .len        	(8'b0        ),
     .waddr      	(32'b0       ),
     .wdata      	(32'b0       ),
+	.rdata_valid	(rdata_valid ),
     .raddr      	(i2m_addr    ),
     .rdata      	(rdata       ),
     .rresp      	(rresp       ),/* verilator lint_off PINCONNECTEMPTY */
@@ -192,6 +195,7 @@ assign prerequest = wbu_valid;
 
 // output declaration of module axi4_full_master
 wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
+wire rdata_valid;
 wire [1:0] rresp;
 wire done;
 
@@ -204,10 +208,12 @@ axi4_full_master u_axi4_full_master(
     .wen        	(1'b0        ),
     .ren        	(start       ),
     .user_ready 	(idu_ready   ),
-    .len        	(2'b10       ),
+    .size        	(2'b10       ),
+	.len			(8'b0		 ),
     .waddr      	(32'b0       ),
     .wdata      	(32'b0       ),
     .raddr      	(pc          ),
+	.rdata_valid	(rdata_valid ),
     .rdata      	(rdata       ),
     .rresp      	(rresp       ),/* verilator lint_off PINCONNECTEMPTY */
     .wresp      	(            ),
