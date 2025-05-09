@@ -88,7 +88,7 @@ function [31:0] calculate_addr_next;
     input [7:0]  axlen;
 
     reg [31:0]   mask;
-begin
+begin/* verilator lint_off BLKSEQ */
     mask = 0;
 
     case (axtype)

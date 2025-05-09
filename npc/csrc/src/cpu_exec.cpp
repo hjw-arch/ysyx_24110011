@@ -16,6 +16,13 @@
 
 #endif
 
+#ifdef WAVE
+
+#include "verilated_vcd_c.h"
+extern VerilatedVcdC tfp;
+
+#endif
+
 
 #define ebreak      0x00100073
 
