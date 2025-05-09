@@ -345,7 +345,7 @@ always_ff @(posedge clk) begin
     state <= rst ? 1'b0 : nstate;
 end
 
-assign  nstate  =   has_new_data & ~hit | state & ~m2i_valid;
+assign  nstate  =   has_new_data & ~hit | state & ~m2i_done;
 
 
 /********************** 与mem通信 ********************/
@@ -361,24 +361,24 @@ always_ff @(posedge clk) begin
 	m2i_data_buffer <= m2i_valid ? {m2i_data, m2i_data_buffer[BLOCK_WIDTH - 1 : DATA_WIDTH]} : m2i_data_buffer;	// 其实可以提前一个周期，这里先不这么干
 end
 
-always_ff @(posedge clk) begin
-	sram_wen <= state & m2i_done;		// 打一拍
-end
+// always_ff @(posedge clk) begin
+// 	sram_wen <= state & m2i_done;		// 打一拍
+// end
 
-// assign  sram_wen    =   state & m2i_done;
+assign  sram_wen    =   state & m2i_done;
 assign  sram_waddr  =   i_index;
-assign  sram_wdata  =   m2i_data_buffer;
+assign  sram_wdata  =   {m2i_data, m2i_data_buffer[BLOCK_WIDTH - 1 : DATA_WIDTH]};
 assign  sram_wtag   =   i_tag;
 
 /************************* 返回上层数据 *************************/
-assign  o_valid     =   has_new_data & hit | state & sram_wen;
+assign  o_valid     =   has_new_data & hit | state & m2i_done;
 
 always_comb begin
 	case({i_offset[3:2], state})
-		3'b001: o_data = m2i_data_buffer[31:0];
-		3'b011: o_data = m2i_data_buffer[63:32];
-		3'b101: o_data = m2i_data_buffer[95:64];
-		3'b111: o_data = m2i_data_buffer[127:96];
+		3'b001: o_data = m2i_data_buffer[63:32];
+		3'b011: o_data = m2i_data_buffer[95:64];
+		3'b101: o_data = m2i_data_buffer[127:96];
+		3'b111: o_data = m2i_data;
 		3'b000: o_data = i_cache_data[31:0];
 		3'b010: o_data = i_cache_data[63:32];
 		3'b100: o_data = i_cache_data[95:64];

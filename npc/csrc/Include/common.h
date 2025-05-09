@@ -22,12 +22,14 @@
 
 #define cycle  \
 do { \
-	IFDEF(WAVE, Verilated::timeInc(1));		\
-	IFDEF(WAVE, tfp.dump(Verilated::time()));	\
     dut.clock = 0;    \
     dut.eval();     \
+	IFDEF(WAVE, Verilated::timeInc(1));		\
+	IFDEF(WAVE, tfp.dump(Verilated::time()));	\
     dut.clock = 1;    \
     dut.eval();     \
+	IFDEF(WAVE, Verilated::timeInc(1));		\
+	IFDEF(WAVE, tfp.dump(Verilated::time()));	\
     cpu.pc = PC;  \
     for (int i = 0; i < 31; i++) {  \
         cpu.registerFile[i] = RF[i];    \
