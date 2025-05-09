@@ -1,60 +1,63 @@
-// 仅支持增量传输
+// 仅支持增量传输、
+// 需要重构
 module axi4_full_master (
     // Global Signals
-    input clk,
-    input rst,
+    input 	clk,
+    input 	rst,
 
     // User Signals
-    input  wen,                  // 写数据+写地址有效
-    input  ren,                  // 读数据+读地址有效
-    input  user_ready,           // 主机可接受反馈
-    input  [1 : 0] len,
-    input  logic [31 : 0] waddr,
-    input  logic [31 : 0] wdata,
-    input  logic [31 : 0] raddr,
-    output logic [31 : 0] rdata,
-    output logic [1 : 0] rresp,
-    output logic [1 : 0] wresp,
-    output done,
+    input  	wen,                  	// 写数据+写地址有效
+    input  	ren,                  	// 读数据+读地址有效
+    input  	user_ready,           	// 主机可接受反馈
+    input  	[1 : 0] size,			// 传输大小
+	input	[7 : 0] len,			// 传输次数(突发传输)
+    input  	logic [31 : 0] waddr,
+    input  	logic [31 : 0] wdata,
+    input  	logic [31 : 0] raddr,
+    output 	logic [31 : 0] rdata,
+	output 	logic rdata_valid,
+    output 	logic [1 : 0] rresp,
+    output 	logic [1 : 0] wresp,
+    output 	done,
 
     // READ ADDRESS CHANNEL
-    input  ARREADY,
-    output ARVALID,
-    output [31 : 0] ARADDR,
-    output [3 : 0] ARID,
-    output [7 : 0] ARLEN,
-    output [2 : 0] ARSIZE,
-    output [1 : 0] ARBURST,
+    input  	ARREADY,
+    output 	ARVALID,
+    output 	[31 : 0] ARADDR,
+    output 	[3 : 0] ARID,
+    output 	[7 : 0] ARLEN,
+    output 	[2 : 0] ARSIZE,
+    output 	[1 : 0] ARBURST,
 
     // READ DATA CHANNEL
-    output RREADY,
-    input  RVALID,
-    input  [31 : 0] RDATA,
-    input  RLAST,
-    input  [3 : 0] RID,
-    input  [1 : 0] RRESP,
+    output 	RREADY,
+    input  	RVALID,
+    input  	[31 : 0] RDATA,
+    input  	RLAST,
+    input  	[3 : 0] RID,
+    input  	[1 : 0] RRESP,
 
     // WRITE ADDRESS CHANNEL
-    output [31 : 0] AWADDR,
-    output AWVALID,
-    output [3 : 0] AWID,
-    output [7 : 0] AWLEN,
-    output [2 : 0] AWSIZE,
-    output [1 : 0] AWBURST,
-    input  AWREADY,
+    output 	[31 : 0] AWADDR,
+    output 	AWVALID,
+    output 	[3 : 0] AWID,
+    output 	[7 : 0] AWLEN,
+    output 	[2 : 0] AWSIZE,
+    output 	[1 : 0] AWBURST,
+    input  	AWREADY,
 
     // WRITE DATA CHANNEL
-    output [31 : 0] WDATA,
-    output [3 : 0] WSTRB,
-    output WLAST,
-    output WVALID,
-    input  WREADY,
+    output 	[31 : 0] WDATA,
+    output 	[3 : 0] WSTRB,
+    output 	WLAST,
+    output 	WVALID,
+    input  	WREADY,
 
     // BRESP CHANNEL
-    input  [1 : 0] BRESP,
-    input  BVALID,
-    input  [3 : 0] BID,
-    output BREADY
+    input  	[1 : 0] BRESP,
+    input  	BVALID,
+    input  	[3 : 0] BID,
+    output 	BREADY
 );
 
 // 模式固定，BURST只传一个，不会连续传输
@@ -63,24 +66,26 @@ module axi4_full_master (
 // 每次都是LAST传输
 assign ARBURST = 2'b01;
 assign AWBURST = 2'b01;
-assign ARLEN = 8'b0;
-assign AWLEN = 8'b0;
+assign AWLEN = 8'b0;		// 读通道不进行突发传输
 assign WLAST = 1'b1;        // RLAST也必须是1b'1
 assign ARID = 4'b0;
 assign AWID = 4'b0;
 
 // 可根据AXSIZE判断地址是否对齐
 // 000：无须对齐    001：地址最后一位必须为0    010：地址最后两位必须为0
-assign ARSIZE = {1'b0, len};
-assign AWSIZE = {1'b0, len};
+assign ARSIZE = {1'b0, size};
+assign AWSIZE = {1'b0, size};
 
-typedef enum logic [2 : 0] { 
+assign ARLEN = len;
+
+
+typedef enum logic [1 : 0] { 
     R_IDLE,
     R_WAIT_ARREADY,
     R_WAIT_RDATA
 } r_state_t;
 
-typedef enum logic [4 : 0] { 
+typedef enum logic [2 : 0] { 
     W_IDLE,
     W_WAIT_ALLREADY,
     W_WAIT_AWREADY,
@@ -109,7 +114,7 @@ always_comb begin
             next_r_state = ARREADY ? R_WAIT_RDATA : r_state;
         R_WAIT_RDATA:
             next_r_state = RVALID & RREADY & RLAST ? R_IDLE : r_state;
-        default: 
+        default:
             next_r_state = r_state;
     endcase
 end
@@ -139,9 +144,13 @@ assign rresp = RRESP;
 assign ARVALID = r_state == R_IDLE & ren | r_state == R_WAIT_ARREADY;
 assign RREADY = r_state == R_WAIT_RDATA & user_ready;
 
+always_ff @(posedge clk) begin
+	rdata_valid <= RVALID & RREADY ? 1'b1 : 1'b0;
+end
+
 reg rdone;
 always_ff @(posedge clk) begin
-    rdone <= RVALID & RREADY ? 1'b1 : 1'b0;
+    rdone <= RVALID & RREADY & RLAST ? 1'b1 : 1'b0;
 end
 
 
