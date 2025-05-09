@@ -158,7 +158,7 @@ always_comb begin
                 3'b111: next_w_state = W_WAIT_BRESP;
                 3'b110: next_w_state = W_WAIT_WREADY;
                 3'b101: next_w_state = W_WAIT_AWREADY;
-                3'b100: next_w_state = w_state;
+                3'b100: next_w_state = W_WAIT_ALLREADY;
                 default: next_w_state = W_IDLE;
             endcase
         W_WAIT_ALLREADY:

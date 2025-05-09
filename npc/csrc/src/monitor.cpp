@@ -112,12 +112,28 @@ void nvboard_bind_all_pins(VysyxSoCFull* dut);
 
 #endif
 
+#ifdef WAVE
+
+#include "verilated_vcd_c.h"
+
+VerilatedVcdC tfp = VerilatedVcdC();
+
+#endif
+
 int main(int argc, char *argv[]) {
     Verilated::commandArgs(argc, argv);		// For SOC
 #ifdef NVBOARD
 
 	nvboard_bind_all_pins(&dut);
 	nvboard_init();
+
+#endif
+
+#ifdef WAVE
+
+    Verilated::traceEverOn(true); // 激活追踪
+    dut.trace(&tfp, 99);         // 将追踪对象与模块关联, 99 是追踪深度
+    tfp.open("waveform.vcd");   // 打开 VCD 文件
 
 #endif
 
@@ -135,6 +151,12 @@ int main(int argc, char *argv[]) {
     }
     welcome();
     sdb_cli_loop();
+
+#ifdef WAVE
+
+		tfp.close();
+
+#endif
 }
 
 

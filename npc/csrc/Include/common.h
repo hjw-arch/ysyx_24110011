@@ -22,6 +22,8 @@
 
 #define cycle  \
 do { \
+	IFDEF(WAVE, Verilated::timeInc(1));		\
+	IFDEF(WAVE, tfp.dump(Verilated::time()));	\
     dut.clock = 0;    \
     dut.eval();     \
     dut.clock = 1;    \
