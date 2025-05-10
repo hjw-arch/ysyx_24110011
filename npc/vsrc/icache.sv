@@ -4,7 +4,7 @@
 // for compatibility with Yosys.
 
 module icache #(
-    parameter BLOCK_SIZE    =   4,
+    parameter BLOCK_SIZE    =   16,
     parameter BLOCK_NUM     =   16,
     parameter ADDR_WIDTH    =   32,
     parameter DATA_WIDTH    =   32
@@ -24,10 +24,12 @@ module icache #(
     input                           m2i_ready,  // 主存是否准备好接收Cache请求
     input      [DATA_WIDTH-1:0]     m2i_data,   // 主存返回给Cache的数据
     input                           m2i_valid,  // 主存返回的数据是否有效
+	input 							m2i_done,
     output                          i2m_ready   // Cache是否准备好接收主存数据
 );
 
 // Calculated parameters
+localparam BLOCK_WIDTH	 =	 BLOCK_SIZE * 8;
 localparam INDEX_WIDTH   =   $clog2(BLOCK_NUM);
 localparam OFFSET_WIDTH  =   $clog2(BLOCK_SIZE);
 localparam TAG_WIDTH     =   ADDR_WIDTH - INDEX_WIDTH - OFFSET_WIDTH;
@@ -38,19 +40,19 @@ wire [INDEX_WIDTH-1:0]  sram_raddr_w;
 // SRAM -> P1
 wire                    sram_rdata_valid_w;
 wire [TAG_WIDTH-1:0]    sram_rdata_tag_w;
-wire [DATA_WIDTH-1:0]   sram_rdata_data_w;
+wire [BLOCK_WIDTH-1:0]   sram_rdata_data_w;
 // P2 -> SRAM (写)
 wire                    sram_wen_w;
 wire [INDEX_WIDTH-1:0]  sram_waddr_w;
 wire [TAG_WIDTH-1:0]    sram_wtag_w;
-wire [DATA_WIDTH-1:0]   sram_wdata_w;
+wire [BLOCK_WIDTH-1:0]  sram_wdata_w;
 // P1 -> P2
 wire [TAG_WIDTH-1:0]    p1_to_p2_tag_w;
 wire [INDEX_WIDTH-1:0]  p1_to_p2_index_w;
 wire [OFFSET_WIDTH-1:0] p1_to_p2_offset_w;
 wire                    p1_to_p2_cache_valid_w;
 wire [TAG_WIDTH-1:0]    p1_to_p2_cache_tag_w;
-wire [DATA_WIDTH-1:0]   p1_to_p2_cache_data_w;
+wire [BLOCK_WIDTH-1:0]  p1_to_p2_cache_data_w;
 wire                    p1_to_p2_valid_w;
 // P2 -> P1
 wire                    p2_to_p1_ready_w;
@@ -62,8 +64,8 @@ wire [DATA_WIDTH-1:0]   p2_o_data_w;
 icache_sram #(
     .INDEX_WIDTH(INDEX_WIDTH),
     .TAG_WIDTH(TAG_WIDTH),
-    .DATA_WIDTH(DATA_WIDTH),
-    .BLOCK_NUM(BLOCK_NUM)
+    .BLOCK_NUM(BLOCK_NUM),
+	.BLOCK_WIDTH(BLOCK_WIDTH)
 ) i_icache_sram (
     .clk        (clk),
     .rst        (rst),
@@ -82,7 +84,7 @@ icache_P1 #(
     .INDEX_WIDTH(INDEX_WIDTH),
     .OFFSET_WIDTH(OFFSET_WIDTH),
     .TAG_WIDTH(TAG_WIDTH),
-    .DATA_WIDTH(DATA_WIDTH)
+	.BLOCK_WIDTH(BLOCK_WIDTH)
 ) i_icache_P1 (
     .clk        (clk),
     .rst        (rst),
@@ -108,7 +110,8 @@ icache_P2 #(
     .INDEX_WIDTH(INDEX_WIDTH),
     .OFFSET_WIDTH(OFFSET_WIDTH),
     .TAG_WIDTH(TAG_WIDTH),
-    .DATA_WIDTH(DATA_WIDTH)
+    .DATA_WIDTH(DATA_WIDTH),
+	.BLOCK_WIDTH(BLOCK_WIDTH)
 ) i_icache_P2 (
     .clk        (clk),
     .rst        (rst),
@@ -117,6 +120,7 @@ icache_P2 #(
     .m2i_ready  (m2i_ready),
     .m2i_data   (m2i_data),
     .m2i_valid  (m2i_valid),
+	.m2i_done	(m2i_done),
     .i2m_ready  (i2m_ready),
     .sram_wen   (sram_wen_w),
     .sram_wtag  (sram_wtag_w),
@@ -163,25 +167,25 @@ endmodule
 module icache_sram #(
     parameter INDEX_WIDTH 	= 4,
     parameter TAG_WIDTH 	= 26,
-    parameter DATA_WIDTH 	= 32,
-    parameter BLOCK_NUM 	= 16
+    parameter BLOCK_NUM 	= 16,
+	parameter BLOCK_WIDTH	= 32
 ) (
     input                       clk,
     input                       rst,
     input                       wen,
     input   [INDEX_WIDTH-1:0]   waddr,
     input   [TAG_WIDTH-1:0]     wtag,
-    input   [DATA_WIDTH-1:0]    wdata,
+    input   [BLOCK_WIDTH-1:0]   wdata,
     input   [INDEX_WIDTH-1:0]   raddr,
     output  logic               rdata_valid,
     output  logic [TAG_WIDTH-1:0] rdata_tag,
-    output  logic [DATA_WIDTH-1:0] rdata_data
+    output  logic [BLOCK_WIDTH-1:0] rdata_data
 );
 
 // Cache storage
-logic [BLOCK_NUM-1:0] 	cache_valid;
-logic [TAG_WIDTH-1:0] 	cache_tag 	[BLOCK_NUM-1:0];
-logic [DATA_WIDTH-1:0] 	cache_data 	[BLOCK_NUM-1:0];
+logic [BLOCK_NUM-1:0] 		cache_valid;
+logic [TAG_WIDTH-1:0] 		cache_tag 	[BLOCK_NUM-1:0];
+logic [BLOCK_WIDTH-1:0] 	cache_data 	[BLOCK_NUM-1:0];
 
 // Write operation
 always_ff @(posedge clk) begin
@@ -216,7 +220,7 @@ module icache_P1 #(
     parameter INDEX_WIDTH	=	4,
     parameter OFFSET_WIDTH	=	2,
     parameter TAG_WIDTH		=	26,
-    parameter DATA_WIDTH	=	32
+	parameter BLOCK_WIDTH	=	128
 ) (
     input                       		clk,
     input                       		rst,
@@ -224,7 +228,7 @@ module icache_P1 #(
     output  		[INDEX_WIDTH-1:0]   sram_raddr,
     input                       		sram_rdata_valid,
     input   		[TAG_WIDTH-1:0]     sram_rdata_tag,
-    input   		[DATA_WIDTH-1:0]    sram_rdata_data,
+    input   		[BLOCK_WIDTH-1:0]   sram_rdata_data,
 
     input                       		i_valid,
     input   		[ADDR_WIDTH-1:0]    i_addr,
@@ -236,7 +240,7 @@ module icache_P1 #(
     output  logic	[OFFSET_WIDTH-1:0]  o_offset,
     output  logic                   	o_cache_valid,
     output  logic	[TAG_WIDTH-1:0]     o_cache_tag,
-    output  logic	[DATA_WIDTH-1:0]    o_cache_data,
+    output  logic	[BLOCK_WIDTH-1:0]   o_cache_data,
     output                      		o_valid
 );
 
@@ -287,9 +291,10 @@ endmodule
 module icache_P2 #(
     parameter ADDR_WIDTH	=	32,
     parameter INDEX_WIDTH	=	4,
-    parameter OFFSET_WIDTH	=	2,
-    parameter TAG_WIDTH		=	26,
-    parameter DATA_WIDTH	=	32
+    parameter OFFSET_WIDTH	=	4,
+    parameter TAG_WIDTH		=	24,
+    parameter DATA_WIDTH	=	32,
+	parameter BLOCK_WIDTH	=	128
 ) (
     input                           		clk,
     input                           		rst,
@@ -299,12 +304,13 @@ module icache_P2 #(
     input                           		m2i_ready,
     input   		[DATA_WIDTH-1:0]        m2i_data,
     input                           		m2i_valid,
+	input 									m2i_done,
     output                          		i2m_ready,
     // 与cache sram交互
-    output                          		sram_wen,
+    output          logic                	sram_wen,
     output  		[TAG_WIDTH-1:0]         sram_wtag,
     output  		[INDEX_WIDTH-1:0]       sram_waddr,
-    output  		[DATA_WIDTH-1:0]        sram_wdata,
+    output  		[BLOCK_WIDTH-1:0]       sram_wdata,
     // 上层流水线
     input                           		i_valid,
     input   		[TAG_WIDTH-1:0]         i_tag,
@@ -312,7 +318,7 @@ module icache_P2 #(
     input   		[OFFSET_WIDTH-1:0]      i_offset,
     input                           		i_cache_valid,
     input   		[TAG_WIDTH-1:0]         i_cache_tag,
-    input   		[DATA_WIDTH-1:0]        i_cache_data,
+    input   		[BLOCK_WIDTH-1:0]       i_cache_data,
     output                          		o_ready,
     // 返回顶层模块(给CPU)
     output  logic	[DATA_WIDTH-1:0]        o_data,
@@ -339,7 +345,7 @@ always_ff @(posedge clk) begin
     state <= rst ? 1'b0 : nstate;
 end
 
-assign  nstate  =   has_new_data & ~hit | state & ~m2i_valid;
+assign  nstate  =   has_new_data & ~hit | state & ~m2i_done;
 
 
 /********************** 与mem通信 ********************/
@@ -349,15 +355,38 @@ assign  i2m_ready   =   1'b1;
 
 
 /************************* 填充 ***********************/
-assign  sram_wen    =   state & m2i_valid;
+logic [BLOCK_WIDTH - DATA_WIDTH - 1 : 0] m2i_data_buffer;
+
+always_ff @(posedge clk) begin
+	m2i_data_buffer <= m2i_valid ? {m2i_data, m2i_data_buffer[BLOCK_WIDTH - DATA_WIDTH - 1 : DATA_WIDTH]} : m2i_data_buffer;	// 其实可以提前一个周期，这里先不这么干
+end
+
+// always_ff @(posedge clk) begin
+// 	sram_wen <= state & m2i_done;		// 打一拍
+// end
+
+assign  sram_wen    =   state & m2i_done;
 assign  sram_waddr  =   i_index;
-assign  sram_wdata  =   m2i_data;
+assign  sram_wdata  =   {m2i_data, m2i_data_buffer};
 assign  sram_wtag   =   i_tag;
 
-
 /************************* 返回上层数据 *************************/
-assign  o_valid     =   has_new_data & hit | state & m2i_valid;
-assign  o_data      =   state ? m2i_data : i_cache_data;
+assign  o_valid     =   has_new_data & hit | state & m2i_done;
+
+always_comb begin
+	case({i_offset[3:2], state})
+		3'b001: o_data = m2i_data_buffer[31:0];
+		3'b011: o_data = m2i_data_buffer[63:32];
+		3'b101: o_data = m2i_data_buffer[95:64];
+		3'b111: o_data = m2i_data;
+		3'b000: o_data = i_cache_data[31:0];
+		3'b010: o_data = i_cache_data[63:32];
+		3'b100: o_data = i_cache_data[95:64];
+		3'b110: o_data = i_cache_data[127:96];
+	endcase
+end
+
+// assign  o_data      =   state ? m2i_data_buffer : i_cache_data;
 
 /************************ 性能计数器 ***************************/
 import "DPI-C" function void PerformanceCounter_icache_hit();

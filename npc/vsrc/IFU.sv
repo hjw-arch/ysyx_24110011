@@ -83,7 +83,7 @@ wire i2m_ready;
 
 // 流水线时，icache要大改
 icache #(
-	.BLOCK_SIZE 	(4   ),
+	.BLOCK_SIZE 	(16   ),
 	.BLOCK_NUM  	(32  ),
 	.ADDR_WIDTH 	(32  ),
 	.DATA_WIDTH 	(32  ))
@@ -100,7 +100,8 @@ u_icache(
 	.i2m_addr  	(i2m_addr   ),
 	.m2i_ready 	(1'b1       ),
 	.m2i_data  	(rdata      ),
-	.m2i_valid 	(done       ),
+	.m2i_valid 	(rdata_valid),
+	.m2i_done	(done		),
 	.i2m_ready 	(i2m_ready  )
 );
 
@@ -113,7 +114,7 @@ axi4_full_master u_axi4_full_master(
     .ren        	(i2m_valid   ),
     .user_ready 	(i2m_ready   ),
 	.size			(2'b10		 ),
-    .len        	(8'b0        ),
+    .len        	(8'b11       ),
     .waddr      	(32'b0       ),
     .wdata      	(32'b0       ),
 	.rdata_valid	(rdata_valid ),
