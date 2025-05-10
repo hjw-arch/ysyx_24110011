@@ -246,7 +246,7 @@ assign s_wlast  = (state == M1_ACTIVE) ? m1_wlast  : m0_wlast;
 
 
 // always_ff @(posedge clk) begin
-// 	if(state == M1_ACTIVE) begin
+// 	if(state == M0_ACTIVE && s_araddr > 32'ha0000000) begin
 // 		$display("AR Channel: ARADDR = 0x%08x\nARLEN = %d\nARSIZE = %d\nARVALID = %d\nARREADY = %d\n", s_araddr, s_arlen, s_arsize, s_arvalid, s_arready);
 // 		$display("R Channel: RDATA = 0x%08x\nRRESP = %d\nRLAST = %d\nRVALID = %d\nRREADY = %d\n", s_rdata, s_rresp, s_rlast, s_rvalid, s_rready);
 // 		$display("AW Channel: AWADDR = 0x%08x\nAWLEN = %d\nAWSIZE = %d\nAWVALID = %d\nAWREADY = %d\n", s_awaddr, s_awlen, s_awsize, s_awvalid, s_awready);

@@ -67,7 +67,7 @@ module axi4_full_master (
 assign ARBURST = 2'b01;
 assign AWBURST = 2'b01;
 assign AWLEN = 8'b0;		// 读通道不进行突发传输
-assign WLAST = 1'b1;        // RLAST也必须是1b'1
+assign WLAST = 1'b1;        //
 assign ARID = 4'b0;
 assign AWID = 4'b0;
 

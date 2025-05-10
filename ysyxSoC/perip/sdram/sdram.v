@@ -220,7 +220,7 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-	burst_counter <= (reading || writing) ? burst_counter - 1 : (is_bank_active[ba] && cmd == CMD_READ) ? num_burst : (is_bank_active[ba] && cmd == CMD_WRITE) ? num_burst - 1 : burst_counter;
+	burst_counter <= (is_bank_active[ba] && cmd == CMD_READ) ? num_burst : (reading || writing) ? burst_counter - 1 : (is_bank_active[ba] && cmd == CMD_WRITE) ? num_burst - 1 : burst_counter;
 end
 
 reg reading, writing;
