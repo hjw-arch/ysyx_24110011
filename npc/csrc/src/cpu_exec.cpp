@@ -69,10 +69,6 @@ void cpu_exec_one() {
 #endif
 	} while(IFU_START != 1 && INST != ebreak);
 
-	if (INST == 0) {
-		printf("PC = %x, INST = %x\n", cpu.pc, INST);
-	}
-
 	dynamic_insts++;
 
 	if (INST == ebreak) {
