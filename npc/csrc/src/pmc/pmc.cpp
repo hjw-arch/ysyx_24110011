@@ -294,10 +294,10 @@ void PerformanceCounter_idu_identify_inst(int inst) {
 
 
 void PerformanceCounter_display() {
-    printf(ANSI_FG_YELLOW"===== CPU Performance Counter Statistics =====\n"ANSI_NONE);
+    printf(ANSI_FG_YELLOW "===== CPU Performance Counter Statistics =====\n" ANSI_NONE);
 
     // IFU Statistics
-    printf(ANSI_FG_CYAN"\n[IFU - Instruction Fetch Unit]\n"ANSI_NONE);
+    printf(ANSI_FG_CYAN "\n[IFU - Instruction Fetch Unit]\n" ANSI_NONE);
     printf("Bootloader (flash & sram):\n");
     printf("  Instruction Fetch Count:        %ld\n", ifu_fetch_inst_flash);
     printf("  Instruction Fetch Cycles:       %ld\n", ifu_fetch_inst_cycles_flash);
@@ -305,7 +305,7 @@ void PerformanceCounter_display() {
     printf("  Instruction Fetch Count:        %ld\n", ifu_fetch_inst_sdram);
     printf("  Instruction Fetch Cycles:       %ld\n", ifu_fetch_inst_cycles_sdram);
 
-	printf(ANSI_FG_CYAN"\n[ICACHE]\n"ANSI_NONE);
+	printf(ANSI_FG_CYAN "\n[ICACHE]\n" ANSI_NONE);
     printf("Bootloader (flash & sram):\n");
     printf("  Hit Times:        			  %ld\n", icache_hit_flash);
     printf("Normal (SDRAM):\n");
@@ -321,7 +321,7 @@ void PerformanceCounter_display() {
 	
 
     // Total Statistics
-    printf(ANSI_FG_CYAN"\n[Type - Total Statistics]\n"ANSI_NONE);
+    printf(ANSI_FG_CYAN "\n[Type - Total Statistics]\n" ANSI_NONE);
     printf("Bootloader (Flash & sram):\n");
     printf("  CAL Instructions:               %ld\n", idu_identify_cal_flash);
     printf("  CAL Instruction Cycles:         %ld\n", inst_type_cal_cycles_flash);
@@ -354,7 +354,7 @@ void PerformanceCounter_display() {
     printf("  Unknown Instruction Cycles:     %ld\n", inst_type_unknown_cycles_sdram);
 
     // LSU Statistics
-    printf(ANSI_FG_CYAN"\n[LSU - Load/Store Unit]\n"ANSI_NONE);
+    printf(ANSI_FG_CYAN" \n[LSU - Load/Store Unit]\n" ANSI_NONE);
     printf("Bootloader (Load-Flash | store-Sdram):\n");
     printf("  Load Operations:                %ld\n", lsu_load_data_flash);
     printf("  Load Cycles:                    %ld\n", lsu_load_data_cycles_flash);
@@ -367,11 +367,11 @@ void PerformanceCounter_display() {
     printf("  Store Cycles:                   %ld\n", lsu_store_data_cycles_sdram);
 
     // EXU Statistics
-    printf(ANSI_FG_CYAN"\n[EXU - Execution Unit]\n"ANSI_NONE);
+    printf(ANSI_FG_CYAN "\n[EXU - Execution Unit]\n" ANSI_NONE);
     printf("Bootloader:\n");
     printf("  CAL Instructions Executed:      %ld\n", exu_finish_cal_flash);
     printf("Normal:\n");
     printf("  CAL Instructions Executed:      %ld\n", exu_finish_cal_sdram);
 
-    printf(ANSI_FG_YELLOW"\n===== End of Statistics =====\n"ANSI_NONE);
+    printf(ANSI_FG_YELLOW" \n===== End of Statistics =====\n" ANSI_NONE);
 }
