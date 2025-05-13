@@ -11,7 +11,7 @@
 
 // #define SOC						1
 
-#define CONFIG_WATCHPOINT   1
+// #define CONFIG_WATCHPOINT   1
 
 // trace
 // #define CONFIG_TRACE        1

@@ -84,7 +84,7 @@ wire i2m_ready;
 // 流水线时，icache要大改
 icache #(
 	.BLOCK_SIZE 	(16   ),
-	.BLOCK_NUM  	(32  ),
+	.BLOCK_NUM  	(16  ),
 	.ADDR_WIDTH 	(32  ),
 	.DATA_WIDTH 	(32  ))
 u_icache(

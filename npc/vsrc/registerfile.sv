@@ -12,17 +12,17 @@ module registerfile #(parameter WIDTH = 32) (
     output [WIDTH - 1 : 0] rs2_data
 );
 
-reg [WIDTH - 1 : 0] register_file [31 : 0];
+reg [WIDTH - 1 : 0] register_file [15 : 0];
 
 wire not_x0 = |rd_addr;
 
 always @(posedge clk) begin
-    if (wen & not_x0) register_file[rd_addr] <= rd_data;
+    if (wen & not_x0) register_file[rd_addr[3:0]] <= rd_data;
 end
 
 
-assign rs1_data = rs1_addr != 0 ? register_file[rs1_addr] : {WIDTH{1'b0}};
-assign rs2_data = rs2_addr != 0 ? register_file[rs2_addr] : {WIDTH{1'b0}};
+assign rs1_data = rs1_addr != 0 ? register_file[rs1_addr[3:0]] : {WIDTH{1'b0}};
+assign rs2_data = rs2_addr != 0 ? register_file[rs2_addr[3:0]] : {WIDTH{1'b0}};
 
 
 endmodule
