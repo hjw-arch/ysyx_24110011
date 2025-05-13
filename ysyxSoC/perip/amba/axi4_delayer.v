@@ -169,7 +169,7 @@ always_ff @(posedge clock) begin
         end else if (r_state == RUNNING) begin		// 最后一次的话，无需计入，因为CPU直接成功了
             // 累积延迟
             r_counter <= r_counter + 1;
-            r_delay_counter <= (out_rlast) ? r_delay_counter : r_delay_counter + SR;
+            r_delay_counter <= (out_rvalid & out_rlast) ? r_delay_counter : r_delay_counter + SR;
         end
         
         // 状态转换时计算延迟周期数
