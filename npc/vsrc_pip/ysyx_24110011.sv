@@ -1,3 +1,5 @@
+// `define   SOC	1
+
 // `ifdef SOC
 
 

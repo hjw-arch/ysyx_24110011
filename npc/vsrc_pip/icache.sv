@@ -389,18 +389,18 @@ end
 // assign  o_data      =   state ? m2i_data_buffer : i_cache_data;
 
 /************************ 性能计数器 ***************************/
-// import "DPI-C" function void PerformanceCounter_icache_hit();
-// import "DPI-C" function void PerformanceCounter_icache_AMAT();
+import "DPI-C" function void PerformanceCounter_icache_hit();
+import "DPI-C" function void PerformanceCounter_icache_AMAT();
 
-// always_ff @(posedge clk) begin
-// 	if (has_new_data & hit) begin
-// 		PerformanceCounter_icache_hit();
-// 	end
-// end
+always_ff @(posedge clk) begin
+	if (has_new_data & hit) begin
+		PerformanceCounter_icache_hit();
+	end
+end
 
-// always_ff @(posedge clk) begin
-// 	if (state) PerformanceCounter_icache_AMAT();
-// end
+always_ff @(posedge clk) begin
+	if (state) PerformanceCounter_icache_AMAT();
+end
 
 
 

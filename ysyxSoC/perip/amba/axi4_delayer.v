@@ -63,31 +63,31 @@ module axi4_delayer(
   input  [1:0]  out_bresp
 );
 
-  // assign in_arready = out_arready;
-  // assign out_arvalid = in_arvalid;
-  // assign out_arid = in_arid;
-  // assign out_araddr = in_araddr;
-  // assign out_arlen = in_arlen;
-  // assign out_arsize = in_arsize;
-  // assign out_arburst = in_arburst;
-  // assign in_rid = out_rid;
-  // assign in_rdata = out_rdata;
-  // assign in_rresp = out_rresp;
-  // assign in_rlast = out_rlast;
-  // assign in_awready = out_awready;
-  // assign out_awvalid = in_awvalid;
-  // assign out_awid = in_awid;
-  // assign out_awaddr = in_awaddr;
-  // assign out_awlen = in_awlen;
-  // assign out_awsize = in_awsize;
-  // assign out_awburst = in_awburst;
-  // assign in_wready = out_wready;
-  // assign out_wvalid = in_wvalid;
-  // assign out_wdata = in_wdata;
-  // assign out_wstrb = in_wstrb;
-  // assign out_wlast = in_wlast;
-  // assign in_bid = out_bid;
-  // assign in_bresp = out_bresp;
+  assign in_arready = out_arready;
+  assign out_arvalid = in_arvalid;
+  assign out_arid = in_arid;
+  assign out_araddr = in_araddr;
+  assign out_arlen = in_arlen;
+  assign out_arsize = in_arsize;
+  assign out_arburst = in_arburst;
+  assign in_rid = out_rid;
+  assign in_rdata = out_rdata;
+  assign in_rresp = out_rresp;
+  assign in_rlast = out_rlast;
+  assign in_awready = out_awready;
+  assign out_awvalid = in_awvalid;
+  assign out_awid = in_awid;
+  assign out_awaddr = in_awaddr;
+  assign out_awlen = in_awlen;
+  assign out_awsize = in_awsize;
+  assign out_awburst = in_awburst;
+  assign in_wready = out_wready;
+  assign out_wvalid = in_wvalid;
+  assign out_wdata = in_wdata;
+  assign out_wstrb = in_wstrb;
+  assign out_wlast = in_wlast;
+  assign in_bid = out_bid;
+  assign in_bresp = out_bresp;
 
 
 
@@ -104,32 +104,17 @@ localparam  IDLE     = 2'b00,
 /*****************************************************************************/
 // 读通道延迟逻辑 (AR & R channels)
 /*****************************************************************************/
-// 读地址通道信号直通连接
-assign out_arid = in_arid;
-assign out_araddr = in_araddr;
-assign out_arvalid = in_arvalid;
-assign in_arready = out_arready;
-assign out_arlen = in_arlen;
-assign out_arsize = in_arsize;
-assign out_arburst = in_arburst;
-
-// 读数据通道的数据直通
-assign in_rdata = out_rdata;
-assign in_rlast = out_rlast;
-assign in_rid = out_rid;
-assign in_rresp = out_rresp;
 
 // 读通道状态和计数器
 logic [1:0] r_state, r_state_last, n_r_state;
 logic arvalid_last;
 logic [7:0] r_counter;           // 读请求计数器
 logic [19:0] r_delay_counter;    // 读累积延迟计数器
-logic [19:0] r_remaining_delay;  // 读剩余需要延迟的周期数
 
 // 读通道状态转换检测
 logic read_state_changing_to_delay;
 
-// 握手成功标志(但未结束)
+// 握手成功标志
 logic new_handshake;
 
 // 边沿检测
@@ -137,7 +122,6 @@ always_ff @(posedge clock) begin
     arvalid_last <= in_arvalid;
     r_state_last <= r_state;
 	new_handshake <= (in_rvalid & out_rready & ~in_rlast);
-
 end
 
 wire read_start = ~arvalid_last & in_arvalid;
@@ -160,13 +144,13 @@ always_comb begin
 
     case (r_state)
         IDLE: begin
-            if (read_start | new_handshake) n_r_state = RUNNING;
+            if (read_start | (in_rvalid & out_rready & ~in_rlast)) n_r_state = RUNNING;
         end
         RUNNING: begin
             if (out_rvalid) n_r_state = DELAYING;
         end
-        DELAYING: begin // 0时要握手成功，1时就得交互，再补偿开始时少减的1
-            if (r_remaining_delay == 2) n_r_state = IDLE;
+        DELAYING: begin // 0时要握手成功，1时就得交互，再补偿开始时少减的1，就是2
+            if (r_delay_counter == 2) n_r_state = IDLE;
         end
         default: n_r_state = IDLE;
     endcase
@@ -177,24 +161,23 @@ always_ff @(posedge clock) begin
     if (reset) begin
         r_counter <= 0;
         r_delay_counter <= 0;
-        r_remaining_delay <= 0;
     end else begin
         if (read_start | new_handshake) begin
             // 读请求开始
             r_counter <= 1;
             r_delay_counter <= SR;
-        end else if (r_state == RUNNING) begin
+        end else if (r_state == RUNNING) begin		// 最后一次的话，无需计入，因为CPU直接成功了
             // 累积延迟
             r_counter <= r_counter + 1;
-            r_delay_counter <= r_delay_counter + SR;
+            r_delay_counter <= (out_rvalid & out_rlast) ? r_delay_counter : r_delay_counter + SR;
         end
         
         // 状态转换时计算延迟周期数
         if (read_state_changing_to_delay) begin
-            r_remaining_delay <= (r_delay_counter >> SHIFTER) - {12'b0, r_counter};
-        end else if (r_state == DELAYING && r_remaining_delay > 0) begin
+            r_delay_counter <= (r_delay_counter >> SHIFTER) - {12'b0, r_counter};
+        end else if (r_state == DELAYING && r_delay_counter > 0) begin
             // 在DELAYING状态下简单递减
-            r_remaining_delay <= r_remaining_delay - 1;
+            r_delay_counter <= r_delay_counter - 1;
         end
     end
 end
@@ -207,7 +190,7 @@ always_ff @(posedge clock) begin
     if (reset) begin
         delay_rok <= 1'b0;
     end else begin
-        if (r_state == DELAYING && r_remaining_delay == 2) begin
+        if (r_state == DELAYING && r_delay_counter == 2) begin
             // 当延迟即将结束时，开始传输有效信号
             delay_rok <= 1'b1;
         end else if (in_rvalid && out_rready) begin
@@ -226,31 +209,12 @@ assign in_rvalid = delay_rok & out_rvalid;
 /*****************************************************************************/
 // 写通道延迟逻辑 (AW, W & B channels)
 /*****************************************************************************/
-// 写地址通道信号直通连接
-assign out_awid = in_awid;
-assign out_awaddr = in_awaddr;
-assign out_awlen = in_awlen;
-assign out_awsize = in_awsize;
-assign out_awburst = in_awburst;
-assign out_awvalid = in_awvalid;
-assign in_awready = out_awready; // 在延迟期间不接受新的写地址
-
-// 写数据通道信号直通连接
-assign out_wdata = in_wdata;
-assign out_wstrb = in_wstrb;
-assign out_wlast = in_wlast;
-assign out_wvalid = in_wvalid;
-assign in_wready = out_wready;
-
-assign in_bid = out_bid;
-assign in_bresp = out_bresp;
 
 // 写通道状态和计数器
 logic [1:0] w_state, w_state_last, n_w_state;
 logic awvalid_last, wvalid_last;
 logic [7:0] w_counter;
 logic [19:0] w_delay_counter;
-logic [19:0] w_remaining_delay;
 
 // 写通道状态转换检测
 logic write_state_changing_to_delay;
@@ -285,10 +249,10 @@ always_comb begin
             if (write_start) n_w_state = RUNNING;
         end
         RUNNING: begin
-            if (out_wlast) n_w_state = DELAYING; // 写数据完成时进入延迟状态
+            if (out_bvalid) n_w_state = DELAYING; // 写数据完成时进入延迟状态
         end
         DELAYING: begin
-            if (w_remaining_delay == 2) n_w_state = IDLE;
+            if (w_delay_counter == 2) n_w_state = IDLE;
         end
         default: n_w_state = IDLE;
     endcase
@@ -299,7 +263,6 @@ always_ff @(posedge clock) begin
     if (reset) begin
         w_counter <= 0;
         w_delay_counter <= 0;
-        w_remaining_delay <= 0;
     end else begin
         if (write_start) begin
             // 写请求开始
@@ -308,15 +271,15 @@ always_ff @(posedge clock) begin
         end else if (w_state == RUNNING) begin
             // 累积延迟
             w_counter <= w_counter + 1;
-            w_delay_counter <= w_delay_counter + SR;
+            w_delay_counter <= (out_bvalid) ? w_delay_counter : w_delay_counter + SR;	// 最后一次不加
         end
         
         // 状态转换时计算延迟周期数
         if (write_state_changing_to_delay) begin
-            w_remaining_delay <= (w_delay_counter >> SHIFTER) - {12'b0, w_counter};
-        end else if (w_state == DELAYING && w_remaining_delay > 0) begin
+            w_delay_counter <= (w_delay_counter >> SHIFTER) - {12'b0, w_counter};
+        end else if (w_state == DELAYING && w_delay_counter > 0) begin
             // 在DELAYING状态下简单递减
-            w_remaining_delay <= w_remaining_delay - 1;
+            w_delay_counter <= w_delay_counter - 1;
         end
     end
 end
@@ -329,7 +292,7 @@ always_ff @(posedge clock) begin
     if (reset) begin
         delay_wok <= 1'b0;
     end else begin
-        if (w_state == DELAYING && w_remaining_delay == 2) begin
+        if (w_state == DELAYING && w_delay_counter == 2) begin
             // 当延迟即将结束时，传递B通道响应
             delay_wok <= 1'b1;
         end else if (in_bvalid && out_bready) begin
