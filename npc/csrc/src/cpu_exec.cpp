@@ -42,7 +42,7 @@ void PerformanceCounter_display();
 void halt() {
     cpu_state = IDLE;
 
-    printf(ANSI_FG_CYAN"\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n"ANSI_NONE, cycle_times, dynamic_insts);
+    printf(ANSI_FG_CYAN "\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
 	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_display());
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
