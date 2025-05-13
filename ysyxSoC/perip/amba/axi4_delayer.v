@@ -271,7 +271,7 @@ always_ff @(posedge clock) begin
         end else if (w_state == RUNNING) begin
             // 累积延迟
             w_counter <= w_counter + 1;
-            w_delay_counter <= (out_bvalid) ? w_delay_counter : w_delay_counter + SR;	// 最后一次不加
+            w_delay_counter <= (~out_bvalid) ? w_delay_counter : w_delay_counter + SR;	// 最后一次不加
         end
         
         // 状态转换时计算延迟周期数
