@@ -1,54 +1,22 @@
-module IFU #(parameter WIDTH = 32) (
-    input clk,
-    input rst,
-    input wbu_valid,
-    input [WIDTH - 1 : 0] pc,
+module IFU(
+    input 						clk,
+    input 						rst,
+    input 			[31 : 0] 	br_pc,
+	input 						br_valid,
 
-    output ifu_valid,
-    output reg [63 : 0] ifu_data,
-    input idu_ready,
-
-    // 连接SRAM
-    // output declaration of module axi4_lite_master
-    output prerequest,      // 仅仅适用于多周期处理器
-    output [31:0] ARADDR,
-    output ARVALID,
-    output RREADY,
-    output [3 : 0] ARID,
-    output [7 : 0] ARLEN,
-    output [2 : 0] ARSIZE,
-    output [1 : 0] ARBURST,
-
-    // input declaration of slave
-    input ARREADY,
-    input RVALID,
-    input RLAST,
-    input [3 : 0] RID,
-    input [31 : 0] RDATA,
-    input [1 : 0] RRESP
+    output 						valid_o,
+    output	logic	[63 : 0]	data_o,
+    input 						ready_i
 );
 
-typedef enum logic { 
-    S_IDLE,
-    S_WAIT_READY
-} ifu_state_t;
-
-ifu_state_t state, next_state;
+logic	state, nstate;										// 0: IDLE, 1: WAIT_READY
 
 always_ff @(posedge clk) begin
-    state <= rst ? S_IDLE : next_state;
+	state <= rst ? 1'b0 : nstate;
 end
 
-always_comb begin
-    case(state)
-        S_IDLE:
-            next_state = (ifu_valid && !idu_ready) ? S_WAIT_READY : S_IDLE;
-        S_WAIT_READY:
-            next_state = (idu_ready) ? S_IDLE : S_WAIT_READY;
-        default:
-            next_state = state;
-    endcase
-end
+assign	nstate		=	valid_o & ~ready_i;
+
 
 reg start;
 always_ff @(posedge clk) begin
@@ -82,7 +50,7 @@ wire i2m_ready;
 
 
 // 流水线时，icache要大改
-_icache #(
+icache #(
 	.BLOCK_SIZE 	(16   ),
 	.BLOCK_NUM  	(16  ),
 	.ADDR_WIDTH 	(32  ),
@@ -96,7 +64,6 @@ u_icache(
 	.i2c_valid 	(i2c_valid  ),
 	.i2c_data  	(i2c_data   ),
 	.c2i_ready 	(1'b1 		),
-	.c2i_ifence	(1'b0),
 	.i2m_valid 	(i2m_valid  ),
 	.i2m_addr  	(i2m_addr   ),
 	.m2i_ready 	(1'b1       ),
@@ -261,118 +228,26 @@ axi4_full_master u_axi4_full_master(
 endmodule
 
 
-module _icache #(
-    parameter BLOCK_SIZE    =   16,
-    parameter BLOCK_NUM     =   16,
-    parameter ADDR_WIDTH    =   32,
-    parameter DATA_WIDTH    =   32
-) (
-    input                           clk,
-    input                           rst,
-    // 与IFU (指令取指单元) 数据交互
-    input      [ADDR_WIDTH-1:0]     c2i_addr,   // CPU发来的指令地址
-    input                           c2i_valid,  // CPU请求有效信号
-    output                          i2c_ready,  // Cache是否准备好接收CPU请求
-    output                          i2c_valid,  // Cache返回给CPU的数据是否有效
-    output     [DATA_WIDTH-1:0]     i2c_data,   // Cache返回给CPU的指令数据
-    input                           c2i_ready,  // CPU是否准备好接收Cache数据
-	input							c2i_ifence,
-    // 与主内存 (Memory) 交互
-    output                          i2m_valid,  // Cache向主存的请求是否有效
-    output     [ADDR_WIDTH-1:0]     i2m_addr,   // Cache向主存请求的地址 (块地址)
-    input                           m2i_ready,  // 主存是否准备好接收Cache请求
-    input      [DATA_WIDTH-1:0]     m2i_data,   // 主存返回给Cache的数据
-    input                           m2i_valid,  // 主存返回的数据是否有效
-	input 							m2i_done,
-    output                          i2m_ready   // Cache是否准备好接收主存数据
+
+module PC(
+	input						clk,
+	input						rst,
+	input			[31:0]		br_pc,
+	input 						br_valid,
+
+	output 	logic	[31:0]		pc
 );
 
-// Calculated parameters
-localparam BLOCK_WIDTH	 =	 BLOCK_SIZE * 8;
-localparam INDEX_WIDTH   =   $clog2(BLOCK_NUM);
-localparam OFFSET_WIDTH  =   $clog2(BLOCK_SIZE);
-localparam TAG_WIDTH     =   ADDR_WIDTH - INDEX_WIDTH - OFFSET_WIDTH;
 
-
-localparam	IDLE		=	2'b00,
-			REQ_MEM		=	2'b01,
-			WAIT_MEM	=	2'b11;
-
-assign	i2c_ready	=	state[0];
-
-
-// Cache storage
-logic [BLOCK_NUM-1:0] 		cache_valid;
-logic [TAG_WIDTH-1:0] 		cache_tag 	[BLOCK_NUM-1:0];
-logic [BLOCK_WIDTH-1:0] 	cache_data 	[BLOCK_NUM-1:0];
 
 always_ff @(posedge clk) begin
-	if (rst | c2i_ifence) begin
-		cache_valid <= {BLOCK_NUM{1'b0}};
+	if (rst) begin
+		pc <= 32'h30000000;
 	end else begin
-		if (m2i_done) begin
-            cache_data[index] <=  {m2i_data, m2i_data_buffer};
-            cache_tag[index] <= tag;
-            cache_valid[index] <= 1;
-        end
+		pc <= br_valid ? br_pc : pc + 4;
 	end
 end
 
-logic   [TAG_WIDTH-1:0]     tag;
-logic   [INDEX_WIDTH-1:0]   index;
-logic   [OFFSET_WIDTH-1:0]  offset;
-
-assign  index   =   c2i_addr[INDEX_WIDTH + OFFSET_WIDTH - 1 : OFFSET_WIDTH];
-assign  tag     =   c2i_addr[ADDR_WIDTH - 1 : ADDR_WIDTH - TAG_WIDTH];
-assign  offset  =   c2i_addr[OFFSET_WIDTH - 1 : 0];
-
-/********************** 命中信号 ********************/
-logic   hit;
-assign  hit     =      state[0] & cache_valid[index] & (cache_tag[index] == tag);
-
-/********************** 状态机 ********************/
-logic	[1:0]   state,  nstate;
-always_ff @(posedge clk) begin
-    state <= rst ? IDLE : nstate;
-end
-
-assign nstate[0]	=	~state[0] & ~state[1] & ~hit | state[0] & ~m2i_done;
-assign nstate[1]	=	state[0] & ~m2i_done;
-
-
-/********************** 与mem通信 ********************/
-assign  i2m_valid   =   state[0] & ~m2i_done;
-assign  i2m_addr    =   {tag, index, {OFFSET_WIDTH{1'b0}}};
-assign  i2m_ready   =   1'b1;
-
-
-/************************* 填充 ***********************/
-logic [BLOCK_WIDTH - DATA_WIDTH - 1 : 0] m2i_data_buffer;
-
-always_ff @(posedge clk) begin
-	m2i_data_buffer <= m2i_valid ? {m2i_data, m2i_data_buffer[BLOCK_WIDTH - DATA_WIDTH - 1 : DATA_WIDTH]} : m2i_data_buffer;	// 其实可以提前一个周期，这里先不这么干
-end
-
-
-/************************* 返回上层数据 *************************/
-assign   i2c_valid    =   c2i_valid & hit | state[1] & state[0] & m2i_done;
-
-logic	[DATA_WIDTH-1:0] i2c_data_temp;
-
-always_comb begin
-	case({offset[3:2], state[0]})
-		3'b001: i2c_data_temp = m2i_data_buffer[31:0];
-		3'b011: i2c_data_temp = m2i_data_buffer[63:32];
-		3'b101: i2c_data_temp = m2i_data_buffer[95:64];
-		3'b111: i2c_data_temp = m2i_data;
-		3'b000: i2c_data_temp = cache_data[index][31:0];
-		3'b010: i2c_data_temp = cache_data[index][63:32];
-		3'b100: i2c_data_temp = cache_data[index][95:64];
-		3'b110: i2c_data_temp = cache_data[index][127:96];
-	endcase
-end
-
-assign	i2c_data	=	i2c_data_temp;
 
 
 endmodule

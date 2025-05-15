@@ -33,7 +33,7 @@ wire [31 : 0] pc = ifu_data[31 : 0];
 
 // IDU部分
 // 握手协议实现
-typedef enum logic { 
+typedef enum logic {
     S_IDLE,
     S_WAIT_READY
 } idu_state_t;
@@ -88,7 +88,7 @@ end
 
 // Imm
 wire [31 : 0] imm;
-ImmGen #(32) ImmGen_INTER(inst, imm);
+ImmGen ImmGen_INTER(inst, imm);
 
 // RF部分
 assign rs1_addr = inst[19 : 15];    // rs1 & rs2 直通RF，不需要握手信号
@@ -149,48 +149,70 @@ endmodule
 
 
 
-
-
-
-
-
-/* verilator lint_off DECLFILENAME */
 // 立即数生成器
-module ImmGen #(parameter WIDTH = 32)(  /* verilator lint_off UNUSEDSIGNAL */
-    input [31 : 0] inst,
-    output [31 : 0] imm
+module ImmGen (  /* verilator lint_off UNUSEDSIGNAL */
+    input 	[31 : 0] 	inst,
+    output	[31 : 0] 	imm
 );
 
-// 64位需要扩展符号位
-assign imm[WIDTH - 1 : 31] = {(WIDTH - 31){inst[31]}};
+assign imm[31] = 			inst[31];
 
 // 两级延迟
-assign imm[10 : 5] = inst[30 : 25] & {6{~(inst[4] & inst[2])}}; // U-Type does not have imm[10 : 5] // {6~{~opcode[6] & opcode[4] & ~opcode[3] & opcode[2]}}， ~U
+assign imm[10 : 5] = 		inst[30 : 25] & {6{~(inst[4] & inst[2])}}; 						// U-Type does not have imm[10 : 5] // {6~{~opcode[6] & opcode[4] & ~opcode[3] & opcode[2]}}， ~U
 
 // 三级延迟，可以优化为两级延迟
-assign imm[4 : 1] = inst[11 : 8] & {4{inst[5] & ~inst[2]}} |                    // S + B
-                    inst[24 : 21] & {4{inst[3]}} |                                // J
-                    inst[24 : 21] & {4{~inst[6] & ~inst[5] & ~inst[2]}} |     // I
-                    inst[24 : 21] & {4{~inst[4] & ~inst[3] & inst[2]}};       // I
+assign imm[4 : 1] = 		inst[11 : 8] & {4{inst[5] & ~inst[2]}} |                    	// S + B
+                    		inst[24 : 21] & {4{inst[3]}} |                                	// J
+                    		inst[24 : 21] & {4{~inst[6] & ~inst[5] & ~inst[2]}} |     		// I
+                    		inst[24 : 21] & {4{~inst[4] & ~inst[3] & inst[2]}};       		// I
 
-assign imm[0] = inst[20] & ~inst[6] & ~inst[5] & ~inst[2]  |              // I
-                inst[20] & ~inst[4] & ~inst[3] & inst[2] |      // I
-                inst[7] & ~inst[6] & inst[5] & ~inst[4];       // S
+assign imm[0] = 			inst[20] & ~inst[6] & ~inst[5] & ~inst[2]  |              		// I
+                			inst[20] & ~inst[4] & ~inst[3] & inst[2] |      				// I
+                			inst[7] & ~inst[6] & inst[5] & ~inst[4];       					// S
 
-assign imm[30 : 20] = {11{inst[31] & ~(inst[4] & inst[2])}} | 
-                      inst[30 : 20] & {11{inst[4] & inst[2]}}; // ~U | U
+assign imm[30 : 20] = 		{11{inst[31] & ~(inst[4] & inst[2])}} | 
+                      		inst[30 : 20] & {11{inst[4] & inst[2]}}; 						// ~U | U
 
-assign imm[19 : 12] = {8{inst[31] & inst[5] & ~inst[2]}} |                      // S + B
-                      {8{inst[31] & ~inst[6] & ~inst[5] & ~inst[2]}} |        // I
-                      {8{inst[31] & ~inst[4] & ~inst[3] & inst[2]}} |         // I
-                      inst[19 : 12] & {8{inst[4] & inst[2]}} |                  // U
-                      inst[19 : 12] & {8{inst[3]}};                               // J
+assign imm[19 : 12] = 		{8{inst[31] & inst[5] & ~inst[2]}} |                     		// S + B
+                      		{8{inst[31] & ~inst[6] & ~inst[5] & ~inst[2]}} |        		// I
+                      		{8{inst[31] & ~inst[4] & ~inst[3] & inst[2]}} |         		// I
+                      		inst[19 : 12] & {8{inst[4] & inst[2]}} |                  		// U
+                      		inst[19 : 12] & {8{inst[3]}};                               	// J
 
-assign imm[11] = inst[31] & ~inst[6] & inst[5] & ~inst[4] | 
-                 inst[31] & ~inst[6] & ~inst[5] & ~inst[2] |
-                 inst[31] & ~inst[4] & ~inst[3] & inst[2] |
-                 inst[7] & inst[6] & ~inst[2] |
-                 inst[20] & inst[3];
+assign imm[11] = 			inst[31] & ~inst[6] & inst[5] & ~inst[4] | 
+                 			inst[31] & ~inst[6] & ~inst[5] & ~inst[2] |
+                 			inst[31] & ~inst[4] & ~inst[3] & inst[2] |
+                 			inst[7] & inst[6] & ~inst[2] |
+                 			inst[20] & inst[3];
+
+endmodule
+
+
+
+module _ImmGen (  /* verilator lint_off UNUSEDSIGNAL */
+    input	logic 		[31 : 0] inst,
+    output	logic 		[31 : 0] imm
+);
+
+
+wire [4:0] opcode = inst[6:2];
+
+always_comb begin
+    case (opcode)
+        5'b00100, 5'b00000, 5'b11001: // I-type
+            imm = {{20{inst[31]}}, inst[31:20]};
+        5'b01000: // S-type
+            imm = {{20{inst[31]}}, inst[31:25], inst[11:7]};
+        5'b11000: // B-type
+            imm = {{19{inst[31]}}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0};
+        5'b11011: // J-type
+            imm = {{11{inst[31]}}, inst[31], inst[19:12], inst[20], inst[30:21], 1'b0};
+        5'b01101, 5'b00101: // U-type
+            imm = {inst[31:12], 12'b0};
+        default: imm = 32'b0;
+    endcase
+end
+
 
 endmodule
 
