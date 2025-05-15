@@ -274,7 +274,7 @@ module _icache #(
     input                           c2i_valid,  // CPU请求有效信号
     output                          i2c_ready,  // Cache是否准备好接收CPU请求
     output                          i2c_valid,  // Cache返回给CPU的数据是否有效
-    output     [DATA_WIDTH-1:0]     i2c_data,   // Cache返回给CPU的指令数据
+    output     logic [DATA_WIDTH-1:0]     i2c_data,   // Cache返回给CPU的指令数据
     input                           c2i_ready,  // CPU是否准备好接收Cache数据
 	input							c2i_ifence,
     // 与主内存 (Memory) 交互
@@ -328,7 +328,7 @@ assign  offset  =   c2i_addr[OFFSET_WIDTH - 1 : 0];
 
 /********************** 命中信号 ********************/
 logic   hit;
-assign  hit     =      state[0] & cache_valid[index] & (cache_tag[index] == tag);
+assign  hit     =      ~state[0] & cache_valid[index] & (cache_tag[index] == tag);
 
 /********************** 状态机 ********************/
 logic	[1:0]   state,  nstate;
@@ -341,7 +341,8 @@ assign nstate[1]	=	state[0] & ~m2i_done;
 
 
 /********************** 与mem通信 ********************/
-assign  i2m_valid   =   state[0] & ~m2i_done;
+// assign  i2m_valid   =   state[0] & ~m2i_done;
+assign  i2m_valid   =   state[0] & ~state[1];
 assign  i2m_addr    =   {tag, index, {OFFSET_WIDTH{1'b0}}};
 assign  i2m_ready   =   1'b1;
 
@@ -357,22 +358,20 @@ end
 /************************* 返回上层数据 *************************/
 assign   i2c_valid    =   c2i_valid & hit | state[1] & state[0] & m2i_done;
 
-logic	[DATA_WIDTH-1:0] i2c_data_temp;
+
 
 always_comb begin
 	case({offset[3:2], state[0]})
-		3'b001: i2c_data_temp = m2i_data_buffer[31:0];
-		3'b011: i2c_data_temp = m2i_data_buffer[63:32];
-		3'b101: i2c_data_temp = m2i_data_buffer[95:64];
-		3'b111: i2c_data_temp = m2i_data;
-		3'b000: i2c_data_temp = cache_data[index][31:0];
-		3'b010: i2c_data_temp = cache_data[index][63:32];
-		3'b100: i2c_data_temp = cache_data[index][95:64];
-		3'b110: i2c_data_temp = cache_data[index][127:96];
+		3'b001: i2c_data = m2i_data_buffer[31:0];
+		3'b011: i2c_data = m2i_data_buffer[63:32];
+		3'b101: i2c_data = m2i_data_buffer[95:64];
+		3'b111: i2c_data = m2i_data;
+		3'b000: i2c_data = cache_data[index][31:0];
+		3'b010: i2c_data = cache_data[index][63:32];
+		3'b100: i2c_data = cache_data[index][95:64];
+		3'b110: i2c_data = cache_data[index][127:96];
 	endcase
 end
-
-assign	i2c_data	=	i2c_data_temp;
 
 
 endmodule
