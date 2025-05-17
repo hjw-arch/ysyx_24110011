@@ -21,7 +21,7 @@ adder32 addsub(
 
 // assign {cout, addsub_result} = data1 + (data2 ^ {WIDTH{cin}}) + cin;    // 另一种方法
 
-// 移位, 这么写可能带来巨大的面积开销，可以手写桶形移位器来解决
+
 wire [WIDTH - 1 : 0] left_logic_shifter = data1 << data2[$clog2(WIDTH) - 1 : 0];
 wire [WIDTH - 1 : 0] right_logic_shifter = data1 >> data2[$clog2(WIDTH) - 1 : 0];
 wire [WIDTH - 1 : 0] right_arithmetic_shifter = $signed(data1) >>> data2[$clog2(WIDTH) - 1 : 0];
@@ -44,15 +44,15 @@ logic [WIDTH - 1 : 0] result_comb;
 always_comb begin
     case(alu_op)
         4'b0000: result_comb = addsub_result;
-        4'b0001: result_comb = addsub_result;
-        4'b1110: result_comb = and_result;
-        4'b1100: result_comb = or_result;
-        4'b1000: result_comb = xor_result;
-        4'b0010: result_comb = left_logic_shifter;
-        4'b1010: result_comb = right_logic_shifter;
-        4'b1011: result_comb = right_arithmetic_shifter;
-        4'b0100: result_comb = less_signed_result;
-        4'b0110: result_comb = less_unsigned_result;
+        4'b1000: result_comb = addsub_result;
+        4'b0111: result_comb = and_result;
+        4'b0110: result_comb = or_result;
+        4'b0100: result_comb = xor_result;
+        4'b0001: result_comb = left_logic_shifter;
+        4'b0101: result_comb = right_logic_shifter;
+        4'b1101: result_comb = right_arithmetic_shifter;
+        4'b0010: result_comb = less_signed_result;
+        4'b0011: result_comb = less_unsigned_result;
         default: result_comb = data2;
     endcase
 end
