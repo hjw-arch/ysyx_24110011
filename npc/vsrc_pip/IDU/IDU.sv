@@ -188,7 +188,8 @@ module decode(
 	output 			is_csr,
 	output 			is_ecall,
 	output			csr_write,
-	output			csr_op
+	output			csr_op,
+	output 			is_fencei
 );
 
 localparam	OPCODE_LUI   	=	5'b01101;
@@ -198,9 +199,10 @@ localparam	OPCODE_JALR  	=	5'b11001;
 localparam	OPCODE_BRANCH	=	5'b11000;
 localparam	OPCODE_LOAD  	=	5'b00000;
 localparam	OPCODE_STORE 	=	5'b01000;
+localparam	OPCODE_FENCEI	=	5'b00011;
 localparam	OPCODE_CAL_I 	=	5'b00100;
 localparam	OPCODE_CAL_R 	=	5'b01100;
-localparam	OPCODE_CSR		=	5'b11100;
+localparam	OPCODE_SYS		=	5'b11100;
 
 localparam	FUNC3_SRA		=	3'b101;
 
@@ -215,10 +217,11 @@ localparam	BRANCH_GE		=	2'b11;
 `define  	IS_LUI				opcode == OPCODE_LUI
 `define  	IS_CAL				opcode == OPCODE_CAL_I | opcode == OPCODE_CAL_R
 `define  	IS_I_TYPE			opcode == OPCODE_LUI | opcode == OPCODE_AUIPC | opcode == OPCODE_CAL_I
-`define  	IS_CSR_TYPE			opcode == OPCODE_CSR
+`define  	IS_SYS				opcode == OPCODE_SYS
 `define  	IS_B				opcode == OPCODE_BRANCH & ~func3[2]
 `define  	IS_BU				opcode == OPCODE_BRANCH & func3[2]
 `define  	IS_LOAD				opcode == OPCODE_LOAD
+`define  	IS_FENCEI			opcode == OPCODE_FENCEI
 
 logic [4:0]	opcode;
 logic [2:0]	func3;
@@ -240,12 +243,15 @@ assign	is_branch		=	opcode == OPCODE_BRANCH;
 assign	branch_cond		=	{func3[2], func3[0]};
 
 assign	rd_write		=	opcode != OPCODE_STORE | opcode != OPCODE_BRANCH;
-assign	rd_src_sel[0]	=	`IS_CSR_TYPE;
+assign	rd_src_sel[0]	=	`IS_SYS;
 assign	rd_src_sel[1]	=	`IS_LOAD;
 
-assign	is_csr			=	`IS_CSR_TYPE;
-assign	is_ecall		=	`IS_CSR_TYPE & ~inst[29];
+assign	is_csr			=	`IS_SYS;
+assign	is_ecall		=	`IS_SYS & func3 == 3'b0 & ~inst[20];
+assign	csr_write		=	`IS_SYS & |func3;
+assign	csr_op			=	func3[0];		// 不严谨，权宜之计
 
+assign	is_fencei		=	`IS_FENCEI;
 
 
 
