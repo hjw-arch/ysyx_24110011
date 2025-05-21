@@ -1,4 +1,3 @@
-`include "../axi4_full_master.sv"
 module icache #(
     parameter BLOCK_SIZE    =   16,
     parameter BLOCK_NUM     =   16
@@ -8,9 +7,11 @@ module icache #(
     											// 与IFU (指令取指单元) 数据交互
     input      		[31:0]     	addr_i,   	// CPU发来的指令地址
     input                       valid_i,  	// CPU请求有效信号
-	input						ifence,		// fence.i, 需要冲刷流水线
+	input 						flush,		// 冲刷流水线
+	input						ifence,		// fence.i, 需要冲刷icache
     output                      valid_o,  	// Cache返回给CPU的数据是否有效
     output	logic	[31:0]     	data_o,   	// Cache返回给CPU的指令数据
+	output 						in_mem,		// 指示当前是否在内存中取指
 
 												// 连接SRAM
     output			[31:0]		ARADDR,
@@ -82,9 +83,9 @@ always_ff @(posedge clk) begin
     state <= rst ? 2'b00 : nstate;
 end
 
-assign nstate[0]	=	~state[0] & ~state[1] & ~hit | state[0] & ~m2i_done;
+assign nstate[0]	=	~state[0] & ~state[1] & ~hit & ~flush | state[0] & ~m2i_done;
 assign nstate[1]	=	state[0] & ~m2i_done;
-
+assign in_mem		=	state[0];		// 权宜之计
 
 /********************** 与mem通信 ********************/
 

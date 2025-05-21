@@ -1,144 +1,119 @@
-module LSU (
-    input  clk,
-    input  rst,
+`include "define.svh"
+module LSU(
+	input 			clk,
+	input 			rst,
 
-    input  exu_valid,
-    input  [108 : 0] exu_data,
-    output lsu_ready,
+	// AXI
+    output 	[31:0] 		ARADDR,
+    output 	[3 : 0] 	ARID,
+    output	[7 : 0] 	ARLEN,
+    output	[2 : 0] 	ARSIZE,
+    output	[1 : 0] 	ARBURST,
+	output 				ARVALID,
+	input 				ARREADY,
 
-    output lsu_valid,
-    output reg [103 : 0] lsu_data,
-    input  wbu_ready,
+    input	[3:0] 		RID,
+    input	[31:0] 		RDATA,
+    input	[1:0] 		RRESP,
+	input  				RVALID,
+	input  				RLAST,
+    output				RREADY,
 
-    // 连接SRAM
-    // 来自上游模块的预使能信号
-    input  pre_lsu_ren,
-    input  pre_lsu_wen,
-    output prerequest,      // 给到总线仲裁器
+    output	[31:0]		AWADDR,
+    output	[7:0]		AWLEN,
+    output	[2:0]		AWSIZE,
+    output	[3:0]		AWID,
+    output	[1:0]		AWBURST,
+	output				AWVALID,
+	input  				AWREADY,
+	
+    output	[31:0] 		WDATA,
+    output				WLAST,
+    output	[3:0] 		WSTRB,
+    output				WVALID,
+	input				WREADY,
 
-    // output declaration of module axi4_lite_master
-    output [31:0] ARADDR,
-    output ARVALID,
-    output [3 : 0] ARID,
-    output [7 : 0] ARLEN,
-    output [2 : 0] ARSIZE,
-    output [1 : 0] ARBURST,
-    output RREADY,
+	input	[3:0] 		BID,
+    input	[1:0] 		BRESP,
+	input				BVALID,
+    output				BREADY,
+	
 
-    output [31:0] AWADDR,
-    output AWVALID,
-    output [7 : 0] AWLEN,
-    output [2 : 0] AWSIZE,
-    output [3 : 0] AWID,
-    output [1 : 0] AWBURST,
-    output [31:0] WDATA,
-    output WLAST,
-    output [3:0] WSTRB,
-    output WVALID,
-    output BREADY,
+	input 				valid_i,
+	input	[73:0] 		data_i,
+	output 				ready_o,
 
-    // input declaration of slave
-    input  ARREADY,
-    input  RVALID,
-    input  RLAST,
-    input  [3 : 0] RID,
-    input  [31:0] RDATA,
-    input  [1:0] RRESP,
-
-    input  AWREADY,
-    input  WREADY,
-    input  BVALID,
-    input  [3 : 0] BID,
-    input  [1 : 0] BRESP
+	output 				valid_o,
+	output	[37:0] 		data_o,
+	input 				ready_i
 );
 
 
-wire [31 : 0] lsu_addr = exu_data[108 : 77];
-wire lsu_ren = exu_data[76];
-wire lsu_wen = exu_data[75];
-wire [2 : 0] lsu_op = exu_data[74 : 72];
-wire [31 : 0] lsu_wdata = exu_data[71 : 40];
-wire [39 : 0] rest_exu_data = exu_data[39 : 0];
+// 解码
+logic [31:0]	lsu_addr	=	data_i[73:42];
+logic [31:0]	lsu_wdata	=	data_i[41:10];
+logic 			lsu_store	=	data_i[9];
+logic			lsu_load	=	data_i[8];
+logic [2:0]		lsu_type	=	data_i[7:5];
+logic [4:0]		rest_data	=	data_i[4:0];
 
+// 内部信号
+logic	[31:0]	rd_data;
+logic	[31:0]	lsu_rdata;
+logic	[31:0]	axi_rdata;
+logic	[1:0]	axi_rresp;
+logic	[1:0]	axi_bresp;
+logic			axi_done;
 
-
-// 五级流水线时，lsu是必经之路，但是多周期lsu可以跳过，不过我不打算跳过了
-// 五级流水线时，S_WAIT_READY不需要，只要发生valid就可以，不需要这种状态机，多周期这里不更改了
-
-// import "DPI-C" function int pmem_read(input int addr, input int len);
-// import "DPI-C" function void pmem_write(input int addr, input int data, input int len);
-
-typedef enum logic { 
-    S_IDLE,
-    S_WAIT_READY
-} lsu_state_t;
-
-lsu_state_t state, next_state;
+// 状态机
+logic state, nstate;
 
 always_ff @(posedge clk) begin
-    state <= rst ? S_IDLE : next_state;
+	state <= rst ? 1'b0 : nstate;
 end
+
+assign nstate = valid_o & ~ready_i;
+
 
 always_comb begin
-    case(state)
-        S_IDLE:
-            next_state = (lsu_valid & ~wbu_ready) ? S_WAIT_READY : S_IDLE;
-        S_WAIT_READY:
-            next_state = (wbu_ready) ? S_IDLE : S_WAIT_READY;
-        default:
-            next_state = S_IDLE;
-    endcase
+	case(lsu_type)
+		LOAD_TYPE_LB:	lsu_rdata = {{24{axi_rdata[7]}}, axi_rdata[7:0]};
+		LOAD_TYPE_LH:	lsu_rdata = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
+		LOAD_TYPE_LW:	lsu_rdata = axi_rdata;
+		LOAD_TYPE_LBU:	lsu_rdata = {24'b0, axi_rdata[7:0]};
+		LOAD_TYPE_LHU:	lsu_rdata = {16'b0, axi_rdata[15:0]};
+		default:		lsu_rdata = 32'b0;
+	endcase
 end
 
-reg has_new_data;
-always_ff @(posedge clk) begin
-    has_new_data <= (exu_valid & lsu_ready) ? 1'b1 : 1'b0;
-end
+assign valid_o = state & axi_done;
+assign ready_o = ~nstate;
 
-assign lsu_ready = wbu_ready;
-assign lsu_valid = done & lsu_ren | done & lsu_wen | ~lsu_ren & ~lsu_wen & has_new_data | (state == S_WAIT_READY);
+assign rd_data = lsu_load ? lsu_rdata : lsu_addr;
+assign data_o = {rd_data, lsu_load, rest_data};
 
-// 读
-// 符号扩展
-wire [31 : 0] rdata_extend;
-assign rdata_extend[31 : 16] =  {16{rdata[7] & ~lsu_op[2] & ~lsu_op[1] & ~lsu_op[0]}} | {16{rdata[15] & ~lsu_op[2] & ~lsu_op[1] & lsu_op[0]}} | rdata[31 : 16] & {16{lsu_op[1]}};
-assign rdata_extend[15 : 8] = {8{rdata[7] & ~lsu_op[2] & ~lsu_op[1] & ~lsu_op[0]}} | rdata[15 : 8] & {8{lsu_op[0] | lsu_op[1]}};
-assign rdata_extend[7 : 0] = rdata[7 : 0];
 
-always_ff @(posedge clk) begin
-    lsu_data <= (lsu_valid & wbu_ready) ? {exu_data[108 : 77], rdata_extend, rest_exu_data} : lsu_data;
-end
+// AXI
 
-// output declaration of module axi4_lite_master
-wire wen = lsu_wen & has_new_data;
-wire ren = lsu_ren & has_new_data;
-
-// 提前通知仲裁器
-assign prerequest = exu_valid & lsu_ready & pre_lsu_ren | exu_valid & lsu_ready & pre_lsu_wen;
-
-// output declaration of module axi4_full_master
-wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
-wire [1:0] rresp;
-wire [1:0] wresp;
-wire done;
-
+logic	wen	=	lsu_store & valid_i;
+logic	ren	=	lsu_load  & valid_i;
 
 axi4_full_master u_axi4_full_master(
     .clk        	(clk         ),
     .rst        	(rst         ),
-    .wen        	(wen         ),
+    .wen        	(wen		 ),
     .ren        	(ren         ),
-    .user_ready 	(wbu_ready   ),
-    .size        	(lsu_op[1:0] ),
+    .user_ready 	(1'b1	     ),
+    .size        	(lsu_type[1:0] ),
 	.len			(8'b0 		 ),
     .waddr      	(lsu_addr    ),
     .wdata      	(lsu_wdata   ),
     .raddr      	(lsu_addr    ),
-    .rdata      	(rdata       ),/* verilator lint_off PINCONNECTEMPTY */
+    .rdata      	(axi_rdata   ),/* verilator lint_off PINCONNECTEMPTY */
 	.rdata_valid	(),
-    .rresp      	(rresp       ),
-    .wresp      	(wresp       ),
-    .done       	(done        ),
+    .rresp      	(axi_rresp   ),
+    .wresp      	(axi_bresp   ),
+    .done       	(axi_done    ),
     .ARREADY    	(ARREADY     ),
     .ARVALID    	(ARVALID     ),
     .ARADDR     	(ARADDR      ),
@@ -171,36 +146,5 @@ axi4_full_master u_axi4_full_master(
 );
 
 
-/************************** 性能计数器 *****************************/
-
-// import "DPI-C" function void PerformanceCounter_lsu_load();
-// import "DPI-C" function void PerformanceCounter_lsu_store();
-// import "DPI-C" function void PerformanceCounter_lsu_load_cycles(int start, int finish);
-// import "DPI-C" function void PerformanceCounter_lsu_store_cycles(int start, int finish);
-
-// always_ff @(posedge clk) begin
-// 	if (done & lsu_ren)  PerformanceCounter_lsu_load();
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (done & lsu_wen)  PerformanceCounter_lsu_store();
-// end
-// /* verilator lint_off WIDTHEXPAND */
-// always_ff @(posedge clk) begin
-// 	if (!rst & lsu_ren) PerformanceCounter_lsu_load_cycles(has_new_data, done);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (!rst & lsu_wen) PerformanceCounter_lsu_store_cycles(has_new_data, done);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (has_new_data) $display("LSU!\n");
-// end
-
-
-/******************************************************************/
-
 
 endmodule
-
