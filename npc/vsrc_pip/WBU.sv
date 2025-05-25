@@ -12,9 +12,9 @@ module WBU(
 );
 
 // 解码
-logic [31:0] rd_data	=	data_i[37:6];
-logic		 is_load	=	data_i[5];		// 给旁路使用
-logic [4:0]  rd_addr	=	data_i[4:0];
+wire [31:0]	rd_data		=	data_i[37:6];
+wire		is_load		=	data_i[5];		// 给旁路使用
+wire [4:0]  rd_addr		=	data_i[4:0];
 
 
 // 状态机

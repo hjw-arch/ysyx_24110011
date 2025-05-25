@@ -1,5 +1,5 @@
-module IFU
 import define_pkg::*;
+module IFU
 (
     input			clk,
     input			rst,

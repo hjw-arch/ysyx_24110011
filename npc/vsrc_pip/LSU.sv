@@ -51,12 +51,12 @@ import define_pkg::*;
 
 
 // 解码
-logic [31:0]	lsu_addr	=	data_i[73:42];
-logic [31:0]	lsu_wdata	=	data_i[41:10];
-logic 			lsu_store	=	data_i[9];
-logic			lsu_load	=	data_i[8];
-logic [2:0]		lsu_type	=	data_i[7:5];
-logic [4:0]		rest_data	=	data_i[4:0];
+wire [31:0]		lsu_addr	=	data_i[73:42];
+wire [31:0]		lsu_wdata	=	data_i[41:10];
+wire 			lsu_store	=	data_i[9];
+wire			lsu_load	=	data_i[8];
+wire [2:0]		lsu_type	=	data_i[7:5];
+wire [4:0]		rest_data	=	data_i[4:0];
 
 // 内部信号
 logic	[31:0]	rd_data;
@@ -67,13 +67,13 @@ logic	[1:0]	axi_bresp;
 logic			axi_done;
 
 // 状态机
-logic state, nstate;
+logic state, nstate;			// 0: IDLE 1: BUSY		LSU无需管WBU的ready信号
 
 always_ff @(posedge clk) begin
 	state <= rst ? 1'b0 : nstate;
 end
 
-assign nstate = valid_o & ~ready_i;
+assign nstate = valid_i & lsu_load & lsu_store | state & ~axi_done;
 
 
 always_comb begin
@@ -87,7 +87,7 @@ always_comb begin
 	endcase
 end
 
-assign valid_o = state & axi_done;
+assign valid_o = valid_i & ~lsu_load & ~lsu_store | state & axi_done;
 assign ready_o = ~nstate;
 
 assign rd_data = lsu_load ? lsu_rdata : lsu_addr;
@@ -96,8 +96,8 @@ assign data_o = {rd_data, lsu_load, rest_data};
 
 // AXI
 
-logic	wen	=	lsu_store & valid_i;
-logic	ren	=	lsu_load  & valid_i;
+wire	wen	=	lsu_store & valid_i;
+wire	ren	=	lsu_load  & valid_i;
 
 axi4_full_master u_axi4_full_master(
     .clk        	(clk         ),

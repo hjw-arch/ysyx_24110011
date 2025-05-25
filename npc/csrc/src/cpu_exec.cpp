@@ -31,17 +31,47 @@ extern VerilatedVcdC tfp;
 #define FTRACE_RECORD     record_ftrace(old_pc, old_inst == 0x8067 ? 1 : 0, cpu.pc)
 
 cpu_t cpu;
+uint32_t inst;
 
 uint32_t cpu_state = RUNNING;
 
 uint64_t cycle_times = 0;
 uint64_t dynamic_insts = 0;
 
+// pip_fifo
+// 为流水线阶段做一些调整
+#define PIP_LEVEL		5
+
+typedef struct {
+	uint32_t pc;
+	uint32_t inst;
+} pip_info_t;
+
+static pip_info_t pip_info[PIP_LEVEL];
+
+static uint32_t r_ptr, w_ptr;
+
+static void load_pip_info() {
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__valid_o & dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_ready_i) {
+		pip_info[w_ptr].pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__pc;
+		pip_info[w_ptr].inst = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst;
+		w_ptr = ++w_ptr % PIP_LEVEL;
+	}
+}
+
+static pip_info_t get_pip_info() {
+	pip_info_t temp = pip_info[r_ptr];
+	r_ptr = ++r_ptr % PIP_LEVEL;
+	return temp;
+}
+
 void PerformanceCounter_display();
 
 void halt() {
     cpu_state = IDLE;
 
+	Log("Get 'ebreak' instruction, program over.");
+	
     printf(ANSI_FG_CYAN "\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
 	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_display());
     if (cpu.registerFile[10] != 0) {
@@ -61,24 +91,32 @@ void halt() {
 
 void cpu_exec_one() {
 
-	do {
+	while (1) {
 		cycle;
-		cycle_times++;      // 测试CPU性能使用
-#ifdef NVBOARD
-		nvboard_update();
-#endif
-	} while(IFU_START != 1 && INST != ebreak);
+		cycle_times++;
+		load_pip_info();
+		
+		// 非投机执行的inst
+		if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst == ebreak && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_valid_o) {
+			cycle_times += 3;	// 补上剩余的周期数
+			dynamic_insts++;
+        	halt();
+			break;
+		}
 
-	dynamic_insts++;
-
-	if (INST == ebreak) {
-		dynamic_insts--;
+		if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__wbu_valid_i) {
+			cycle;
+		
+			pip_info_t temp_pip_info = get_pip_info();
+			cpu.pc = temp_pip_info.pc;
+			for (int i = 0; i < RF_NUM; i++) {
+				cpu.registerFile[i] = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_WBU__DOT__u_registerfile__DOT__register_file[i];
+			}
+			inst = temp_pip_info.inst;
+			dynamic_insts++;
+			break;
+		}
 	}
-
-    if (INST == ebreak) {
-        Log("Get 'ebreak' instruction, program over.");
-        halt();
-    }
 }
 
 void cpu_exec(uint32_t n) {
@@ -88,28 +126,28 @@ void cpu_exec(uint32_t n) {
     }
 
     for (int i = 0; i < n; ++i) {
-		uint32_t old_pc = cpu.pc;
 
         // 执行一次
         cpu_exec_one();
 
         if (n < min_num_to_disasm) {
             char p[64];
-            printf("0x%08x: ", old_pc);
+            printf("0x%08x: ", cpu.pc);
             for(int j = 3; j >= 0; j--) {
-                printf("%02x ", ((uint8_t *)&INST)[j]);
+                printf("%02x ", ((uint8_t *)&inst)[j]);
             }
-            disassemble(p, sizeof(p), old_pc, (uint8_t *)&INST, 4);
+            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&inst, 4);
             printf("        %s\n", p);
         }
 
 
-        IFDEF(CONFIG_ITRACE, iringbuf_load(old_pc, INST));
+        IFDEF(CONFIG_ITRACE, iringbuf_load(cpu.pc, inst));
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
-        IFDEF(CONFIG_WATCHPOINT, diff_wp(old_pc));
-		if (cpu_state != IDLE) IFDEF(CONFIG_DIFFTEST, difftest_step(old_pc));
+        IFDEF(CONFIG_WATCHPOINT, diff_wp(cpu.pc));
+		IFDEF(CONFIG_DIFFTEST, if (cpu_state != IDLE); difftest_step(cpu.pc));
         IFDEF(CONFIG_DEVICE, device_update());
+		IFDEF(NVBOARD, nvboard_update());
 
         if (cpu_state != RUNNING) {
             switch (cpu_state) {
@@ -124,3 +162,5 @@ void cpu_exec(uint32_t n) {
         }
     }
 }
+
+

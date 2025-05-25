@@ -9,7 +9,7 @@ module hazard_temp(
 	output 			hazard_valid
 );
 
-assign	hazard_valid	=	id_rs1_addr == ex_rd_addr | id_rs1_addr == ls_rd_addr | id_rs1_addr == wb_rd_addr |
-							id_rs2_addr == ex_rd_addr | id_rs2_addr == ls_rd_addr | id_rs2_addr == wb_rd_addr;
+assign	hazard_valid	=	(id_rs1_addr == ex_rd_addr | id_rs1_addr == ls_rd_addr | id_rs1_addr == wb_rd_addr) & (id_rs1_addr != 5'b0) |
+							(id_rs2_addr == ex_rd_addr | id_rs2_addr == ls_rd_addr | id_rs2_addr == wb_rd_addr) & (id_rs2_addr != 5'b0);
 	
 endmodule //moduleName

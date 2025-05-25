@@ -16,22 +16,22 @@ module EXU(
 
 
 // data_i解码
-logic [3:0]		alu_op			=	data_i[174:171];
-logic [1:0]		alu_src_sel		=	data_i[160:159];
-logic [31:0]	rs1_data		=	data_i[158:127];
-logic [31:0]	rs2_data		=	data_i[126:95];
-logic [31:0]	pc				=	data_i[94:63];
-logic [31:0]	imm				=	data_i[62:31];
-logic			is_jump			=	data_i[30];
-logic			is_jalr			=	data_i[29];
-logic			is_branch		=	data_i[28];
-logic [1:0]		branch_cond		=	data_i[27:26];
-logic			csr_wen			=	data_i[25];
-logic			csr_cmd			=	data_i[24];
-logic			csr_ecall		=	data_i[23];
-logic			csr_mret		=	data_i[22]; 
-logic [11:0]	csr_addr		=	data_i[21:10];
-logic [9:0]		rest_data		=	data_i[9:0];
+wire [3:0]		alu_op			=	data_i[174:171];
+wire [1:0]		alu_src_sel		=	data_i[160:159];
+wire [31:0]		rs1_data		=	data_i[158:127];
+wire [31:0]		rs2_data		=	data_i[126:95];
+wire [31:0]		pc				=	data_i[94:63];
+wire [31:0]		imm				=	data_i[62:31];
+wire			is_jump			=	data_i[30];
+wire			is_jalr			=	data_i[29];
+wire			is_branch		=	data_i[28];
+wire [1:0]		branch_cond		=	data_i[27:26];
+wire			csr_wen			=	data_i[25];
+wire			csr_cmd			=	data_i[24];
+wire			csr_ecall		=	data_i[23];
+wire			csr_mret		=	data_i[22]; 
+wire [11:0]		csr_addr		=	data_i[21:10];
+wire [9:0]		rest_data		=	data_i[9:0];
 
 
 // 状态机

@@ -28,8 +28,8 @@ assign id_rs1_addr = rs1_addr_hazard;
 assign id_rs2_addr = rs2_addr_hazard;
 
 
-logic [31:0] inst	=	data_i[63:32];
-logic [31:0] pc		=	data_i[31:0];
+wire [31:0] inst	=	data_i[63:32];
+wire [31:0] pc		=	data_i[31:0];
 
 
 logic [4:0]	 rd_addr;
@@ -92,7 +92,7 @@ logic	rd_wen;
 assign	alu_src_sel[1]  	=	(opcode == OPCODE_LUI | opcode == OPCODE_JAL | opcode == OPCODE_JALR);	// 0: rs1 1: pc
 assign	alu_src_sel[0]  	=	(opcode == OPCODE_AUIPC | opcode == OPCODE_CAL_I | opcode == OPCODE_LOAD | opcode == OPCODE_STORE);	// 0: rs2, 1: imm	
 assign	rd_wen				=	opcode != OPCODE_STORE & opcode != OPCODE_BRANCH;
-assign	rs1_addr_hazard 	=	(opcode != OPCODE_SYS | opcode != OPCODE_JAL | opcode != OPCODE_LUI | opcode != OPCODE_AUIPC) ? 5'b0 : rs1_addr;	
+assign	rs1_addr_hazard 	=	(opcode != OPCODE_SYS & opcode != OPCODE_JAL & opcode != OPCODE_LUI & opcode != OPCODE_AUIPC) ? 5'b0 : rs1_addr;	
 assign	rs2_addr_hazard 	=	(opcode == OPCODE_CAL_R | opcode == OPCODE_BRANCH) ? rs2_addr : 5'b0;
 assign	rd_addr				=	rd_wen ? inst[11:7] : 5'b0;
 
