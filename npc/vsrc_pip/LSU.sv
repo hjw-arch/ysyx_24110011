@@ -1,5 +1,6 @@
-`include "define.svh"
-module LSU(
+module LSU
+import define_pkg::*;
+(
 	input 			clk,
 	input 			rst,
 

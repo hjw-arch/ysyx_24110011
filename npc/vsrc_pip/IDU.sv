@@ -1,6 +1,6 @@
-`include "define.svh"
-
-module IDU (
+module IDU 
+import define_pkg::*;
+(
     input 			clk,
     input			rst,
 
@@ -9,8 +9,11 @@ module IDU (
     input 	[31:0] 	rs1_data,
     input	[31:0] 	rs2_data,
 
+	output	[4:0] 	id_rs1_addr,
+	output	[4:0]	id_rs2_addr,
 	input 			hazard,
 	input			flush,
+	output 			ifence,
 
     input			valid_i,
     input	[63:0] 	data_i,
@@ -21,7 +24,8 @@ module IDU (
 	input 			ready_i
 );
 
-`define HANDSHAKE 		valid_o & ready_i;
+assign id_rs1_addr = rs1_addr_hazard;
+assign id_rs2_addr = rs2_addr_hazard;
 
 
 logic [31:0] inst	=	data_i[63:32];
@@ -44,7 +48,6 @@ logic		 is_jump, is_jalr, is_branch;
 logic [1:0]	 branch_cond;
 logic		 csr_ecall, csr_mret;
 logic		 csr_wen, csr_cmd;
-logic		 is_fencei;
 
 
 
@@ -81,7 +84,7 @@ always_comb begin
         default: imm = 32'b0;
     endcase
 end
-
+ 
 assign csr_addr = inst[31:20];
 
 
@@ -116,7 +119,7 @@ assign	csr_mret		=	`IS_SYS & inst[31:20] == 12'h18;
 assign	csr_wen			=	`IS_SYS & |func3;
 assign	csr_cmd			=	func3[0];		// 不严谨，权宜之计, 表述rs1直接写入
 
-assign	is_fencei		=	`IS_FENCE;	// 权宜之计
+assign	ifence			=	`IS_FENCE;	// 权宜之计
 
 
 

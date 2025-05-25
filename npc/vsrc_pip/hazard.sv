@@ -9,5 +9,5 @@ module hazard(
 );
 
 assign	hazard_valid	=	id2ex_rs1_addr == ex2ls_rd_addr | id2ex_rs1_addr == ls2wb_rd_addr | id2ex_rs2_addr == ex2ls_rd_addr | id2ex_rs2_addr == ls2wb_rd_addr;
-	
+
 endmodule //moduleName

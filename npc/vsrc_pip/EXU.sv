@@ -8,7 +8,7 @@ module EXU(
 	input 				valid_i,
 	input	[174:0]		data_i,
 	output 				ready_o,
-		
+
 	output 				valid_o,
 	output 	[73:0]		data_o,
 	input				ready_i
@@ -29,7 +29,7 @@ logic [1:0]		branch_cond		=	data_i[27:26];
 logic			csr_wen			=	data_i[25];
 logic			csr_cmd			=	data_i[24];
 logic			csr_ecall		=	data_i[23];
-logic			csr_mret		=	data_i[22];
+logic			csr_mret		=	data_i[22]; 
 logic [11:0]	csr_addr		=	data_i[21:10];
 logic [9:0]		rest_data		=	data_i[9:0];
 
@@ -114,24 +114,15 @@ logic [31:0] pc_src1, pc_cal_target;
 assign pc_src1 = is_jalr ? rs1_data : pc;
 assign pc_cal_target = pc_src1 + imm;
 
-// adder32 u_adder32(
-// 	.a      	(pc_src1 		),
-// 	.b      	(imm     		),
-// 	.cin    	(1'b0    		),
-// 	.result 	(pc_cal_target  ),
-// 	.cout   	(    			)
-// );
-
 
 logic branch_valid;
 
 always_comb begin
-	case({branch_cond, alu_zf, alu_result[0]})
-		4'b0010, 4'b0011: branch_valid = 1'b1;
-		4'b0100, 4'b0101: branch_valid = 1'b1;
-		4'b1001, 4'b1011: branch_valid = 1'b1;
-		4'b1100, 4'b1110: branch_valid = 1'b1;
-		default: branch_valid = 1'b0;
+	case(branch_cond)
+		2'b00: branch_valid = alu_zf;
+		2'b01: branch_valid = ~alu_zf;
+		2'b10: branch_valid = alu_result[0];
+		2'b11: branch_valid = ~alu_result[0];
 	endcase
 end
 
@@ -143,6 +134,7 @@ always_comb begin
 		default: pc_target_temp = pc_cal_target;
 	endcase
 end
+
 assign pc_target = pc_target_temp;
 
 assign	flush = is_jump | is_branch & branch_valid | csr_ecall | csr_mret;

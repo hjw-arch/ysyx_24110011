@@ -60,7 +60,7 @@ void halt() {
 #endif
 
 void cpu_exec_one() {
-    
+
 	do {
 		cycle;
 		cycle_times++;      // 测试CPU性能使用

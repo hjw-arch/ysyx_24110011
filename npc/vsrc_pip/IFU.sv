@@ -1,4 +1,6 @@
-module IFU(
+module IFU
+import define_pkg::*;
+(
     input			clk,
     input			rst,
 
@@ -27,7 +29,6 @@ module IFU(
     input 			ready_i
 );
 
-`define HANDSHAKE 	valid_o & ready_i
 `define PC_VECTOR 	32'h30000000
 
 localparam		IDLE = 2'b00;
@@ -56,7 +57,7 @@ always_ff @(posedge clk) begin								// PC
 	if (rst) begin
 		pc <= `PC_VECTOR;
 	end else begin
-		pc <= flush ? pc_target : `HANDSHAKE ? pc + 4 : pc;
+		pc <= flush ? pc_target : (`HANDSHAKE) ? pc + 4 : pc;
 	end
 end
 
@@ -75,7 +76,7 @@ assign	c2i_valid	=	~state[0] & ~state[1];		// 只在IDLE时取指
 
 icache #(
 	.BLOCK_SIZE 	(16   ),
-	.BLOCK_NUM  	(16  ))
+	.BLOCK_NUM  	(4  ))
 u_icache (
     .clk        (clk        ),
     .rst        (rst        ),

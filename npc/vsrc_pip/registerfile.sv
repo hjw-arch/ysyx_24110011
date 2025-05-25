@@ -16,7 +16,7 @@ reg [31:0] register_file [0:14];		// RV32E
 
 
 always @(posedge clk) begin
-    if(wen & rd_addr != 0) register_file[rd_addr[3:0]] <= rd_data;
+    if(wen) register_file[rd_addr[3:0]] <= rd_data;
 end
 
 

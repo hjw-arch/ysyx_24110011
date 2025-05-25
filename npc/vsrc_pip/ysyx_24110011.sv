@@ -73,6 +73,12 @@ module ysyx_24110011 #(parameter WIDTH = 32) (
     output [3:0]  	io_slave_rid
 );
 
+// // 调试用
+// logic [31:0] dpic_pc, dpic_inst;
+// always_ff @(posedge clock) begin
+
+// end
+
 // 对slave接口做设置
 assign io_slave_awready 	= 	1'b0;
 assign io_slave_wready  	= 	1'b0;
@@ -130,13 +136,17 @@ logic [31:0]	rs2_data;
 
 // flush
 logic 			flush;
-logic			pc_target;
+logic [31:0]	pc_target;
+
+// ifence
+logic			ifence;
 
 // forward
-logic [4:0]		id2ex_rs1_addr;
-logic [4:0]		id2ex_rs2_addr;
-logic [4:0]		ex2ls_rd_addr;
-logic [4:0]		ls2wb_rd_addr;
+logic [4:0]		id_rs1_addr;
+logic [4:0]		id_rs2_addr;
+logic [4:0]		ex_rd_addr;
+logic [4:0]		ls_rd_addr;
+logic [4:0]		wb_rd_addr;
 logic			hazard_valid;
 
 
@@ -169,7 +179,7 @@ IFU u_IFU(
 pip_reg #(
 	.DATA_WAITH 	(64  ))
 u_if2id_pip(
-	.clk        	(clk         ),
+	.clk        	(clock       ),
 	.pre_valid  	(ifu_valid_o ),
 	.pre_data   	(ifu_data_o  ),
 	.next_ready 	(idu_ready_o ),
@@ -188,8 +198,11 @@ IDU u_IDU(
 	.rs2_addr 	(rs2_addr  	   ),
 	.rs1_data 	(rs1_data  	   ),
 	.rs2_data 	(rs2_data  	   ),
+	.id_rs1_addr(id_rs1_addr   ),
+	.id_rs2_addr(id_rs2_addr   ),
 	.hazard   	(hazard_valid  ),
-	.fflush   	(fflush    	   ),
+	.flush   	(flush    	   ),
+	.ifence		(ifence),
 	.valid_i  	(idu_valid_i   ),
 	.data_i   	(idu_data_i    ),
 	.ready_o  	(idu_ready_o   ),
@@ -202,7 +215,7 @@ IDU u_IDU(
 pip_reg #(
 	.DATA_WAITH 	(175  ))
 u_id2ex_pip(
-	.clk        	(clk         ),
+	.clk        	(clock       ),
 	.pre_valid  	(idu_valid_o ),
 	.pre_data   	(idu_data_o  ),
 	.next_ready 	(exu_ready_o ),
@@ -231,7 +244,7 @@ EXU u_EXU(
 pip_reg #(
 	.DATA_WAITH 	(74  ))
 u_ex2ls_pip(
-	.clk        	(clk         ),
+	.clk        	(clock       ),
 	.pre_valid  	(exu_valid_o ),
 	.pre_data   	(exu_data_o  ),
 	.next_ready 	(lsu_ready_o ),
@@ -287,7 +300,7 @@ LSU u_LSU(
 pip_reg #(
 	.DATA_WAITH 	(38  ))
 u_ls2wb_pip(
-	.clk        	(clk         ),
+	.clk        	(clock       ),
 	.pre_valid  	(lsu_valid_o ),
 	.pre_data   	(lsu_data_o  ),
 	.next_ready 	(wbu_ready_o ),
@@ -310,12 +323,17 @@ WBU u_WBU(
 );
 
 
-hazard u_hazard(
-	.id2ex_rs1_addr 	(id2ex_rs1_addr  ),
-	.id2ex_rs2_addr 	(id2ex_rs2_addr  ),
-	.ex2ls_rd_addr  	(ex2ls_rd_addr   ),
-	.ls2wb_rd_addr  	(ls2wb_rd_addr   ),
-	.hazard_valid   	(hazard_valid    )
+assign ex_rd_addr	=	exu_data_i[4:0];
+assign ls_rd_addr	=	lsu_data_i[4:0];
+assign wb_rd_addr	=	wbu_data_i[4:0];
+
+hazard_temp u_hazard_temp(
+	.id_rs1_addr  	(id_rs1_addr   ),
+	.id_rs2_addr  	(id_rs2_addr   ),
+	.ex_rd_addr   	(ex_rd_addr    ),
+	.ls_rd_addr   	(ls_rd_addr    ),
+	.wb_rd_addr   	(wb_rd_addr    ),
+	.hazard_valid 	(hazard_valid  )
 );
 
 
@@ -336,8 +354,6 @@ logic			IFU_RLAST;
 logic	[3:0] 	IFU_RID;
 logic			IFU_ARREADY;
 logic			IFU_RVALID;
-logic			IFU_RLAST;
-logic	[3:0] 	IFU_RID;
 logic	[31:0] 	IFU_RDATA;
 logic	[1:0] 	IFU_RRESP;
 

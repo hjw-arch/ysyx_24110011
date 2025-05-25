@@ -8,7 +8,7 @@ module WBU(
 
 	input 			valid_i,
 	input	[37:0]	data_i,
-	output 			ready_o,
+	output 			ready_o
 );
 
 // 解码

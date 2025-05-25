@@ -51,11 +51,11 @@ prepare_build:
 # 本地仿真环境参数
 TOP_NAME            ?= ysyx
 SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
-SIM_VINC            = $(abspath ./vsrc)
+SIM_VINC            = $(abspath ./vsrc_pip)
 SIM_CLFAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
-SIM_VSRC            = $(shell find $(abspath ./vsrc) -name "*.v" -or -name "*.sv")
-SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv, $(SIM_VSRC))
+SIM_VSRC            = $(shell find $(abspath ./vsrc_pip) -name "*.v" -or -name "*.sv")
+SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv %define_pkg.sv, $(SIM_VSRC))
 SIM_CSRC            = $(shell find $(abspath ./csrc/src) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
 ## LLVM参数
 LLVMCFLAGS          = $(shell llvm-config --cxxflags) -fPIE
@@ -92,7 +92,7 @@ all: run
 run: prepare_build $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	$(VERILATOR) vsrc_pip/define_pkg.sv $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc_pip/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"
@@ -119,7 +119,7 @@ VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --
 npc: prepare_build $(VERILATOR_SRC_NPC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc_pip/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"

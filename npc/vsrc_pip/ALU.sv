@@ -1,4 +1,3 @@
-`include "adder32.sv"
 module ALU (        // 需要狠狠优化
     input [3 : 0] alu_op,
     input [31 : 0] data1,
