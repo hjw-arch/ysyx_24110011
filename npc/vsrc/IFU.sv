@@ -359,7 +359,6 @@ end
 assign   i2c_valid    =   c2i_valid & hit | state[1] & state[0] & m2i_done;
 
 
-
 always_comb begin
 	case({offset[3:2], state[0]})
 		3'b001: i2c_data = m2i_data_buffer[31:0];

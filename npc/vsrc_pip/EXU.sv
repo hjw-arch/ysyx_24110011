@@ -1,146 +1,143 @@
-module EXU #(parameter WIDTH = 32) (
-    input clk,
-    input rst,
+module EXU(
+	input				clk,
+	input 				rst,
 
-    input idu_valid,
-    input [191 : 0] idu_data,
-    output exu_ready,
+	output 	[31:0]		pc_target,
+	output 				flush,
 
-    output exu_valid,
-    output reg [108 : 0] exu_data,
-    input lsu_ready,
+	input 				valid_i,
+	input	[174:0]		data_i,
+	output 				ready_o,
 
-    // 给到LSU进行仲裁器预准备
-    output pre_lsu_ren,
-    output pre_lsu_wen,
-
-
-    // 直通PC
-    // 仅仅适用多周期处理器
-    input [1 : 0] pc_sel,
-    input pc_sel_for_adder_left,
-    input is_branch,
-    input [31 : 0] imm,
-    input [31 : 0] inst,
-    output [31 : 0] pc
+	output 				valid_o,
+	output 	[73:0]		data_o,
+	input				ready_i
 );
 
 
-wire [WIDTH - 1 : 0] alu_data1 = idu_data[191 : 160];
-wire [WIDTH - 1 : 0] alu_data2 = idu_data[159 : 128];
-wire [3 : 0] alu_op = idu_data[127 : 124];
-wire csr_wen = idu_data[123];
-wire csr_sel = idu_data[122];
-wire csr_is_ecall = idu_data[121];
-wire [11 : 0] csr_addr = idu_data[120 : 109];
-wire [31 : 0] pc_now = idu_data[108 : 77];
-wire [31 : 0] rs1_data = idu_data[76 : 45];
-wire [44 : 0] rest_idu_data = idu_data[44 : 0];
+// data_i解码
+wire [3:0]		alu_op			=	data_i[174:171];
+wire [1:0]		alu_src_sel		=	data_i[160:159];
+wire [31:0]		rs1_data		=	data_i[158:127];
+wire [31:0]		rs2_data		=	data_i[126:95];
+wire [31:0]		pc				=	data_i[94:63];
+wire [31:0]		imm				=	data_i[62:31];
+wire			is_jump			=	data_i[30];
+wire			is_jalr			=	data_i[29];
+wire			is_branch		=	data_i[28];
+wire [1:0]		branch_cond		=	data_i[27:26];
+wire			csr_wen			=	data_i[25];
+wire			csr_cmd			=	data_i[24];
+wire			csr_ecall		=	data_i[23];
+wire			csr_mret		=	data_i[22]; 
+wire [11:0]		csr_addr		=	data_i[21:10];
+wire [9:0]		rest_data		=	data_i[9:0];
 
-// 给到LSU预取
-assign pre_lsu_ren = idu_data[44];
-assign pre_lsu_wen = idu_data[43];
 
-
-typedef enum logic { 
-    S_IDLE,
-    S_WAIT_READY
-} exu_state_t;
-
-exu_state_t state, next_state;
+// 状态机
+logic	state, nstate;
 
 always_ff @(posedge clk) begin
-    state <= rst ? S_IDLE : next_state;
+	state <= rst ? 1'b0 : nstate;
 end
+
+assign nstate	=	valid_o & ~ready_i;
+
+assign valid_o	=	valid_i | state;
+assign ready_o	=	ready_i;
+
+// 筛选
+logic [31:0]	alu_src1, alu_src2;
 
 always_comb begin
-    case(state)
-        S_IDLE:
-            next_state = (exu_valid & ~lsu_ready) ? S_WAIT_READY : S_IDLE;
-        S_WAIT_READY:
-            next_state = (lsu_ready) ? S_IDLE : S_WAIT_READY;
-        default:
-            next_state = S_IDLE;
-    endcase
-end
-
-reg has_new_data;
-always_ff @(posedge clk) begin
-    has_new_data <= (idu_valid & exu_ready) ? 1'b1 : 1'b0;
-end
-
-assign exu_ready = lsu_ready;
-assign exu_valid = has_new_data | (state == S_WAIT_READY);
-
-wire [31 : 0] alu_result;
-wire zero_flag;
-
-ALU #(WIDTH) alu (
-    .alu_op(alu_op),
-    .data1(alu_data1),
-    .data2(alu_data2),
-    .result(alu_result),
-    .zero_flag(zero_flag)
-);
-
-
-// 直接在EXU内做完对CSR寄存器的读取写入全流程
-wire [31 : 0] mtvec;    // For PC
-wire [31 : 0] mepc;     // For PC
-
-wire [31 : 0] csr_data_o;
-wire [31 : 0] csr_data_i = csr_sel ? rs1_data | csr_data_o : rs1_data;
-CSR CSR_INTER(
-    .clk			(clk							),
-    .rst			(rst							),
-    .wen_i			(csr_wen & has_new_data			),
-    .is_ecall_i		(csr_is_ecall & has_new_data	),
-    .addr_i			(csr_addr						),
-    .data_i			(csr_data_i						),
-    .pc_i			(pc_now							),
-    .data_o			(csr_data_o						),
-    .mtvec_o		(mtvec							),
-    .mepc_o			(mepc							)
-);
-
-always_ff @(posedge clk) begin
-    exu_data <= (exu_valid & lsu_ready) ? {alu_result, rest_idu_data, csr_data_o} : exu_data;
+	unique case({alu_src_sel})
+		2'b00: begin
+			alu_src1 = rs1_data;
+			alu_src2 = rs2_data;
+		end 
+		2'b01: begin
+			alu_src1 = rs1_data;
+			alu_src2 = imm;
+		end 
+		2'b10: begin
+			alu_src1 = pc;
+			alu_src2 = 32'h4;
+		end 
+		2'b11: begin
+			alu_src1 = pc;
+			alu_src2 = imm;
+		end 
+	endcase
 end
 
 
-// PC直通
-PC #(WIDTH) PC_INTER(
-    .clk(clk),
-    .rst(rst),
-    .valid(exu_valid),
-    .sel(pc_sel),
-    .sel_for_adder_left(pc_sel_for_adder_left),
-    .is_branch(is_branch),
-    .zero_flag(zero_flag),
-    .less_flag(alu_result[0]),
-    .inst(inst),
-    .rs1(rs1_data),
-    .imm(imm),
-    .mtvec(mtvec),
-    .mepc(mepc),
-    .pc(pc)
+logic [31:0]	alu_result;
+logic 			alu_zf;
+
+ALU u_ALU(
+	.alu_op    	(alu_op     ),
+	.data1     	(alu_src1   ),
+	.data2     	(alu_src2   ),
+	.result    	(alu_result ),
+	.zero_flag 	(alu_zf     )
 );
 
-/************************** 性能计数器 *****************************/
 
-// import "DPI-C" function void PerformanceCounter_exu_finish_cal();
+logic [31:0] csr_rdata;
+logic [31:0] csr_mtvec;
+logic [31:0] csr_mepc;
 
-// always_ff @(posedge clk) begin
-// 	if (exu_valid & (state != S_WAIT_READY))  PerformanceCounter_exu_finish_cal();
-// end
+CSR u_CSR(
+	.clk        	(clk      	),
+	.rst        	(rst      	),
+	.wen        	(csr_wen    ),
+	.cmd        	(csr_cmd    ),
+	.ecall	 		(csr_ecall	),
+	.addr       	(csr_addr   ),
+	.sdata      	(rs1_data   ),
+	.pc         	(pc       	),
+	.rdata      	(csr_rdata  ),
+	.mtvec      	(csr_mtvec  ),
+	.mepc       	(csr_mepc   )
+);
 
-// always_ff @(posedge clk) begin
-// 	if (has_new_data) $display("EXU!\n");
-// end
-
-/******************************************************************/
+logic [31:0]	exu_result;
+assign			exu_result = csr_wen ? csr_rdata : alu_result;
 
 
+// 传递给lsu
+assign data_o = {exu_result, rs2_data, rest_data};
+
+
+// 计算真PC
+logic [31:0] pc_src1, pc_cal_target;
+assign pc_src1 = is_jalr ? rs1_data : pc;
+assign pc_cal_target = pc_src1 + imm;
+
+
+logic branch_valid;
+
+always_comb begin
+	case(branch_cond)
+		2'b00: branch_valid = alu_zf;
+		2'b01: branch_valid = ~alu_zf;
+		2'b10: branch_valid = alu_result[0];
+		2'b11: branch_valid = ~alu_result[0];
+	endcase
+end
+
+logic [31:0] pc_target_temp;
+always_comb begin
+	unique case({csr_ecall, csr_mret})
+		2'b01: pc_target_temp = csr_mepc;
+		2'b10: pc_target_temp = csr_mtvec;
+		default: pc_target_temp = pc_cal_target;
+	endcase
+end
+
+assign pc_target = pc_target_temp;
+
+assign	flush = is_jump | is_branch & branch_valid | csr_ecall | csr_mret;
 
 
 endmodule
