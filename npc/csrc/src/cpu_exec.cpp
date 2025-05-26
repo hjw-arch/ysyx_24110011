@@ -31,7 +31,7 @@ extern VerilatedVcdC tfp;
 #define FTRACE_RECORD     record_ftrace(old_pc, old_inst == 0x8067 ? 1 : 0, cpu.pc)
 
 cpu_t cpu;
-uint32_t inst;
+uint32_t current_pc, current_inst;
 
 uint32_t cpu_state = RUNNING;
 
@@ -100,13 +100,14 @@ void cpu_exec_one() {
 			cycle_times++;
 		
 			pip_info_t temp_pip_info = get_pip_info();
-			cpu.pc = temp_pip_info.pc;
+			cpu.pc = pip_info[r_ptr].pc;
 			for (int i = 0; i < RF_NUM; i++) {
 				cpu.registerFile[i] = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_WBU__DOT__u_registerfile__DOT__register_file[i];
 			}
-			inst = temp_pip_info.inst;
+			current_inst = temp_pip_info.inst;
+			current_pc = temp_pip_info.pc;
 			dynamic_insts++;
-			if (inst == ebreak) {
+			if (current_inst == ebreak) {
 				halt();
 			}
 			return;
@@ -133,11 +134,11 @@ void cpu_exec(uint32_t n) {
 
         if (n < min_num_to_disasm) {
             char p[64];
-            printf("0x%08x: ", cpu.pc);
+            printf("0x%08x: ", current_pc);
             for(int j = 3; j >= 0; j--) {
-                printf("%02x ", ((uint8_t *)&inst)[j]);
+                printf("%02x ", ((uint8_t *)&current_inst)[j]);
             }
-            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&inst, 4);
+            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&current_inst, 4);
             printf("        %s\n", p);
         }
 
