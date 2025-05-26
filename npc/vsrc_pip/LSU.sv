@@ -39,6 +39,7 @@ import define_pkg::*;
 	input				BVALID,
     output				BREADY,
 	
+	output	[4:0]		rd_addr_hazard,
 
 	input 				valid_i,
 	input	[73:0] 		data_i,
@@ -93,6 +94,7 @@ assign ready_o = ~nstate;
 assign rd_data = lsu_load ? lsu_rdata : lsu_addr;
 assign data_o = {rd_data, lsu_load, rest_data};
 
+assign rd_addr_hazard = data_i[4:0] & {5{valid_i | state}};
 
 // AXI
 

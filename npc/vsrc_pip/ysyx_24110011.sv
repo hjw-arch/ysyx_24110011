@@ -107,6 +107,7 @@ logic [174:0]	idu_data_o;
 logic			idu_ready_i;
 
 // EX
+logic [4:0]		exu_rd_addr;
 logic			exu_valid_i;
 logic [174:0]	exu_data_i;
 logic			exu_ready_o;
@@ -115,6 +116,7 @@ logic [73:0]	exu_data_o;
 logic			exu_ready_i;
 
 // LS
+logic [4:0]		lsu_rd_addr;
 logic			lsu_valid_i;
 logic [73:0]	lsu_data_i;
 logic			lsu_ready_o;
@@ -123,6 +125,7 @@ logic [37:0]	lsu_data_o;
 logic			lsu_ready_i;
 
 // WB
+logic [4:0]		wbu_rd_addr;
 logic			wbu_valid_i;
 logic [37:0]	wbu_data_i;
 logic			wbu_ready_o;
@@ -231,6 +234,7 @@ EXU u_EXU(
 	.rst     	(reset	 ),
 	.pc_target	(pc_target		),
 	.flush		(flush			),
+	.rd_addr_hazard(exu_rd_addr ),
 	.valid_i 	(exu_valid_i	),
 	.data_i  	(exu_data_i 	),
 	.ready_o 	(exu_ready_o	),
@@ -287,6 +291,7 @@ LSU u_LSU(
 	.BRESP   	(LSU_BRESP    ),
 	.BVALID  	(LSU_BVALID   ),
 	.BREADY  	(LSU_BREADY   ),
+	.rd_addr_hazard(lsu_rd_addr),
 	.valid_i 	(lsu_valid_i  ),
 	.data_i  	(lsu_data_i   ),
 	.ready_o 	(lsu_ready_o  ),
@@ -317,15 +322,16 @@ WBU u_WBU(
 	.rs2_addr	(rs2_addr		),
 	.rs1_data	(rs1_data		),
 	.rs2_data	(rs2_data		),
+	.rd_addr_hazard(wbu_rd_addr),
 	.valid_i	(wbu_valid_i	),
 	.data_i		(wbu_data_i		),
 	.ready_o	(wbu_ready_o	)
 );
 
 
-assign ex_rd_addr	=	exu_data_i[4:0];
-assign ls_rd_addr	=	lsu_data_i[4:0];
-assign wb_rd_addr	=	wbu_data_i[4:0];
+assign ex_rd_addr	=	exu_rd_addr;
+assign ls_rd_addr	=	lsu_rd_addr;
+assign wb_rd_addr	=	wbu_rd_addr;
 
 hazard_temp u_hazard_temp(
 	.id_rs1_addr  	(id_rs1_addr   ),

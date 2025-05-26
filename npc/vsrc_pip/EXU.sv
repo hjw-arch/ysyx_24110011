@@ -4,6 +4,7 @@ module EXU(
 
 	output 	[31:0]		pc_target,
 	output 				flush,
+	output 	[4:0]		rd_addr_hazard,
 
 	input 				valid_i,
 	input	[174:0]		data_i,
@@ -29,7 +30,7 @@ wire [1:0]		branch_cond		=	data_i[27:26];
 wire			csr_wen			=	data_i[25];
 wire			csr_cmd			=	data_i[24];
 wire			csr_ecall		=	data_i[23];
-wire			csr_mret		=	data_i[22]; 
+wire			csr_mret		=	data_i[22];
 wire [11:0]		csr_addr		=	data_i[21:10];
 wire [9:0]		rest_data		=	data_i[9:0];
 
@@ -139,5 +140,6 @@ assign pc_target = pc_target_temp;
 
 assign	flush = is_jump & valid_i | is_branch & branch_valid & valid_i | csr_ecall & valid_i | csr_mret & valid_i;
 
+assign rd_addr_hazard = data_i[4:0] & {5{valid_i}};
 
 endmodule
