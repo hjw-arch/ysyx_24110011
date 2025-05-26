@@ -137,7 +137,7 @@ end
 
 assign pc_target = pc_target_temp;
 
-assign	flush = is_jump | is_branch & branch_valid | csr_ecall | csr_mret;
+assign	flush = is_jump & valid_i | is_branch & branch_valid & valid_i | csr_ecall & valid_i | csr_mret & valid_i;
 
 
 endmodule
