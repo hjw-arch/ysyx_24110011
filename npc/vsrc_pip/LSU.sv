@@ -73,7 +73,7 @@ always_ff @(posedge clk) begin
 	state <= rst ? 1'b0 : nstate;
 end
 
-assign nstate = valid_i & lsu_load & lsu_store | state & ~axi_done;
+assign nstate = valid_i & lsu_load | valid_i & lsu_store | state & ~axi_done;
 
 
 always_comb begin

@@ -52,7 +52,7 @@ static pip_info_t pip_info[PIP_LEVEL];
 static uint32_t r_ptr, w_ptr;
 
 static void load_pip_info() {
-	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__valid_o & dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_ready_i) {
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__valid_o && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_ready_i) {
 		pip_info[w_ptr].pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__pc;
 		pip_info[w_ptr].inst = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst;
 		w_ptr = ++w_ptr % PIP_LEVEL;
@@ -92,20 +92,12 @@ void halt() {
 void cpu_exec_one() {
 
 	while (1) {
-		cycle;
-		cycle_times++;
-		load_pip_info();
-		
-		// 非投机执行的inst
-		if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst == ebreak && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_valid_o) {
-			cycle_times += 3;	// 补上剩余的周期数
-			dynamic_insts++;
-        	halt();
-			break;
-		}
 
-		if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__wbu_valid_i) {
+		while (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__wbu_valid_i) {
 			cycle;
+
+			load_pip_info();
+			cycle_times++;
 		
 			pip_info_t temp_pip_info = get_pip_info();
 			cpu.pc = temp_pip_info.pc;
@@ -114,8 +106,17 @@ void cpu_exec_one() {
 			}
 			inst = temp_pip_info.inst;
 			dynamic_insts++;
-			break;
+			if (inst == ebreak) {
+				halt();
+			}
+			return;
 		}
+
+		cycle;
+
+		load_pip_info();
+		cycle_times++;
+	
 	}
 }
 
