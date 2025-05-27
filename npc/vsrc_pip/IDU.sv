@@ -104,8 +104,8 @@ assign csr_addr = inst[31:20];
 
 
 logic	rd_wen;
-assign	alu_src_sel[1]  	=	(opcode == OPCODE_LUI | opcode == OPCODE_AUIPC | opcode == OPCODE_JALR);	// 0: rs1 1: pc
-assign	alu_src_sel[0]  	=	(opcode == OPCODE_AUIPC | opcode == OPCODE_CAL_I | opcode == OPCODE_LOAD | opcode == OPCODE_STORE);	// 0: rs2, 1: imm	
+assign	alu_src_sel[1]  	=	(opcode == OPCODE_AUIPC | opcode == OPCODE_JALR | opcode == OPCODE_JAL);	// 0: rs1 1: pc
+assign	alu_src_sel[0]  	=	(opcode == OPCODE_LUI | opcode == OPCODE_AUIPC | opcode == OPCODE_CAL_I | opcode == OPCODE_LOAD | opcode == OPCODE_STORE);	// 0: rs2, 1: imm	
 assign	rd_wen				=	opcode != OPCODE_STORE & opcode != OPCODE_BRANCH;
 assign	rs1_addr_hazard 	=	(opcode != OPCODE_SYS & opcode != OPCODE_JAL & opcode != OPCODE_LUI & opcode != OPCODE_AUIPC) ? rs1_addr : 5'b0;	
 assign	rs2_addr_hazard 	=	(opcode == OPCODE_CAL_R | opcode == OPCODE_BRANCH | opcode == OPCODE_STORE) ? rs2_addr : 5'b0;
