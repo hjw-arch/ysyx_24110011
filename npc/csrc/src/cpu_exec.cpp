@@ -146,16 +146,16 @@ void cpu_exec(uint32_t n) {
             for(int j = 3; j >= 0; j--) {
                 printf("%02x ", ((uint8_t *)&current_inst)[j]);
             }
-            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&current_inst, 4);
+            disassemble(p, sizeof(p), current_pc, (uint8_t *)&current_inst, 4);
             printf("        %s\n", p);
         }
 
 
-        IFDEF(CONFIG_ITRACE, iringbuf_load(cpu.pc, inst));
+        IFDEF(CONFIG_ITRACE, iringbuf_load(current_pc, current_inst));
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
-        IFDEF(CONFIG_WATCHPOINT, diff_wp(cpu.pc));
-		IFDEF(CONFIG_DIFFTEST, if (cpu_state != IDLE); difftest_step(cpu.pc));
+        IFDEF(CONFIG_WATCHPOINT, diff_wp(current_pc));
+		IFDEF(CONFIG_DIFFTEST, if (cpu_state != IDLE); difftest_step(current_pc));
         IFDEF(CONFIG_DEVICE, device_update());
 		IFDEF(NVBOARD, nvboard_update());
 
