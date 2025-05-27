@@ -51,14 +51,14 @@ logic		 csr_wen, csr_cmd;
 
 
 
-logic state, nstate;
+logic state, nstate;				// 0：IDLE	1：WAIT_TO_SEND
 always_ff @(posedge clk) begin
 	state <= rst ? 1'b0 : nstate;
 end
 
-assign nstate = valid_o & ~ready_i;
+assign nstate = valid_o & ~ready_i | valid_i & hazard | state & hazard;
 
-assign valid_o = valid_i & ~flush & ~hazard | state;
+assign valid_o = valid_i & ~flush & ~hazard | state & ~hazard;
 assign ready_o = ready_i & ~hazard;
 
 assign rs1_addr	= inst[19:15];
@@ -89,11 +89,11 @@ assign csr_addr = inst[31:20];
 
 
 logic	rd_wen;
-assign	alu_src_sel[1]  	=	(opcode == OPCODE_LUI | opcode == OPCODE_JAL | opcode == OPCODE_JALR);	// 0: rs1 1: pc
+assign	alu_src_sel[1]  	=	(opcode == OPCODE_LUI | opcode == OPCODE_AUIPC | opcode == OPCODE_JALR);	// 0: rs1 1: pc
 assign	alu_src_sel[0]  	=	(opcode == OPCODE_AUIPC | opcode == OPCODE_CAL_I | opcode == OPCODE_LOAD | opcode == OPCODE_STORE);	// 0: rs2, 1: imm	
 assign	rd_wen				=	opcode != OPCODE_STORE & opcode != OPCODE_BRANCH;
-assign	rs1_addr_hazard 	=	(opcode != OPCODE_SYS & opcode != OPCODE_JAL & opcode != OPCODE_LUI & opcode != OPCODE_AUIPC) ? 5'b0 : rs1_addr;	
-assign	rs2_addr_hazard 	=	(opcode == OPCODE_CAL_R | opcode == OPCODE_BRANCH) ? rs2_addr : 5'b0;
+assign	rs1_addr_hazard 	=	(opcode != OPCODE_SYS & opcode != OPCODE_JAL & opcode != OPCODE_LUI & opcode != OPCODE_AUIPC) ? rs1_addr : 5'b0;	
+assign	rs2_addr_hazard 	=	(opcode == OPCODE_CAL_R | opcode == OPCODE_BRANCH | opcode == OPCODE_STORE) ? rs2_addr : 5'b0;
 assign	rd_addr				=	rd_wen ? inst[11:7] : 5'b0;
 
 

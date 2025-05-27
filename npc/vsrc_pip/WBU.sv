@@ -6,6 +6,8 @@ module WBU(
 	output 	[31:0]	rs1_data,
 	output 	[31:0]	rs2_data,
 
+	output	[4:0]	rd_addr_hazard,
+
 	input 			valid_i,
 	input	[37:0]	data_i,
 	output 			ready_o
@@ -20,6 +22,7 @@ wire [4:0]  rd_addr		=	data_i[4:0];
 // 状态机
 assign	ready_o	=	1'b1;		// WBU收到命令就可以直接写入
 
+assign	rd_addr_hazard = data_i[4:0] & {5{valid_i}};
 
 registerfile u_registerfile(
 	.clk      	(clk       ),

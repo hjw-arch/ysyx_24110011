@@ -52,7 +52,7 @@ static pip_info_t pip_info[PIP_LEVEL];
 static uint32_t r_ptr, w_ptr;
 
 static void load_pip_info() {
-	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__valid_o && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_ready_i) {
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_valid_i && !dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__flush) {
 		pip_info[w_ptr].pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__pc;
 		pip_info[w_ptr].inst = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst;
 		w_ptr = ++w_ptr % PIP_LEVEL;
