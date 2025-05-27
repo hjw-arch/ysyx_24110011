@@ -65,6 +65,14 @@ static pip_info_t get_pip_info() {
 	return temp;
 }
 
+static uint32_t get_next_pc() {
+	if (r_ptr == w_ptr) {
+		return dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__pc;
+	}
+
+	return pip_info[r_ptr].pc;
+}
+
 void PerformanceCounter_display();
 
 void halt() {
@@ -100,7 +108,7 @@ void cpu_exec_one() {
 			cycle_times++;
 		
 			pip_info_t temp_pip_info = get_pip_info();
-			cpu.pc = pip_info[r_ptr].pc;
+			cpu.pc = get_next_pc();
 			for (int i = 0; i < RF_NUM; i++) {
 				cpu.registerFile[i] = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_WBU__DOT__u_registerfile__DOT__register_file[i];
 			}

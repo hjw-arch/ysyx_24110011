@@ -24,8 +24,8 @@ import define_pkg::*;
 	input 			ready_i
 );
 
-assign id_rs1_addr = rs1_addr_hazard;
-assign id_rs2_addr = rs2_addr_hazard;
+assign id_rs1_addr = rs1_addr_hazard & {5{valid_i | state}};
+assign id_rs2_addr = rs2_addr_hazard & {5{valid_i | state}};
 
 
 wire [31:0] inst	=	data_i[63:32];
@@ -49,6 +49,21 @@ logic [1:0]	 branch_cond;
 logic		 csr_ecall, csr_mret;
 logic		 csr_wen, csr_cmd;
 
+// 从valid_i出发
+// 对于valid_o如果valid_i并且非flush非hazard，那么下个上升沿可以发送数据
+// 如果valid_o且~ready_i，那么valid_o要持续置1，等待ready_i置1，此时本阶段数据仍然可用
+
+// 有两个冲突，一是控制冲突，二是数据冲突，对于顺序流水线，也就是写后读冲突
+// 对于控制冲突，如果接收到flush信号，那么就不能往前传递直到有新的valid_i，本阶段数据不可用，应该取消掉冲突检测，但是仍处于ready状态，可接收数据，IFU应该保证不向本阶段传送无效数据
+
+// 对于写后读冲突，如果接收到hazard信号，那么本阶段不能发送valid_o，因为需要等待rs1、rs2数据有效，此时，应该记录下收到了hazard信号，以便hazard解除后可以发送valid_o
+
+// 这两类冲突有一个区别：数据冲突的valid_o是待发送的，data_o是待有效的，而控制冲突的valid_o是无效的，data_o也是无效的
+// 对于valid_o信号来说，他要指示下个上升沿可以发送数据，因此接收到valid_i且不存在冲突时，可以当周期置1，valid_o且非ready_i时，需要保持1
+// 遇到hazard信号时，要等待hazard信号接触后再置1，对于flush信号，直接置0
+// hazard和flush完全可能同时出现，要区分
+
+// 因此实质上状态机只需要记录一个状态，就是本阶段数据待有效，待发送状态，IDLE且valid_o表示当即有效无需等待，IDLE且非valid_o表示当阶段无效
 
 
 logic state, nstate;				// 0：IDLE	1：WAIT_TO_SEND
@@ -56,7 +71,7 @@ always_ff @(posedge clk) begin
 	state <= rst ? 1'b0 : nstate;
 end
 
-assign nstate = valid_o & ~ready_i | valid_i & hazard | state & hazard;
+assign nstate = valid_o & ~ready_i | valid_i & hazard & ~flush | state & hazard;
 
 assign valid_o = valid_i & ~flush & ~hazard | state & ~hazard;
 assign ready_o = ready_i & ~hazard;
@@ -84,7 +99,7 @@ always_comb begin
         default: imm = 32'b0;
     endcase
 end
- 
+
 assign csr_addr = inst[31:20];
 
 
