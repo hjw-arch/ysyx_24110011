@@ -1,5 +1,4 @@
 module LSU
-import define_pkg::*;
 (
 	input 			clk,
 	input 			rst,
@@ -49,6 +48,15 @@ import define_pkg::*;
 	output	[37:0] 		data_o,
 	input 				ready_i
 );
+
+//================= Load Types =================//
+typedef enum logic [2:0] {
+  LOAD_TYPE_LB   = 3'b000,
+  LOAD_TYPE_LH   = 3'b001,
+  LOAD_TYPE_LW   = 3'b010,
+  LOAD_TYPE_LBU  = 3'b100,
+  LOAD_TYPE_LHU  = 3'b101
+} load_type_e;
 
 
 // 解码

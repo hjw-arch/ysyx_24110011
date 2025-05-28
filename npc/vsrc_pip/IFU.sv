@@ -1,5 +1,4 @@
 module IFU
-import define_pkg::*;
 (
     input			clk,
     input			rst,
@@ -30,6 +29,7 @@ import define_pkg::*;
 );
 
 `define PC_VECTOR 	32'h30000000
+`define HANDSHAKE 	valid_o & ready_i
 
 localparam		IDLE = 2'b00;
 localparam		WAIT_READY = 2'b01;

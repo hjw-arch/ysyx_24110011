@@ -92,7 +92,7 @@ all: run
 run: prepare_build $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) vsrc_pip/define_pkg.sv $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc_pip/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc_pip/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"
