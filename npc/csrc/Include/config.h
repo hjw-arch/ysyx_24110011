@@ -21,7 +21,7 @@
 
 // #define WAVE			1
 
-#define CONFIG_DIFFTEST     1
+// #define CONFIG_DIFFTEST     1
 
 
 // device
