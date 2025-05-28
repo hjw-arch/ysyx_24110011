@@ -1,5 +1,4 @@
-module IDU 
-import define_pkg::*;
+module IDU
 (
     input 			clk,
     input			rst,
@@ -23,6 +22,54 @@ import define_pkg::*;
 	output	[174:0]	data_o,
 	input 			ready_i
 );
+
+//================= OPCODE Definitions =================//
+typedef enum logic [4:0] {
+	OPCODE_LUI    = 5'b01101,
+	OPCODE_AUIPC  = 5'b00101,
+	OPCODE_JAL    = 5'b11011,
+	OPCODE_JALR   = 5'b11001,
+	OPCODE_BRANCH = 5'b11000,
+	OPCODE_LOAD   = 5'b00000,
+	OPCODE_STORE  = 5'b01000,
+	OPCODE_FENCE  = 5'b00011,
+	OPCODE_CAL_I  = 5'b00100,
+	OPCODE_CAL_R  = 5'b01100,
+	OPCODE_SYS    = 5'b11100
+} opcode_type_e;
+
+//================= FUNC3 Definitions =================//
+typedef enum logic [2:0] {
+	FUNC3_SRA     = 3'b101
+} func3_type_e;
+
+//================= FUNC7B5 Definitions =================//
+typedef enum logic { 
+	FUNC7B5_SRA = 1'b1
+} func7b5_type_e;
+
+//================= Branch Conditions =================//
+typedef enum logic [1:0] {
+	BRANCH_EQ     = 2'b00,
+	BRANCH_NE     = 2'b01,
+	BRANCH_LT     = 2'b10,
+	BRANCH_GE     = 2'b11
+} branch_cond_e;
+
+`define 	IS_SRAI				opcode == OPCODE_CAL_I & func3 == FUNC3_SRA & func7b5 == FUNC7B5_SRA
+`define  	IS_R_TYPE			opcode == OPCODE_CAL_R
+`define  	IS_LUI				opcode == OPCODE_LUI
+`define  	IS_CAL				opcode == OPCODE_CAL_I | opcode == OPCODE_CAL_R
+`define  	IS_U_TYPE			~opcode[4] & opcode[2] & ~opcode[1] & opcode[0]
+`define  	IS_I_TYPE			opcode == OPCODE_LUI | opcode == OPCODE_AUIPC | opcode == OPCODE_CAL_I
+`define  	IS_SYS				opcode == OPCODE_SYS
+`define  	IS_B				opcode == OPCODE_BRANCH & ~func3[1]
+`define  	IS_BU				opcode == OPCODE_BRANCH & func3[1]
+`define  	IS_LOAD				opcode == OPCODE_LOAD
+`define  	IS_FENCE			opcode == OPCODE_FENCE
+
+`define HANDSHAKE 				valid_o & ready_i
+
 
 assign id_rs1_addr = rs1_addr_hazard & {5{valid_i | state}};
 assign id_rs2_addr = rs2_addr_hazard & {5{valid_i | state}};

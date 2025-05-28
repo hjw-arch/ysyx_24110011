@@ -1,4 +1,4 @@
-module ysyx_24110011 #(parameter WIDTH = 32) (
+module ysyx_24110011 (
     input 			clock,
     input 			reset,/* verilator lint_off UNUSEDSIGNAL */
     input 			io_interrupt,
