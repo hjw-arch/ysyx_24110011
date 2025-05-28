@@ -50,16 +50,23 @@ always_ff @(posedge clk) begin
 		cache_valid <= {BLOCK_NUM{1'b0}};
 	end else begin
 		if (m2i_done) begin
-            cache_data[index] <=  {m2i_data, m2i_data_buffer};
-            cache_tag[index] <= tag;
-            cache_valid[index] <= 1;
+            cache_data[index_reg] <=  {m2i_data, m2i_data_buffer};
+            cache_tag[index_reg] <= tag_reg;
+            cache_valid[index_reg] <= 1;
         end
 	end
 end
 
-logic   [TAG_WIDTH-1:0]     tag;
-logic   [INDEX_WIDTH-1:0]   index;	/* verilator lint_off UNUSEDSIGNAL */
-logic   [OFFSET_WIDTH-1:0]  offset;
+
+logic   [TAG_WIDTH-1:0]     tag, tag_reg;
+logic   [INDEX_WIDTH-1:0]   index, index_reg;	/* verilator lint_off UNUSEDSIGNAL */
+logic   [OFFSET_WIDTH-1:0]  offset, offset_reg;
+
+always_ff @(posedge clk) begin
+	tag_reg <= ~state[0] & ~state[1] & ~hit & ~flush? addr_i[ADDR_WIDTH - 1 : ADDR_WIDTH - TAG_WIDTH] : tag_reg;
+	index_reg <= ~state[0] & ~state[1] & ~hit & ~flush? addr_i[INDEX_WIDTH + OFFSET_WIDTH - 1 : OFFSET_WIDTH] : index_reg;
+	offset_reg <= ~state[0] & ~state[1] & ~hit & ~flush? addr_i[OFFSET_WIDTH - 1 : 0] : offset_reg;
+end
 
 assign  index   =   addr_i[INDEX_WIDTH + OFFSET_WIDTH - 1 : OFFSET_WIDTH];
 assign  tag     =   addr_i[ADDR_WIDTH - 1 : ADDR_WIDTH - TAG_WIDTH];
@@ -91,7 +98,7 @@ assign in_mem		=	state[0];		// 权宜之计
 
 
 assign  i2m_valid   =   state[0] & ~state[1];
-assign  i2m_addr    =   {tag, index, {OFFSET_WIDTH{1'b0}}};
+assign  i2m_addr    =   {tag_reg, index_reg, {OFFSET_WIDTH{1'b0}}};
 
 
 /************************* 填充 ***********************/
@@ -110,7 +117,7 @@ assign   valid_o    =   valid_i & hit | state[1] & state[0] & m2i_done;
 
 
 always_comb begin
-	case({offset[3:2], state[0]})
+	case({state[0] ? offset_reg[3:2] : offset[3:2], state[0]})
 		3'b001: data_o = m2i_data_buffer[31:0];
 		3'b011: data_o = m2i_data_buffer[63:32];
 		3'b101: data_o = m2i_data_buffer[95:64];

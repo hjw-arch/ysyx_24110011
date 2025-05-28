@@ -10,11 +10,11 @@
 do { \
     dut.clock = 0;    \
     dut.eval();     \
-	if (cpu.pc >= 0xa00000a0) {IFDEF(WAVE, Verilated::timeInc(1));		\
+	if (cpu.pc >= 0xa0000000) {IFDEF(WAVE, Verilated::timeInc(1));		\
 	IFDEF(WAVE, tfp.dump(Verilated::time()));}	\
     dut.clock = 1;    \
     dut.eval();     \
-	if (cpu.pc >= 0xa00000a0) {IFDEF(WAVE, Verilated::timeInc(1));		\
+	if (cpu.pc >= 0xa0000000) {IFDEF(WAVE, Verilated::timeInc(1));		\
 	IFDEF(WAVE, tfp.dump(Verilated::time()));}	\
 } while(0) \
 
