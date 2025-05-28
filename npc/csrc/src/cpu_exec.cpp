@@ -52,7 +52,7 @@ static pip_info_t pip_info[PIP_LEVEL];
 static uint32_t r_ptr, w_ptr;
 
 static void load_pip_info() {
-	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__valid_o && dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_ready_i) {
+	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_valid_i && !dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__flush) {
 		pip_info[w_ptr].pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__pc;
 		pip_info[w_ptr].inst = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst;
 		w_ptr = ++w_ptr % PIP_LEVEL;
@@ -63,6 +63,14 @@ static pip_info_t get_pip_info() {
 	pip_info_t temp = pip_info[r_ptr];
 	r_ptr = ++r_ptr % PIP_LEVEL;
 	return temp;
+}
+
+static uint32_t get_next_pc() {
+	if (r_ptr == w_ptr) {
+		return dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__pc;
+	}
+
+	return pip_info[r_ptr].pc;
 }
 
 void PerformanceCounter_display();
@@ -100,7 +108,7 @@ void cpu_exec_one() {
 			cycle_times++;
 		
 			pip_info_t temp_pip_info = get_pip_info();
-			cpu.pc = pip_info[r_ptr].pc;
+			cpu.pc = get_next_pc();
 			for (int i = 0; i < RF_NUM; i++) {
 				cpu.registerFile[i] = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_WBU__DOT__u_registerfile__DOT__register_file[i];
 			}
@@ -138,16 +146,16 @@ void cpu_exec(uint32_t n) {
             for(int j = 3; j >= 0; j--) {
                 printf("%02x ", ((uint8_t *)&current_inst)[j]);
             }
-            disassemble(p, sizeof(p), cpu.pc, (uint8_t *)&current_inst, 4);
+            disassemble(p, sizeof(p), current_pc, (uint8_t *)&current_inst, 4);
             printf("        %s\n", p);
         }
 
 
-        IFDEF(CONFIG_ITRACE, iringbuf_load(cpu.pc, inst));
+        IFDEF(CONFIG_ITRACE, iringbuf_load(current_pc, current_inst));
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
-        IFDEF(CONFIG_WATCHPOINT, diff_wp(cpu.pc));
-		IFDEF(CONFIG_DIFFTEST, if (cpu_state != IDLE); difftest_step(cpu.pc));
+        IFDEF(CONFIG_WATCHPOINT, diff_wp(current_pc));
+		IFDEF(CONFIG_DIFFTEST, if (cpu_state != IDLE); difftest_step(current_pc));
         IFDEF(CONFIG_DEVICE, device_update());
 		IFDEF(NVBOARD, nvboard_update());
 

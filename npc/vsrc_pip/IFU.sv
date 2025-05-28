@@ -62,7 +62,7 @@ always_ff @(posedge clk) begin								// PC
 end
 
 // flush、ifence可能需要缓存, 设计好后续再说
-assign	valid_o		=	i2c_valid & ~flush & ~ifence | state[0];		//	如果icache命中且非flush
+assign	valid_o		=	i2c_valid & ~flush & ~ifence & ~state[1] | state[0];		//	如果icache命中且非flush
 assign	data_o		=	{i2c_inst, pc};
 
 assign	nstate[0]	=	~state[0] & ~state[1] & valid_o & ~ready_i & ~flush | state[0] & valid_o & ~ready_i & ~flush;

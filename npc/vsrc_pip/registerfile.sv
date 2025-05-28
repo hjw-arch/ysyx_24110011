@@ -12,7 +12,7 @@ module registerfile(
     output	[31:0]	rs2_data
 );
 
-reg [31:0] register_file [0:14];		// RV32E
+reg [31:0] register_file [0:15];		// RV32E
 
 
 always @(posedge clk) begin

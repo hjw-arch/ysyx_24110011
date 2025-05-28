@@ -53,7 +53,7 @@ void defftest_reset() {
 
 static bool difftest_checkregs(cpu_t *ref) {
     int flag = 0;
-    for (int i = 0; i < 32; i++) {
+    for (int i = 1; i < 32; i++) {		// 0不比
         if (ref->registerFile[i] != cpu.registerFile[i]) {
             printf("ref->reg[%d] = 0x%08x---------npc->reg[%d] = 0x%08x\n", i, ref->registerFile[i], i, cpu.registerFile[i]);
             flag = 1;

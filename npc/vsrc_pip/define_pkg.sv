@@ -37,12 +37,6 @@ package define_pkg;
     LOAD_TYPE_LHU  = 3'b101
   } load_type_e;
 
-  //================= Macro-like Functions (Use functions or constants) =================//
-  // 这些可以作为函数或参数化表达式使用，但 SV package 不支持宏定义。
-  // 可以在模块中使用如下逻辑代替：
-  //
-  // 示例：
-  // assign is_r_type = (opcode == OPCODE_CAL_R);
-  // assign is_srai   = (opcode == OPCODE_CAL_I) && (func3 == FUNC3_SRA);
+
 
 endpackage
