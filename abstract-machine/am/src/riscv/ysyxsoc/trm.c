@@ -57,7 +57,7 @@ void halt(int code) {
 
 void _trm_init() {
 	uart_init();
-	// print_id();
+	print_id();
 	int ret = main(mainargs);
 	halt(ret);
 }

@@ -105,7 +105,6 @@ void cpu_exec_one() {
 			cycle;
 
 			load_pip_info();
-			cycle_times++;
 		
 			pip_info_t temp_pip_info = get_pip_info();
 			cpu.pc = get_next_pc();
@@ -114,7 +113,8 @@ void cpu_exec_one() {
 			}
 			current_inst = temp_pip_info.inst;
 			current_pc = temp_pip_info.pc;
-			dynamic_insts++;
+			if(cpu.pc >= 0xa0000000) cycle_times++;
+			if(cpu.pc >= 0xa0000000) dynamic_insts++;
 			if (current_inst == ebreak) {
 				halt();
 			}
@@ -124,7 +124,7 @@ void cpu_exec_one() {
 		cycle;
 
 		load_pip_info();
-		cycle_times++;
+		if(cpu.pc >= 0xa0000000) cycle_times++;
 	
 	}
 }
