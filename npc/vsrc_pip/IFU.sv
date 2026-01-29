@@ -18,10 +18,9 @@ module IFU
     input	[31:0] 	RDATA,
     input	[1:0] 	RRESP,
 
-
 	input 			ifence,
 	input	[31:0] 	pc_target,			// 真正的PC值
-	input			flush,				// 确认推测错误
+	input			flush,				// 确认推测错误，需要刷新流水线
 
     output 			valid_o,
     output	[63:0]	data_o,
@@ -76,7 +75,7 @@ assign	c2i_valid	=	~state[0] & ~state[1];		// 只在IDLE时取指
 
 icache #(
 	.BLOCK_SIZE 	(16   ),
-	.BLOCK_NUM  	(16  ))
+	.BLOCK_NUM  	(4  ))
 u_icache (
     .clk        (clk        ),
     .rst        (rst        ),

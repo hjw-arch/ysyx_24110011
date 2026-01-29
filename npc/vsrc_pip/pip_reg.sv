@@ -9,7 +9,7 @@ module pip_reg #(
 
 	output 								pre_ready,
 	output	logic	[DATA_WAITH-1:0]	next_data,
-	output								next_valid
+	output	logic						next_valid
 );
 
 always_ff @(posedge clk) begin
