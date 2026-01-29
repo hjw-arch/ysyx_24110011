@@ -18,10 +18,9 @@ module IFU
     input	[31:0] 	RDATA,
     input	[1:0] 	RRESP,
 
-
 	input 			ifence,
 	input	[31:0] 	pc_target,			// 真正的PC值
-	input			flush,				// 确认推测错误
+	input			flush,				// 确认推测错误，需要刷新流水线
 
     output 			valid_o,
     output	[63:0]	data_o,

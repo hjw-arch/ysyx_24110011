@@ -139,7 +139,7 @@ static word_t pmem_read(paddr_t addr, int len) {
 }
 
 static void pmem_write(paddr_t addr, int len, word_t data) {
-	if (IN_UART(addr)) printf("pmem_write, %x\n", addr);
+	IFDEF(CONFIG_SOC, if (IN_UART(addr)) printf("pmem_write, %x\n", addr););
     IFDEF(CONFIG_MTRACE, mtrace_write(addr, len, data, 0));
     host_write(guest_to_host(addr), len, data);
 }
