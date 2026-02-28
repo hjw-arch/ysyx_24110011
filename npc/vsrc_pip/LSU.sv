@@ -1,4 +1,6 @@
+`include "./include/pipeline_pkt_pkg.sv"
 module LSU
+import pipeline_pkt_pkg::*;
 (
 	input 			clk,
 	input 			rst,
@@ -41,11 +43,11 @@ module LSU
 	output	[4:0]		rd_addr_hazard,
 
 	input 				valid_i,
-	input	[73:0] 		data_i,
+	input	ex2ls_pkt_t data_i,
 	output 				ready_o,
 
 	output 				valid_o,
-	output	[37:0] 		data_o,
+	output	ls2wb_pkt_t data_o,
 	input 				ready_i
 );
 
@@ -59,13 +61,26 @@ typedef enum logic [2:0] {
 } load_type_e;
 
 
+/*
+typedef struct packed {
+    logic   [31:0]  result;
+    logic   [31:0]  rs2_data;
+    logic           ls_store;
+    logic           ls_load;
+    logic   [2:0]   ls_type;
+    logic   [4:0]   rd_addr;
+} ex2ls_pkt_t;
+
+*/
+
 // 解码
-wire [31:0]		lsu_addr	=	data_i[73:42];
-wire [31:0]		lsu_wdata	=	data_i[41:10];
-wire 			lsu_store	=	data_i[9];
-wire			lsu_load	=	data_i[8];
-wire [2:0]		lsu_type	=	data_i[7:5];
-wire [4:0]		rest_data	=	data_i[4:0];
+wire [31:0]		lsu_addr	=	data_i.result;
+wire [31:0]		lsu_wdata	=	data_i.rs2_data;
+wire 			lsu_store	=	data_i.ls_store;
+wire			lsu_load	=	data_i.ls_load;
+wire [2:0]		lsu_type	=	data_i.ls_type;
+wire [4:0]      rd_addr     =   data_i.rd_addr;
+// wire [4:0]		rest_data	=	data_i[4:0];
 
 // 内部信号
 logic	[31:0]	rd_data;
@@ -99,10 +114,23 @@ end
 assign valid_o = valid_i & ~lsu_load & ~lsu_store | state & axi_done;
 assign ready_o = ~nstate;
 
-assign rd_data = lsu_load ? lsu_rdata : lsu_addr;
-assign data_o = {rd_data, lsu_load, rest_data};
+/*
+// assign data_o = {rd_data, lsu_load, rest_data};
 
-assign rd_addr_hazard = data_i[4:0] & {5{valid_i | state}};
+typedef struct packed {
+    logic   [31:0]  result;
+    logic   [4:0]   rd_addr;
+    logic           is_load;
+} ls2wb_pkt_t;
+*/
+
+assign rd_data = lsu_load ? lsu_rdata : lsu_addr;
+// assign data_o = {rd_data, lsu_load, rest_data};
+assign data_o.result    =   rd_data;
+assign data_o.rd_addr   =   data_i.rd_addr;
+assign data_o.is_load   =   lsu_load;
+
+assign rd_addr_hazard = rd_addr & {5{valid_i | state}};
 
 // AXI
 

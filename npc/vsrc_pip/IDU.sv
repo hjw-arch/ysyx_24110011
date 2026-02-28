@@ -1,26 +1,28 @@
+`include "./include/pipeline_pkt_pkg.sv"
 module IDU
+import pipeline_pkt_pkg::*;
 (
-    input 			clk,
-    input			rst,
+    input 					clk,
+    input					rst,
 
-    output	[4:0] 	rs1_addr,
-    output	[4:0] 	rs2_addr,
-    input 	[31:0] 	rs1_data,
-    input	[31:0] 	rs2_data,
+    output	[4:0] 			rs1_addr,
+    output	[4:0] 			rs2_addr,
+    input 	[31:0] 			rs1_data,
+    input	[31:0] 			rs2_data,
 
-	output	[4:0] 	id_rs1_addr,
-	output	[4:0]	id_rs2_addr,
-	input 			hazard,
-	input			flush,
-	output 			ifence,
+	output	[4:0] 			id_rs1_addr,
+	output	[4:0]			id_rs2_addr,
+	input 					hazard,
+	input					flush,
+	output 					ifence,
 
-    input			valid_i,
-    input	[63:0] 	data_i,
-    output			ready_o,
+    input					valid_i,
+    input	if2id_pkt_t		data_i,
+    output					ready_o,
 
-	output			valid_o,
-	output	[174:0]	data_o,
-	input 			ready_i
+	output					valid_o,
+	output	id2ex_pkt_t		data_o,
+	input 					ready_i
 );
 
 //================= OPCODE Definitions =================//
@@ -74,9 +76,9 @@ typedef enum logic [1:0] {
 assign id_rs1_addr = rs1_addr_hazard & {5{valid_i | state}};
 assign id_rs2_addr = rs2_addr_hazard & {5{valid_i | state}};
 
-
-wire [31:0] inst	=	data_i[63:32];
-wire [31:0] pc		=	data_i[31:0];
+// input
+wire [31:0] inst	=	data_i.inst;
+wire [31:0] pc		=	data_i.pc;
 
 
 logic [4:0]	 rd_addr;
@@ -126,7 +128,56 @@ assign ready_o = ready_i & ~hazard;
 assign rs1_addr	= inst[19:15];
 assign rs2_addr	= inst[24:20];
 
-assign data_o = {alu_op, rs1_addr_hazard, rs2_addr_hazard, alu_src_sel, rs1_data, rs2_data, pc, imm, is_jump, is_jalr, is_branch, branch_cond, csr_wen, csr_cmd, csr_ecall, csr_mret, csr_addr, ls_store, ls_load, ls_type, rd_addr};
+/*
+typedef struct packed {
+    logic   [3:0]   alu_op;
+    logic   [4:0]   rs1_addr;       // 特殊处理后的值，待补充
+    logic   [4:0]   rs2_addr;       // 特殊处理后的值，待补充
+    logic   [1:0]   alu_src_sel;
+    logic   [31:0]  rs1_data;
+    logic   [31:0]  rs2_data;
+    logic   [31:0]  pc;
+    logic   [31:0]  imm;
+    logic           is_jump;
+    logic           is_jalr;
+    logic           is_branch;
+    logic   [1:0]   branch_cond;
+    logic           csr_wen;
+    logic           csr_cmd;
+    logic           csr_ecall;
+    logic           csr_mret;
+    logic   [11:0]  csr_addr;
+    logic           ls_store;
+    logic           ls_load;
+    logic   [2:0]   ls_type;
+    logic   [4:0]   rd_addr;
+} id2ex_pkt_t;
+*/
+
+// output
+// assign data_o = {alu_op, rs1_addr_hazard, rs2_addr_hazard, alu_src_sel, rs1_data, rs2_data, pc, imm, is_jump, is_jalr, is_branch, branch_cond, csr_wen, csr_cmd, csr_ecall, csr_mret, csr_addr, ls_store, ls_load, ls_type, rd_addr};
+assign data_o.alu_op		=	alu_op;
+assign data_o.rs1_addr		=	rs1_addr_hazard;
+assign data_o.rs2_addr		=	rs2_addr_hazard;
+assign data_o.alu_src_sel	=	alu_src_sel;
+assign data_o.rs1_data		=	rs1_data;
+assign data_o.rs2_data		=	rs2_data;
+assign data_o.pc			=	pc;
+assign data_o.imm			=	imm;
+assign data_o.is_jump		=	is_jump;
+assign data_o.is_jalr		=	is_jalr;
+assign data_o.is_branch		=	is_branch;
+assign data_o.branch_cond	=	branch_cond;
+assign data_o.csr_wen		=	csr_wen;
+assign data_o.csr_cmd		=	csr_cmd;
+assign data_o.csr_ecall		=	csr_ecall;
+assign data_o.csr_mret		=	csr_mret;
+assign data_o.csr_addr		=	csr_addr;
+assign data_o.ls_store		=	ls_store;
+assign data_o.ls_load		=	ls_load;
+assign data_o.ls_type		=	ls_type;
+assign data_o.rd_addr		=	rd_addr;
+
 
 /********************************************** DATA ****************************************/
 assign opcode = inst[6:2];
