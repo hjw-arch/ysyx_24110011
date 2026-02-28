@@ -1,4 +1,6 @@
-module ysyx_24110011 (
+module ysyx_24110011 
+import pipeline_pkt_pkg::*;
+(
     input 			clock,
     input 			reset,/* verilator lint_off UNUSEDSIGNAL */
     input 			io_interrupt,
@@ -95,39 +97,39 @@ assign io_slave_rid     	= 	4'b0000;
 
 // IF
 logic 			ifu_valid_o;
-logic [63:0]	ifu_data_o;
+if2id_pkt_t		ifu_data_o;
 logic			ifu_ready_i;
 
 // ID
 logic 			idu_valid_i;
-logic [63:0]	idu_data_i;
+if2id_pkt_t		idu_data_i;
 logic 			idu_ready_o;
 logic 			idu_valid_o;
-logic [174:0]	idu_data_o;
+id2ex_pkt_t		idu_data_o;
 logic			idu_ready_i;
 
 // EX
 logic [4:0]		exu_rd_addr;
 logic			exu_valid_i;
-logic [174:0]	exu_data_i;
+id2ex_pkt_t		exu_data_i;
 logic			exu_ready_o;
 logic			exu_valid_o;
-logic [73:0]	exu_data_o;
+ex2ls_pkt_t		exu_data_o;
 logic			exu_ready_i;
 
 // LS
 logic [4:0]		lsu_rd_addr;
 logic			lsu_valid_i;
-logic [73:0]	lsu_data_i;
+ex2ls_pkt_t		lsu_data_i;
 logic			lsu_ready_o;
 logic			lsu_valid_o;
-logic [37:0]	lsu_data_o;
+ls2wb_pkt_t		lsu_data_o;
 logic			lsu_ready_i;
 
 // WB
 logic [4:0]		wbu_rd_addr;
 logic			wbu_valid_i;
-logic [37:0]	wbu_data_i;
+ls2wb_pkt_t		wbu_data_i;
 logic			wbu_ready_o;
 
 
@@ -180,7 +182,7 @@ IFU u_IFU(
 
 
 pip_reg #(
-	.DATA_WAITH 	(64  ))
+	.DATA_WIDTH 	($bits(if2id_pkt_t)))
 u_if2id_pip(
 	.clk        	(clock       ),
 	.pre_valid  	(ifu_valid_o ),
@@ -216,7 +218,7 @@ IDU u_IDU(
 
 
 pip_reg #(
-	.DATA_WAITH 	(175  ))
+	.DATA_WIDTH 	($bits(id2ex_pkt_t)))
 u_id2ex_pip(
 	.clk        	(clock       ),
 	.pre_valid  	(idu_valid_o ),
@@ -246,7 +248,7 @@ EXU u_EXU(
 
 
 pip_reg #(
-	.DATA_WAITH 	(74  ))
+	.DATA_WIDTH 	($bits(ex2ls_pkt_t)))
 u_ex2ls_pip(
 	.clk        	(clock       ),
 	.pre_valid  	(exu_valid_o ),
@@ -303,7 +305,7 @@ LSU u_LSU(
 
 
 pip_reg #(
-	.DATA_WAITH 	(38  ))
+	.DATA_WIDTH 	($bits(ls2wb_pkt_t)))
 u_ls2wb_pip(
 	.clk        	(clock       ),
 	.pre_valid  	(lsu_valid_o ),

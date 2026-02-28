@@ -1,4 +1,6 @@
-module EXU(
+module EXU
+import pipeline_pkt_pkg::*;
+(
 	input				clk,
 	input 				rst,
 
@@ -7,32 +9,32 @@ module EXU(
 	output 	[4:0]		rd_addr_hazard,
 
 	input 				valid_i,
-	input	[174:0]		data_i,
+	input	id2ex_pkt_t	data_i,
 	output 				ready_o,
 
 	output 				valid_o,
-	output 	[73:0]		data_o,
+	output 	ex2ls_pkt_t	data_o,
 	input				ready_i
 );
 
-
+// input
 // data_i解码
-wire [3:0]		alu_op			=	data_i[174:171];
-wire [1:0]		alu_src_sel		=	data_i[160:159];
-wire [31:0]		rs1_data		=	data_i[158:127];
-wire [31:0]		rs2_data		=	data_i[126:95];
-wire [31:0]		pc				=	data_i[94:63];
-wire [31:0]		imm				=	data_i[62:31];
-wire			is_jump			=	data_i[30];
-wire			is_jalr			=	data_i[29];
-wire			is_branch		=	data_i[28];
-wire [1:0]		branch_cond		=	data_i[27:26];
-wire			csr_wen			=	data_i[25];
-wire			csr_cmd			=	data_i[24];
-wire			csr_ecall		=	data_i[23];
-wire			csr_mret		=	data_i[22];
-wire [11:0]		csr_addr		=	data_i[21:10];
-wire [9:0]		rest_data		=	data_i[9:0];
+wire [3:0]		alu_op			=	data_i.alu_op;
+wire [1:0]		alu_src_sel		=	data_i.alu_src_sel;
+wire [31:0]		rs1_data		=	data_i.rs1_data;
+wire [31:0]		rs2_data		=	data_i.rs2_data;
+wire [31:0]		pc				=	data_i.pc;
+wire [31:0]		imm				=	data_i.imm;
+wire			is_jump			=	data_i.is_jump;
+wire			is_jalr			=	data_i.is_jalr;
+wire			is_branch		=	data_i.is_branch;
+wire [1:0]		branch_cond		=	data_i.branch_cond;
+wire			csr_wen			=	data_i.csr_wen;
+wire			csr_cmd			=	data_i.csr_cmd;
+wire			csr_ecall		=	data_i.csr_ecall;
+wire			csr_mret		=	data_i.csr_mret;
+wire [11:0]		csr_addr		=	data_i.csr_addr;
+wire [4:0]		rd_addr			=	data_i.rd_addr;
 
 
 // 状态机
@@ -106,8 +108,15 @@ logic [31:0]	exu_result;
 assign			exu_result = csr_wen ? csr_rdata : alu_result;
 
 
-// 传递给lsu
-assign data_o = {exu_result, rs2_data, rest_data};
+// output
+
+// assign data_o = {exu_result, rs2_data, rest_data};
+assign data_o.result	=	exu_result;
+assign data_o.rs2_data	=	rs2_data;
+assign data_o.ls_store	=	data_i.ls_store;
+assign data_o.ls_load	=	data_i.ls_load;
+assign data_o.ls_type	=	data_i.ls_type;
+assign data_o.rd_addr	=	data_i.rd_addr;
 
 
 // 计算真PC
@@ -140,6 +149,6 @@ assign pc_target = pc_target_temp;
 
 assign	flush = is_jump & valid_i | is_branch & branch_valid & valid_i | csr_ecall & valid_i | csr_mret & valid_i;
 
-assign rd_addr_hazard = data_i[4:0] & {5{valid_i | state}};
+assign rd_addr_hazard = rd_addr & {5{valid_i | state}};
 
 endmodule

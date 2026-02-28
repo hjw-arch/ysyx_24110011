@@ -1,30 +1,31 @@
 module IFU
+import pipeline_pkt_pkg::*;
 (
-    input			clk,
-    input			rst,
+    input			        clk,
+    input			        rst,
 
-    output	[31:0] 	ARADDR,
-    output			ARVALID,
-    output 			RREADY,
-    output	[3:0] 	ARID,
-    output	[7:0] 	ARLEN,
-    output	[2:0] 	ARSIZE,
-    output	[1:0] 	ARBURST,
+    output	[31:0] 	        ARADDR,
+    output			        ARVALID,
+    output 			        RREADY,
+    output	[3:0] 	        ARID,
+    output	[7:0] 	        ARLEN,
+    output	[2:0] 	        ARSIZE,
+    output	[1:0] 	        ARBURST,
 
-    input 			ARREADY,
-    input 			RVALID,
-    input 			RLAST,
-    input	[3:0] 	RID,
-    input	[31:0] 	RDATA,
-    input	[1:0] 	RRESP,
+    input 			        ARREADY,
+    input 			        RVALID,
+    input 			        RLAST,
+    input	[3:0] 	        RID,
+    input	[31:0] 	        RDATA,
+    input	[1:0] 	        RRESP,
 
-	input 			ifence,
-	input	[31:0] 	pc_target,			// 真正的PC值
-	input			flush,				// 确认推测错误，需要刷新流水线
+	input 			        ifence,
+	input	[31:0] 	        pc_target,			// 真正的PC值
+	input			        flush,				// 确认推测错误，需要刷新流水线
 
-    output 			valid_o,
-    output	[63:0]	data_o,
-    input 			ready_i
+    output 			        valid_o,
+    output	if2id_pkt_t     data_o,
+    input 			        ready_i
 );
 
 `define PC_VECTOR 	32'h30000000
@@ -62,15 +63,15 @@ end
 
 // flush、ifence可能需要缓存, 设计好后续再说
 assign	valid_o		=	i2c_valid & ~flush & ~ifence & ~state[1] | state[0];		//	如果icache命中且非flush
-assign	data_o		=	{i2c_inst, pc};
+assign  data_o.inst =   i2c_inst;
+assign  data_o.pc   =   pc;
+// assign	data_o		=	{i2c_inst, pc};
 
 assign	nstate[0]	=	~state[0] & ~state[1] & valid_o & ~ready_i & ~flush | state[0] & valid_o & ~ready_i & ~flush;
 assign	nstate[1]	=	flush & i2c_in_mem | state[1] & ~i2c_valid;
 
 assign	c2i_addr	=	pc;
 assign	c2i_valid	=	~state[0] & ~state[1];		// 只在IDLE时取指
-
-
 
 
 icache #(

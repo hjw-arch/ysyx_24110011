@@ -1,14 +1,14 @@
 module pip_reg #(
-	parameter	DATA_WAITH	=	64
+	parameter	DATA_WIDTH	=	64
 )(
 	input								clk,
 
 	input 								pre_valid,
-	input			[DATA_WAITH-1:0]	pre_data,
+	input			[DATA_WIDTH-1:0]	pre_data,
 	input								next_ready,
 
 	output 								pre_ready,
-	output	logic	[DATA_WAITH-1:0]	next_data,
+	output	logic	[DATA_WIDTH-1:0]	next_data,
 	output	logic						next_valid
 );
 

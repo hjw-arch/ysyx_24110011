@@ -54,7 +54,8 @@ SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
 SIM_VINC            = $(abspath ./vsrc_pip)
 SIM_CLFAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
-SIM_VSRC            = $(shell find $(abspath ./vsrc_pip) -name "*.v" -or -name "*.sv")
+SIM_PKG				= $(shell find $(abspath ./vsrc_pip/include) -name "*.sv")			# pkg 需要被优先编译
+SIM_VSRC            = $(SIM_PKG) $(shell find $(abspath ./vsrc_pip) -name "*.v" -or -name "*.sv" ! -path "*/include/*")
 SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv %define_pkg.sv, $(SIM_VSRC))
 SIM_CSRC            = $(shell find $(abspath ./csrc/src) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
 ## LLVM参数

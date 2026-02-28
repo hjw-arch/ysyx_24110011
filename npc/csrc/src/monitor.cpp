@@ -157,6 +157,7 @@ int main(int argc, char *argv[]) {
 		tfp.close();
 
 #endif
+    exit(0);
 }
 
 
