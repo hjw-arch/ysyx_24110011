@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
 
 #ifdef WAVE
 
-		tfp.close();
+	tfp.close();
 
 #endif
     exit(0);

@@ -1,3 +1,4 @@
+`include "./include/pipeline_pkt_pkg.sv"
 module IFU
 import pipeline_pkt_pkg::*;
 (

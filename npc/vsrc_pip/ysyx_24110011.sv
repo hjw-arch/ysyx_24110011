@@ -1,4 +1,5 @@
-module ysyx_24110011 
+`include "./include/pipeline_pkt_pkg.sv"
+module ysyx_24110011
 import pipeline_pkt_pkg::*;
 (
     input 			clock,

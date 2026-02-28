@@ -1,3 +1,6 @@
+`ifndef PIPELINE_PKT_PKG_DEFINED
+`define PIPELINE_PKT_PKG_DEFINED
+
 package pipeline_pkt_pkg;
 
 typedef struct packed {
@@ -51,3 +54,5 @@ typedef struct packed {
 } ls2wb_pkt_t;
     
 endpackage
+
+`endif
