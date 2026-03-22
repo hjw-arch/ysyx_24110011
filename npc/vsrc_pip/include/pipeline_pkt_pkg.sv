@@ -28,6 +28,7 @@ typedef struct packed {
     logic           csr_ecall;
     logic           csr_mret;
     logic   [11:0]  csr_addr;
+    logic           is_fence_i;
     logic           ls_store;
     logic           ls_load;
     logic   [2:0]   ls_type;
@@ -39,6 +40,8 @@ typedef struct packed {
 typedef struct packed {
     logic   [31:0]  result;
     logic   [31:0]  rs2_data;
+    logic           is_fence_i;
+    logic   [31:0]  pc;
     logic           ls_store;
     logic           ls_load;
     logic   [2:0]   ls_type;

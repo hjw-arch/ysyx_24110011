@@ -41,6 +41,8 @@ import pipeline_pkt_pkg::*;
     output				BREADY,
 	
 	output	[4:0]		rd_addr_hazard,
+    output              invalidate_ic_o,
+    output  [31:0]      pc_target_o,
 
 	input 				valid_i,
 	input	ex2ls_pkt_t data_i,
@@ -130,7 +132,9 @@ assign data_o.result    =   rd_data;
 assign data_o.rd_addr   =   data_i.rd_addr;
 assign data_o.is_load   =   lsu_load;
 
-assign rd_addr_hazard = rd_addr & {5{valid_i | state}};
+assign rd_addr_hazard   =   rd_addr & {5{valid_i | state}};
+assign invalidate_ic_o  =   data_i.is_fence_i & valid_i & ready_o;      // 只发一次
+assign pc_target_o      =   data_i.pc + 32'h4;
 
 // AXI
 
