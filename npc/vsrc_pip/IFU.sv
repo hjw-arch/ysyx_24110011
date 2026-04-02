@@ -20,93 +20,165 @@ import pipeline_pkt_pkg::*;
     input	[31:0] 	        RDATA,
     input	[1:0] 	        RRESP,
 
-	input 			        ifence,
-	input	[31:0] 	        pc_target,			// 真正的PC值
-	input			        flush,				// 确认推测错误，需要刷新流水线
+	input 			        invalidate_ic_i,
+	input	[31:0] 	        flush_addr_i,			// 真正的PC值
+	input			        flush_i,				// 确认推测错误，需要刷新流水线
 
     output 			        valid_o,
     output	if2id_pkt_t     data_o,
     input 			        ready_i
 );
 
-`define PC_VECTOR 	32'h30000000
-`define HANDSHAKE 	valid_o & ready_i
+localparam  RST_PC   =   32'h30000000;
 
-localparam		IDLE = 2'b00;
-localparam		WAIT_READY = 2'b01;
-localparam		FLUSHING = 2'b10;
+// ==========================================
+// 内部信号 —— IFU ↔ ICache
+// ==========================================
+
+logic				ic_req_valid;
+logic	[31:0]		ic_req_addr;
+logic				ic_req_epoch;
+logic				ic_req_ready;
+
+logic				ic_resp_valid;
+logic	[31:0]		ic_resp_data;
+logic	[31:0]		ic_resp_addr;
+logic				ic_resp_epoch;/* verilator lint_off UNUSEDSIGNAL */
+logic               ic_resp_err;
+logic				ic_resp_ready;
 
 
-logic	[1:0]	state, nstate;										// 00: IDLE, 01: WAIT_READY, 10: FLUSHING
-logic	[31:0]	pc;
 
-logic	[31:0]	c2i_addr;
-logic			c2i_valid;
+// ==========================================
+// 1. PC 寄存器
+// ==========================================
+wire	ic_req_fire	= ic_req_valid & ic_req_ready;
 
-logic			i2c_valid;
-logic	[31:0]	i2c_inst;
-logic			i2c_in_mem;
+logic   [31:0]  pc_r, pc_n;
 
+assign pc_n	=	flush_i ? flush_addr_i : 
+				ic_req_fire ? pc_r + 4 : 
+				pc_r;
 
-
-always_ff @(posedge clk) begin								// 状态机
-	state <= rst ? 2'b0 : nstate;
+always_ff @(posedge clk) begin
+    if (rst) begin
+        pc_r <= RST_PC; 
+    end else begin
+        pc_r <= pc_n; 
+    end
 end
 
 
-always_ff @(posedge clk) begin								// PC
+// ==========================================
+// 2. Epoch 寄存器
+// ==========================================
+logic	epoch_r, epoch_n;		// 1/2级流水线最多一个在途请求，因此1 bit epoch已经足够
+assign	epoch_n	= flush_i ? ~epoch_r : epoch_r;
+
+always_ff @(posedge clk) begin
 	if (rst) begin
-		pc <= `PC_VECTOR;
+		epoch_r <= 1'b0;		// 是否存在复位必要？即使不存在在逻辑上也能走通
 	end else begin
-		pc <= flush ? pc_target : (`HANDSHAKE) ? pc + 4 : pc;
+		epoch_r <= epoch_n;
 	end
 end
 
-// flush、ifence可能需要缓存, 设计好后续再说
-assign	valid_o		=	i2c_valid & ~flush & ~ifence & ~state[1] | state[0];		//	如果icache命中且非flush
-assign  data_o.inst =   i2c_inst;
-assign  data_o.pc   =   pc;
-// assign	data_o		=	{i2c_inst, pc};
 
-assign	nstate[0]	=	~state[0] & ~state[1] & valid_o & ~ready_i & ~flush | state[0] & valid_o & ~ready_i & ~flush;
-assign	nstate[1]	=	flush & i2c_in_mem | state[1] & ~i2c_valid;
-
-assign	c2i_addr	=	pc;
-assign	c2i_valid	=	~state[0] & ~state[1];		// 只在IDLE时取指
+// ==========================================
+// 3. 对 ICache 的请求
+// ==========================================
+assign	ic_req_valid	=	~invalidate_ic_i;
+assign	ic_req_addr		=	flush_i ? flush_addr_i : pc_r;
+assign	ic_req_epoch	=	flush_i ? ~epoch_r : epoch_r;
 
 
+// ==========================================
+// 4. 对下游的输出
+// ==========================================
+wire	epoch_match	= ic_resp_epoch ~^ epoch_r;
+
+assign	valid_o		= ic_resp_valid & epoch_match;
+assign	data_o.inst = ic_resp_data;
+assign	data_o.pc	= ic_resp_addr;
+
+// ready 信号
+//	epoch 匹配 -> if/id反压
+//	epoch 不匹配 -> 直接消费
+assign	ic_resp_ready = epoch_match ? ready_i : 1'b1;
+
+
+// ==========================================
+// 5. Refill 通道内部连线（icache ↔ adapter）
+// ==========================================
+logic                   refill_req_valid;
+logic [31:0]            refill_req_addr;
+logic                   refill_req_ready;
+logic                   refill_resp_valid;
+logic [127:0]           refill_resp_data;
+logic                   refill_resp_err;
+logic                   refill_resp_ready;
+
+
+// ==========================================
+// 6. ICache 例化
+// ==========================================
 icache #(
-	.BLOCK_SIZE 	(16   ),
-	.BLOCK_NUM  	(4  ))
-u_icache (
-    .clk        (clk        ),
-    .rst        (rst        ),
-
-    .addr_i		(c2i_addr   ),
-    .valid_i	(c2i_valid  ),
-	.flush		(flush		),
-    .valid_o	(i2c_valid  ),
-    .data_o		(i2c_inst   ),
-	.in_mem		(i2c_in_mem ),
-    .ifence		(ifence ),
-
-    .ARADDR     (ARADDR     ),
-    .ARVALID    (ARVALID    ),
-    .RREADY     (RREADY     ),
-    .ARID       (ARID       ),
-    .ARLEN      (ARLEN      ),
-    .ARSIZE     (ARSIZE     ),
-    .ARBURST    (ARBURST    ),
-
-    .ARREADY    (ARREADY    ),
-    .RVALID     (RVALID     ),
-    .RLAST      (RLAST      ),
-    .RID        (RID        ),
-    .RDATA      (RDATA      ),
-    .RRESP      (RRESP      )
+    .ADDR_WIDTH(32),
+    .LINE_BYTES(16),
+    .NUM_LINES (4)
+) u_icache (
+    .clk                (clk),
+    .rst                (rst),
+    // IFU ↔ ICache
+    .req_valid_i        (ic_req_valid),
+    .req_addr_i         (ic_req_addr),
+    .req_epoch_i        (ic_req_epoch),
+    .req_ready_o        (ic_req_ready),
+    .resp_valid_o       (ic_resp_valid),
+    .resp_data_o        (ic_resp_data),
+    .resp_addr_o        (ic_resp_addr),
+    .resp_epoch_o       (ic_resp_epoch),
+    .resp_err_o         (ic_resp_err),
+    .resp_ready_i       (ic_resp_ready),
+    .invalidate_all_i   (invalidate_ic_i),
+    // ICache ↔ Adapter
+    .refill_req_valid_o (refill_req_valid),
+    .refill_req_addr_o  (refill_req_addr),
+    .refill_req_ready_i (refill_req_ready),
+    .refill_resp_valid_i(refill_resp_valid),
+    .refill_resp_data_i (refill_resp_data),
+    .refill_resp_err_i  (refill_resp_err),
+    .refill_resp_ready_o(refill_resp_ready)
 );
-
-
+// ==========================================
+// 7. AXI Read Adapter 例化
+// ==========================================
+axi_read_adapter u_axi_adapter (
+    .clk                (clk),
+    .rst                (rst),
+    // Adapter ↔ ICache
+    .req_valid_i        (refill_req_valid),
+    .req_addr_i         (refill_req_addr),
+    .req_ready_o        (refill_req_ready),
+    .resp_valid_o       (refill_resp_valid),
+    .resp_data_o        (refill_resp_data),
+    .resp_err_o         (refill_resp_err),
+    .resp_ready_i       (refill_resp_ready),
+    // Adapter ↔ AXI Bus
+    .ARADDR             (ARADDR),
+    .ARVALID            (ARVALID),
+    .ARLEN              (ARLEN),
+    .ARSIZE             (ARSIZE),
+    .ARBURST            (ARBURST),
+    .ARID               (ARID),
+    .ARREADY            (ARREADY),
+    .RDATA              (RDATA),
+    .RVALID             (RVALID),
+    .RLAST              (RLAST),
+    .RRESP              (RRESP),
+    .RID                (RID),
+    .RREADY             (RREADY)
+);
 
 /************************** 性能计数器 *****************************/
 

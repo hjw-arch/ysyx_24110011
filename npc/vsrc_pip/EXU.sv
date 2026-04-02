@@ -38,16 +38,7 @@ wire [11:0]		csr_addr		=	data_i.csr_addr;
 wire [4:0]		rd_addr			=	data_i.rd_addr;
 
 
-// 状态机
-logic	state, nstate;
-
-always_ff @(posedge clk) begin
-	state <= rst ? 1'b0 : nstate;
-end
-
-assign nstate	=	valid_o & ~ready_i;
-
-assign valid_o	=	valid_i | state;
+assign valid_o	=	valid_i;
 assign ready_o	=	ready_i;
 
 // 筛选
@@ -112,12 +103,14 @@ assign			exu_result = csr_wen ? csr_rdata : alu_result;
 // output
 
 // assign data_o = {exu_result, rs2_data, rest_data};
-assign data_o.result	=	exu_result;
-assign data_o.rs2_data	=	rs2_data;
-assign data_o.ls_store	=	data_i.ls_store;
-assign data_o.ls_load	=	data_i.ls_load;
-assign data_o.ls_type	=	data_i.ls_type;
-assign data_o.rd_addr	=	data_i.rd_addr;
+assign data_o.result		=	exu_result;
+assign data_o.rs2_data		=	rs2_data;
+assign data_o.is_fence_i	=	data_i.is_fence_i;
+assign data_o.pc			=	data_i.pc;
+assign data_o.ls_store		=	data_i.ls_store;
+assign data_o.ls_load		=	data_i.ls_load;
+assign data_o.ls_type		=	data_i.ls_type;
+assign data_o.rd_addr		=	data_i.rd_addr;
 
 
 // 计算真PC
@@ -150,6 +143,6 @@ assign pc_target = pc_target_temp;
 
 assign	flush = is_jump & valid_i | is_branch & branch_valid & valid_i | csr_ecall & valid_i | csr_mret & valid_i;
 
-assign rd_addr_hazard = rd_addr & {5{valid_i | state}};
+assign rd_addr_hazard = rd_addr & {5{valid_i}};
 
 endmodule
