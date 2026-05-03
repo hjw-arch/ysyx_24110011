@@ -14,7 +14,7 @@ ifeq ($(MAKECMDGOALS),)
 endif
 
 ### Override checks when `make clean/clean-all/html`
-ifeq ($(findstring $(MAKECMDGOALS),clean|clean-all|html),)
+ifeq ($(findstring $(MAKECMDGOALS),clean|clean-all|html|menuconfig),)
 
 ### Print build info message
 $(info # Building $(NAME)-$(MAKECMDGOALS) [$(ARCH)])

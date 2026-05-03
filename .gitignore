@@ -10,6 +10,8 @@
 !/RT-Thread/*
 !Makefile
 !README.md
+!AGENTS.md
+!CLAUDE.md
 !.gitignore
 !init.sh
 !/ysyxSoC/*
