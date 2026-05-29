@@ -20,7 +20,7 @@ import pipeline_pkt_pkg::*;
     input	[31:0] 	        RDATA,
     input	[1:0] 	        RRESP,
 
-	input 			        invalidate_ic_i,
+	input 			        inval_icache_i,         // icache内容失效
 	input	[31:0] 	        flush_addr_i,			// 真正的PC值
 	input			        flush_i,				// 确认推测错误，需要刷新流水线
 
@@ -37,13 +37,11 @@ localparam  RST_PC   =   32'h30000000;
 
 logic				ic_req_valid;
 logic	[31:0]		ic_req_addr;
-logic				ic_req_epoch;
 logic				ic_req_ready;
 
 logic				ic_resp_valid;
 logic	[31:0]		ic_resp_data;
-logic	[31:0]		ic_resp_addr;
-logic				ic_resp_epoch;/* verilator lint_off UNUSEDSIGNAL */
+logic	[31:0]		ic_resp_addr;/* verilator lint_off UNUSEDSIGNAL */
 logic               ic_resp_err;
 logic				ic_resp_ready;
 
@@ -56,7 +54,7 @@ wire	ic_req_fire	= ic_req_valid & ic_req_ready;
 
 logic   [31:0]  pc_r, pc_n;
 
-assign pc_n	=	flush_i ? flush_addr_i : 
+assign pc_n	=	flush_i ? flush_addr_i :            // 这里当前设置为flush当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
 				ic_req_fire ? pc_r + 4 : 
 				pc_r;
 
@@ -68,43 +66,23 @@ always_ff @(posedge clk) begin
     end
 end
 
-
 // ==========================================
-// 2. Epoch 寄存器
+// 2. 对 ICache 的请求
 // ==========================================
-logic	epoch_r, epoch_n;		// 1/2级流水线最多一个在途请求，因此1 bit epoch已经足够
-assign	epoch_n	= flush_i ? ~epoch_r : epoch_r;
-
-always_ff @(posedge clk) begin
-	if (rst) begin
-		epoch_r <= 1'b0;		// 是否存在复位必要？即使不存在在逻辑上也能走通
-	end else begin
-		epoch_r <= epoch_n;
-	end
-end
+assign	ic_req_valid	=	~flush_i;
+assign	ic_req_addr		=	pc_r;
 
 
 // ==========================================
-// 3. 对 ICache 的请求
+// 3. 对下游的输出
 // ==========================================
-assign	ic_req_valid	=	~invalidate_ic_i;
-assign	ic_req_addr		=	flush_i ? flush_addr_i : pc_r;
-assign	ic_req_epoch	=	flush_i ? ~epoch_r : epoch_r;
 
-
-// ==========================================
-// 4. 对下游的输出
-// ==========================================
-wire	epoch_match	= ic_resp_epoch ~^ epoch_r;
-
-assign	valid_o		= ic_resp_valid & epoch_match;
+assign	valid_o		= ic_resp_valid & ~flush_i;
 assign	data_o.inst = ic_resp_data;
 assign	data_o.pc	= ic_resp_addr;
 
 // ready 信号
-//	epoch 匹配 -> if/id反压
-//	epoch 不匹配 -> 直接消费
-assign	ic_resp_ready = epoch_match ? ready_i : 1'b1;
+assign	ic_resp_ready = flush_i | ready_i;
 
 
 // ==========================================
@@ -132,15 +110,14 @@ icache #(
     // IFU ↔ ICache
     .req_valid_i        (ic_req_valid),
     .req_addr_i         (ic_req_addr),
-    .req_epoch_i        (ic_req_epoch),
     .req_ready_o        (ic_req_ready),
     .resp_valid_o       (ic_resp_valid),
     .resp_data_o        (ic_resp_data),
     .resp_addr_o        (ic_resp_addr),
-    .resp_epoch_o       (ic_resp_epoch),
     .resp_err_o         (ic_resp_err),
     .resp_ready_i       (ic_resp_ready),
-    .invalidate_all_i   (invalidate_ic_i),
+    .kill_i             (flush_i),
+    .inval_i            (inval_icache_i),
     // ICache ↔ Adapter
     .refill_req_valid_o (refill_req_valid),
     .refill_req_addr_o  (refill_req_addr),

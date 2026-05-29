@@ -1,3 +1,4 @@
+// error暂不实现
 module icache #(
     parameter   ADDR_WIDTH          =   32,
     parameter   LINE_BYTES          =   16,
@@ -18,17 +19,16 @@ module icache #(
     // ifu    <---->    icache
     input                       req_valid_i,
     input   [ADDR_WIDTH-1:0]    req_addr_i,
-    input                       req_epoch_i,
     output                      req_ready_o,
 
     output                      resp_valid_o,
     output  [DATA_WIDTH-1:0]    resp_data_o,
     output  [ADDR_WIDTH-1:0]    resp_addr_o,
-    output                      resp_epoch_o,
     output                      resp_err_o,
     input                       resp_ready_i,
 
-    input                       invalidate_all_i,
+    input                       kill_i,
+    input                       inval_i,
 
     // icache    <---->    axi
     output                      refill_req_valid_o,
@@ -59,7 +59,7 @@ logic [TAG_WIDTH-1:0]       miss_tag_r;
 logic [INDEX_WIDTH-1:0]     miss_index_r;
 logic [OFFSET_WIDTH-1:0]    miss_offset_r;
 logic [ADDR_WIDTH-1:0]      miss_addr_r;
-logic                       miss_epoch_r;
+logic                       miss_kill_r;            // 用于杀掉在途请求的写回
 
 
 /*============================================================
@@ -77,7 +77,10 @@ wire                    entry_valid;
 wire [TAG_WIDTH-1:0]    entry_tag;
 wire [LINE_WIDTH-1:0]   entry_data;
 
-wire                    refill_resp_fire = refill_resp_valid_i & refill_resp_ready_o;
+wire    kill_any    =   kill_i | inval_i;
+wire    refill_resp_fire = refill_resp_valid_i & refill_resp_ready_o;
+wire    drop_refill = miss_kill_r | kill_any;                     // 这里的关键权衡：对于我们这种小icache，flush掉的内容不写回cache可能更好
+wire    refill_valid = refill_resp_fire & ~drop_refill;
 
 icache_array #(
     .ADDR_WIDTH (ADDR_WIDTH),
@@ -90,33 +93,34 @@ icache_array #(
     .entry_valid_o      (entry_valid),
     .entry_tag_o        (entry_tag),
     .entry_data_o       (entry_data),
-    .fill_valid_i       (refill_resp_fire),
+    .fill_valid_i       (refill_valid),
     .fill_idx_i         (miss_index_r),
     .fill_tag_i         (miss_tag_r),
     .fill_data_i        (refill_resp_data_i),
-    .invalidate_all_i   (invalidate_all_i)
+    .invalidate_all_i   (inval_i)                   // inval的时候，不会发生同时读写，先读后inval，而且inval的时候不会有读请求
 );
 
 
 /*============================================================
  *  5. Hit/Miss 判断
  *============================================================*/
-wire hit = entry_valid & (entry_tag == tag) & ~invalidate_all_i;
+wire array_hit = entry_valid & (entry_tag == tag);
+wire can_accept_req = (state == S_IDLE) & ~kill_any;
 
 /*============================================================
  *  6. 握手信号
  *============================================================*/
 wire req_fire         = req_valid_i & req_ready_o;
-wire req_miss         = req_fire & ~hit;
-
+wire req_hit          = req_fire & array_hit;
+wire req_miss         = req_fire & ~array_hit;
 
 /*============================================================
  *  7. FSM
  *============================================================*/
 always_comb begin
     unique case (state)
-        S_IDLE: nstate = req_miss         ? S_MISS : S_IDLE;
-        S_MISS: nstate = refill_resp_fire ? S_IDLE : S_MISS;
+        S_IDLE: nstate = req_miss           ? S_MISS : S_IDLE;      // flush当拍不会接受请求，req_miss包含了kill的情况
+        S_MISS: nstate = refill_resp_fire   ? S_IDLE : S_MISS;
     endcase
 end
 
@@ -132,7 +136,16 @@ always_ff @(posedge clk) begin
     miss_index_r  <= req_miss ? index           :   miss_index_r;
     miss_offset_r <= req_miss ? offset          :   miss_offset_r;
     miss_addr_r   <= req_miss ? req_addr_i      :   miss_addr_r;
-    miss_epoch_r  <= req_miss ? req_epoch_i     :   miss_epoch_r;
+end
+
+// 本拍发生flush，但本拍还没有消费掉 refill response，才需要记住 kill
+wire kill_set = (state == S_MISS) & kill_any & ~refill_resp_fire;
+
+always_ff @(posedge clk) begin
+    if (rst) 
+        miss_kill_r <= 1'b0;
+    else
+        miss_kill_r <= (miss_kill_r | kill_set) & ~refill_resp_fire;
 end
 
 
@@ -151,7 +164,7 @@ end
 
 assign refill_req_valid_o  = refill_req_valid;
 assign refill_req_addr_o   = {miss_tag_r, miss_index_r, {OFFSET_WIDTH{1'b0}}};
-assign refill_resp_ready_o = (state == S_MISS) & resp_ready_i;
+assign refill_resp_ready_o = (state == S_MISS) & (drop_refill | resp_ready_i);
 
 
 /*============================================================
@@ -166,11 +179,10 @@ wire [LINE_WIDTH-1:0] sel_line = (state == S_IDLE) ? entry_data : refill_resp_da
 /*============================================================
  *  11. IFU 侧输出
  *============================================================*/
-assign req_ready_o  = (state == S_IDLE) & (~hit | resp_ready_i);                // 这里考虑去掉~hit，不知道这里的时序如何，很可能造成巨大的时序压力
-assign resp_valid_o = (state == S_IDLE) ? (req_fire & hit) : refill_resp_valid_i;
+assign req_ready_o  = can_accept_req & (resp_ready_i | ~array_hit);                // 这里考虑去掉~hit，不知道这里的时序如何，很可能造成巨大的时序压力.这里使用resp_ready_i反压，只是权宜之计
+assign resp_valid_o = (state == S_IDLE) ? req_hit : refill_resp_valid_i & ~drop_refill;
 assign resp_data_o  = sel_line[{word_sel, {DATA_WIDTH_LOG2{1'b0}}} +: DATA_WIDTH];
 assign resp_addr_o  = (state == S_IDLE) ? req_addr_i  : miss_addr_r;
-assign resp_epoch_o = (state == S_IDLE) ? req_epoch_i : miss_epoch_r;
 assign resp_err_o   = refill_resp_err_i;
 
 endmodule
@@ -231,7 +243,8 @@ end
 endmodule
 
 
-
+// axi_read_adapter 是一个很薄的adapter，不保存请求以节省ysyx要求的面积，这里的请求由icache自己保存
+// 但可能存在时序问题，如果后期发现存在时序问题则需要加一拍skid来保证时序
 module axi_read_adapter #(
 	parameter ADDR_WIDTH  = 32,
 	parameter LINE_WIDTH  = 128,
