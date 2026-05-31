@@ -33,24 +33,17 @@ assign ready_o = ready_i;
 // 前递选择已经在 ID 阶段算好，EX 阶段只做一个小 mux。
 // LS 数据来自当前 EX/LS packet 的 result；WB 数据来自 LS/WB packet 的 result。
 // CSR 写回旧 CSR 值不走 EX 前递，相关性由 hazard 阻塞到 WB 后交给寄存器堆 bypass。
-logic [31:0] rs1_data;
-logic [31:0] rs2_data;
+// fwd_sel 是 one-hot 编码：bit0 选 LS，bit1 选 WB，00 表示使用 RF 原值。
+// 写成 AND/OR 结构，避免综合器按优先级 mux 处理，前递选择位到数据输出的逻辑更薄。
+wire rs1_fwd_rf = ~(|data_i.ex.fwd_rs1_sel);
+wire rs2_fwd_rf = ~(|data_i.ex.fwd_rs2_sel);
 
-always_comb begin
-    unique case (data_i.ex.fwd_rs1_sel)
-        FWD_SEL_LS: rs1_data = fwd_ls_data_i;
-        FWD_SEL_WB: rs1_data = fwd_wb_data_i;
-        default:    rs1_data = rs1_raw;
-    endcase
-end
-
-always_comb begin
-    unique case (data_i.ex.fwd_rs2_sel)
-        FWD_SEL_LS: rs2_data = fwd_ls_data_i;
-        FWD_SEL_WB: rs2_data = fwd_wb_data_i;
-        default:    rs2_data = rs2_raw;
-    endcase
-end
+wire [31:0] rs1_data = ({32{data_i.ex.fwd_rs1_sel[0]}} & fwd_ls_data_i) |
+                       ({32{data_i.ex.fwd_rs1_sel[1]}} & fwd_wb_data_i) |
+                       ({32{rs1_fwd_rf}}                 & rs1_raw);
+wire [31:0] rs2_data = ({32{data_i.ex.fwd_rs2_sel[0]}} & fwd_ls_data_i) |
+                       ({32{data_i.ex.fwd_rs2_sel[1]}} & fwd_wb_data_i) |
+                       ({32{rs2_fwd_rf}}                 & rs2_raw);
 
 // ALU 输入选择：
 //   00: rs1, rs2
@@ -114,12 +107,12 @@ end
 // jal/jalr 的写回值 pc+4 仍由主 ALU 产生。对于 branch，主 ALU 同拍还要做比较，
 // 因此若希望 EX 阶段单拍给出 redirect，额外保留一个“目标地址加法器”是必要的。
 // 这里把 pc+imm 和 rs1+imm 复用到同一个加法器，避免综合出两个并行 target adder。
-wire        redirect_is_jalr = data_i.ex.cfi_type == CFI_JALR;
+wire        redirect_is_jalr = &data_i.ex.cfi_type;
 wire [31:0] redirect_base    = redirect_is_jalr ? rs1_data : pc;
 wire [31:0] redirect_sum     = redirect_base + imm;
 wire [31:0] redirect_target  = redirect_is_jalr ? {redirect_sum[31:1], 1'b0} : redirect_sum;
 
-wire redirect_is_branch = data_i.ex.cfi_type == CFI_BRANCH;
+wire redirect_is_branch = ~data_i.ex.cfi_type[1] & data_i.ex.cfi_type[0];
 wire redirect_is_jump   = data_i.ex.cfi_type[1];
 wire redirect_valid     = redirect_is_jump | (redirect_is_branch & branch_taken);
 

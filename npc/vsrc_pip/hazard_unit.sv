@@ -42,12 +42,14 @@ wire rs2_block_ls = ~rs2_hit_ex & rs2_hit_ls & ~ls_can_forward;
 
 assign hazard_valid = rs1_block_ex | rs2_block_ex | rs1_block_ls | rs2_block_ls;
 
-assign fwd_rs1_sel = rs1_hit_ex & ex_can_forward ? FWD_SEL_LS :
-					 ~rs1_hit_ex & rs1_hit_ls & ls_can_forward ? FWD_SEL_WB :
-					 FWD_SEL_RF;
+wire rs1_fwd_ls = rs1_hit_ex & ex_can_forward;
+wire rs2_fwd_ls = rs2_hit_ex & ex_can_forward;
+wire rs1_fwd_wb = ~rs1_hit_ex & rs1_hit_ls & ls_can_forward;
+wire rs2_fwd_wb = ~rs2_hit_ex & rs2_hit_ls & ls_can_forward;
 
-assign fwd_rs2_sel = rs2_hit_ex & ex_can_forward ? FWD_SEL_LS :
-					 ~rs2_hit_ex & rs2_hit_ls & ls_can_forward ? FWD_SEL_WB :
-					 FWD_SEL_RF;
+// 编码保持 one-hot：bit0 选 LS，bit1 选 WB，00 表示使用 RF 原值。
+// EXU 直接拿 bit 控 mux，避免再综合出 FWD_SEL_LS/FWD_SEL_WB 比较器。
+assign fwd_rs1_sel = {rs1_fwd_wb, rs1_fwd_ls};
+assign fwd_rs2_sel = {rs2_fwd_wb, rs2_fwd_ls};
 
 endmodule

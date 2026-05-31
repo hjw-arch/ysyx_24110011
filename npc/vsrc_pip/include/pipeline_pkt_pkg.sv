@@ -110,7 +110,8 @@ localparam br_cond_t BR_GE = 2'b11;
 // 选择值表示“本条指令到达 EX 阶段时”应该从哪里取操作数：
 //   RF: ID/EX 寄存器中已经带过来的寄存器堆读数
 //   LS: 当前 EX 阶段生产者下一拍会位于 LS，使用 EX/LS packet 的 result
-//   WB: 当前 LS 阶段生产者下一拍会位于 WB，使用 WBU 实际写回值
+//   WB: 当前 LS 阶段生产者下一拍会位于 WB，使用 LS/WB packet 的 result
+// 编码保持 one-hot：bit0=LS，bit1=WB，00=RF。
 typedef logic [1:0] fwd_sel_t;
 
 localparam fwd_sel_t FWD_SEL_RF = 2'b00;
