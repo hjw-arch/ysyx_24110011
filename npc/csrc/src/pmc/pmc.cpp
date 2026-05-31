@@ -1,377 +1,313 @@
-#include "sdb.h"
 #include "common.h"
-#include "cpu_exec.h"
 #include "log.h"
-#include "common.h"
-#include "device.h"
+#include <stdint.h>
+#include <stdio.h>
 
+enum pmc_region_t {
+    PMC_BOOT = 0,
+    PMC_NORMAL,
+    PMC_REGION_NR
+};
+
+enum pmc_inst_t {
+    PMC_INST_CAL = 0,
+    PMC_INST_LOAD,
+    PMC_INST_STORE,
+    PMC_INST_BRANCH,
+    PMC_INST_JUMP,
+    PMC_INST_CSR,
+    PMC_INST_FENCE,
+    PMC_INST_UNKNOWN,
+    PMC_INST_NR
+};
+
+typedef struct {
+    uint64_t cycles;
+    uint64_t retire_cycles;
+    uint64_t empty_retire_cycles;
+    uint64_t retired;
+    uint64_t inst[PMC_INST_NR];
+    uint64_t inst_cycles[PMC_INST_NR];
+
+    uint64_t ifu_resp;
+    uint64_t ifu_wait_cache;
+    uint64_t ifu_wait_backend;
+    uint64_t ifu_wait_flush;
+    uint64_t ifu_wait_other;
+
+    uint64_t icache_hit;
+    uint64_t icache_miss;
+    uint64_t icache_miss_cycles;
+    uint64_t icache_refill_drop;
+    uint64_t icache_invalidate;
+
+    uint64_t lsu_load;
+    uint64_t lsu_store;
+    uint64_t lsu_load_cycles;
+    uint64_t lsu_store_cycles;
+    uint64_t lsu_redirect;
+
+    uint64_t csr_inst;
+    uint64_t ecall_inst;
+    uint64_t mret_inst;
+    uint64_t fence_i_inst;
+} pmc_counter_t;
+
+static pmc_counter_t pmc[PMC_REGION_NR];
+
+static const char *const inst_name[PMC_INST_NR] = {
+    "CAL",
+    "LOAD",
+    "STORE",
+    "BRANCH",
+    "JUMP",
+    "CSR",
+    "FENCE",
+    "UNKNOWN"
+};
+
+static pmc_region_t region_of_pc(uint32_t pc) {
 #ifdef SOC
-
-#include "VysyxSoCFull___024root.h"
-#include "VysyxSoCFull.h"
-#include "VysyxSoCFull__Dpi.h"
-
+    return pc >= 0xa0000000u ? PMC_NORMAL : PMC_BOOT;
 #else
-
-#include "Vysyx___024root.h"
-#include "Vysyx.h"
-#include "Vysyx__Dpi.h"
-
+    return PMC_NORMAL;
 #endif
-
-
-#define BIT_MASK(bits)			((1ull << bits) - 1)
-#define GET_BITS(a, hi, lo)		((a & BIT_MASK(hi + 1)) >> lo)
-
-#define TYPE_INST_CAL(inst)		GET_BITS(inst, 6, 2) == 4 || GET_BITS(inst, 6, 2) == 5 || GET_BITS(inst, 6, 2) == 0xD || GET_BITS(inst, 6, 2) == 4 || GET_BITS(inst, 6, 2) == 0xC
-#define TYPE_INST_JMP(inst)		GET_BITS(inst, 6, 2) == 0x1B || GET_BITS(inst, 6, 2) == 0x19 || GET_BITS(inst, 6, 2) == 0x18
-#define TYPE_INST_LS(inst)		GET_BITS(inst, 6, 2) == 0 || GET_BITS(inst, 6, 2) == 8
-#define TYPE_INST_STORE(inst)	GET_BITS(inst, 6, 2) == 8
-#define TYPE_INST_LOAD(inst)	GET_BITS(inst, 6, 2) == 0
-#define TYPE_INST_CSR(inst)		GET_BITS(inst, 6, 2) == 0x1C
-
-// 标志位
-bool finish_bootloader = false;
-
-// icache
-uint64_t icache_hit_flash			= 0;
-uint64_t icache_hit_sdram			= 0;
-
-uint64_t icache_amat_flash			= 0;
-uint64_t icache_amat_sdram			= 0;
-
-// IFU
-uint64_t ifu_fetch_inst_flash = 0;
-uint64_t ifu_fetch_inst_sdram = 0;
-
-uint64_t ifu_fetch_inst_cycles_flash = 0;
-uint64_t ifu_fetch_inst_cycles_sdram = 0;
-
-uint64_t inst_type_cal_cycles_flash = 0;
-uint64_t inst_type_cal_cycles_sdram = 0;
-
-uint64_t inst_type_ls_cycles_flash = 0;
-uint64_t inst_type_ls_cycles_sdram = 0;
-
-uint64_t inst_type_load_cycles_flash = 0;
-uint64_t inst_type_load_cycles_sdram = 0;
-
-uint64_t inst_type_store_cycles_flash = 0;
-uint64_t inst_type_store_cycles_sdram = 0;
-
-uint64_t inst_type_jmp_cycles_flash = 0;
-uint64_t inst_type_jmp_cycles_sdram = 0;
-
-uint64_t inst_type_csr_cycles_flash = 0;
-uint64_t inst_type_csr_cycles_sdram = 0;		// EBREAK
-
-uint64_t inst_type_unknown_cycles_flash = 0;
-uint64_t inst_type_unknown_cycles_sdram = 0;
-
-
-// LSU
-uint64_t lsu_load_data_flash = 0;
-uint64_t lsu_load_data_sdram = 0;
-
-uint64_t lsu_store_data_flash = 0;
-uint64_t lsu_store_data_sdram = 0;
-
-uint64_t lsu_load_data_cycles_flash = 0;
-uint64_t lsu_load_data_cycles_sdram = 0;
-
-uint64_t lsu_store_data_cycles_flash = 0;
-uint64_t lsu_store_data_cycles_sdram = 0;
-
-// EXU
-uint64_t exu_finish_cal_flash = 0;
-uint64_t exu_finish_cal_sdram = 0;		// EBREAK
-
-// IDU
-uint64_t idu_identify_cal_flash = 0;
-uint64_t idu_identify_ls_flash  = 0;
-uint64_t idu_identify_load_flash  = 0;
-uint64_t idu_identify_store_flash  = 0;
-uint64_t idu_identify_jmp_flash = 0;
-uint64_t idu_identify_csr_flash = 0;
-uint64_t idu_identify_unknown_flash = 0;
-
-uint64_t idu_identify_cal_sdram = 0;
-uint64_t idu_identify_ls_sdram  = 0;
-uint64_t idu_identify_load_sdram  = 0;
-uint64_t idu_identify_store_sdram  = 0;
-uint64_t idu_identify_jmp_sdram = 0;
-uint64_t idu_identify_csr_sdram = 0;		// EBREAK
-uint64_t idu_identify_unknown_sdram = 0;
-
-void is_finish_bootloader(int pc) {
-	if (pc >= 0xa0000000) finish_bootloader = true;
 }
 
-void PerformanceCounter_ifu_fetch() {
-	if (finish_bootloader) {
-		ifu_fetch_inst_sdram++;
-	} else {
-		ifu_fetch_inst_flash++;
-	}
+static const char *region_name(pmc_region_t region) {
+#ifdef SOC
+    return region == PMC_BOOT ? "Bootloader (Flash/SRAM)" : "Normal (SDRAM)";
+#else
+    return region == PMC_BOOT ? "Boot/unused" : "NPC program";
+#endif
 }
 
-static int temp_cnt_ifu_fetch_cycles = 0;
-void PerformanceCounter_ifu_fetch_cycles(int start, int finish) {
-	if(start) temp_cnt_ifu_fetch_cycles = 0;
-	temp_cnt_ifu_fetch_cycles++;
-	if (finish_bootloader) {
-		if (finish) ifu_fetch_inst_cycles_sdram += temp_cnt_ifu_fetch_cycles;
-	} else {
-		if (finish) ifu_fetch_inst_cycles_flash += temp_cnt_ifu_fetch_cycles;
-	}
+static inline uint32_t bits(uint32_t value, int hi, int lo) {
+    return (value >> lo) & ((1u << (hi - lo + 1)) - 1u);
 }
 
+static pmc_inst_t classify_inst(uint32_t inst) {
+    uint32_t opcode = bits(inst, 6, 2);
+    uint32_t funct3 = bits(inst, 14, 12);
 
-// 对流水线处理器这种方式不适用
-static int temp_cnt_inst_type_cycles = 0;
-void PerformanceCounter_inst_type_total_cycles(int start, int inst) {
-	if (start) {
-		if (finish_bootloader) {
-			if (TYPE_INST_CAL(inst)) {
-				inst_type_cal_cycles_sdram += temp_cnt_inst_type_cycles;
-			} else if (TYPE_INST_LS(inst)) {
-				inst_type_ls_cycles_sdram += temp_cnt_inst_type_cycles;
-				if (TYPE_INST_LOAD(inst)) {
-					inst_type_load_cycles_sdram += temp_cnt_inst_type_cycles;
-				} else if (TYPE_INST_STORE(inst)) {
-					inst_type_store_cycles_sdram += temp_cnt_inst_type_cycles;
-				}
-			} else if (TYPE_INST_JMP(inst)) {
-				inst_type_jmp_cycles_sdram += temp_cnt_inst_type_cycles;
-			} else if (TYPE_INST_CSR(inst)) {
-				inst_type_csr_cycles_sdram += temp_cnt_inst_type_cycles;
-			} else {
-				inst_type_unknown_cycles_sdram += temp_cnt_inst_type_cycles;
-			}
-		} else {
-			if (TYPE_INST_CAL(inst)) {
-				inst_type_cal_cycles_flash += temp_cnt_inst_type_cycles;
-			} else if (TYPE_INST_LS(inst)) {
-				inst_type_ls_cycles_flash += temp_cnt_inst_type_cycles;
-				if (TYPE_INST_LOAD(inst)) {
-					inst_type_load_cycles_flash += temp_cnt_inst_type_cycles;
-				} else if (TYPE_INST_STORE(inst)) {
-					inst_type_store_cycles_flash += temp_cnt_inst_type_cycles;
-				}
-			} else if (TYPE_INST_JMP(inst)) {
-				inst_type_jmp_cycles_flash += temp_cnt_inst_type_cycles;
-			} else if (TYPE_INST_CSR(inst)) {
-				inst_type_csr_cycles_flash += temp_cnt_inst_type_cycles;
-			} else {
-				inst_type_unknown_cycles_flash += temp_cnt_inst_type_cycles;
-			}
-		}
-		temp_cnt_inst_type_cycles = 0;
-	}
-	temp_cnt_inst_type_cycles++;
+    switch (opcode) {
+        case 0x00: return PMC_INST_LOAD;    // LOAD
+        case 0x08: return PMC_INST_STORE;   // STORE
+        case 0x18: return PMC_INST_BRANCH;  // BRANCH
+        case 0x19: return PMC_INST_JUMP;    // JALR
+        case 0x1b: return PMC_INST_JUMP;    // JAL
+        case 0x1c: return PMC_INST_CSR;     // SYSTEM
+        case 0x03:
+            return funct3 == 0x1 ? PMC_INST_FENCE : PMC_INST_UNKNOWN; // MISC-MEM/FENCE.I
+        case 0x04:                          // OP-IMM
+        case 0x05:                          // AUIPC
+        case 0x0c:                          // OP
+        case 0x0d:                          // LUI
+            return PMC_INST_CAL;
+        default:
+            return PMC_INST_UNKNOWN;
+    }
 }
 
+static void print_ratio(uint64_t part, uint64_t total) {
+    if (total == 0) {
+        printf("  ratio:                         n/a\n");
+        return;
+    }
 
-void PerformanceCounter_icache_hit() {
-	if (finish_bootloader) {
-		icache_hit_sdram++;
-	} else {
-		icache_hit_flash++;
-	}
+    printf("  ratio:                         %.2f%%\n", 100.0 * (double)part / (double)total);
 }
 
-void PerformanceCounter_icache_AMAT() {
-	if (finish_bootloader) {
-		icache_amat_sdram++;
-	} else {
-		icache_amat_flash++;
-	}
+static void print_avg(const char *name, uint64_t cycles, uint64_t count) {
+    if (count == 0) {
+        printf("  %-30s n/a\n", name);
+        return;
+    }
+
+    printf("  %-30s %.2f\n", name, (double)cycles / (double)count);
 }
 
-
-void PerformanceCounter_lsu_load() {
-	if (finish_bootloader) {
-		lsu_load_data_sdram++;
-	} else {
-		lsu_load_data_flash++;
-	}
-	
+static bool is_csr_inst(uint32_t inst) {
+    return bits(inst, 6, 2) == 0x1c && bits(inst, 14, 12) != 0;
 }
 
-static int temp_cnt_lsu_load_cycles = 0;
-void PerformanceCounter_lsu_load_cycles(int start, int finish) {
-	if(start) temp_cnt_lsu_load_cycles = 0;
-	temp_cnt_lsu_load_cycles++;
-
-	if (finish) {
-		if (finish_bootloader) {
-			lsu_load_data_cycles_sdram += temp_cnt_lsu_load_cycles;
-		} else {
-			lsu_load_data_cycles_flash += temp_cnt_lsu_load_cycles;
-		}
-	}
+static bool is_ecall_inst(uint32_t inst) {
+    return inst == 0x00000073u;
 }
 
-
-void PerformanceCounter_lsu_store() {
-	if (finish_bootloader) {
-		lsu_store_data_sdram++;
-	} else {
-		lsu_store_data_flash++;
-	}
+static bool is_mret_inst(uint32_t inst) {
+    return inst == 0x30200073u;
 }
 
-static int temp_cnt_lsu_store_cycles = 0;
-void PerformanceCounter_lsu_store_cycles(int start, int finish) {
-	if(start) temp_cnt_lsu_store_cycles = 0;
-	temp_cnt_lsu_store_cycles++;
-
-	if (finish) {
-		if (finish_bootloader) {
-			lsu_store_data_cycles_sdram += temp_cnt_lsu_store_cycles;
-		} else {
-			lsu_store_data_cycles_flash += temp_cnt_lsu_store_cycles;
-		}
-	}
+static bool is_fence_i_inst(uint32_t inst) {
+    return bits(inst, 6, 2) == 0x03 && bits(inst, 14, 12) == 0x1;
 }
 
-void PerformanceCounter_exu_finish_cal() {
-	if (finish_bootloader) {
-		exu_finish_cal_sdram++;
-	} else {
-		exu_finish_cal_flash++;
-	}
+void PerformanceCounter_record_cycle(
+    uint32_t pc,
+    bool wbu_valid,
+    bool ifu_req_valid,
+    bool ifu_req_ready,
+    bool ifu_resp_valid,
+    bool ifu_resp_ready,
+    bool ifu_flush,
+    bool icache_req_hit,
+    bool icache_req_miss,
+    bool icache_miss_busy,
+    bool icache_drop_refill,
+    bool icache_invalidate,
+    bool lsu_mem_req_fire,
+    bool lsu_input_is_load,
+    bool lsu_input_is_store,
+    bool lsu_state_busy
+) {
+    pmc_counter_t *c = &pmc[region_of_pc(pc)];
+    c->cycles++;
+    if (wbu_valid) {
+        c->retire_cycles++;
+    } else {
+        c->empty_retire_cycles++;
+    }
+
+    if (ifu_resp_valid && ifu_resp_ready) {
+        c->ifu_resp++;
+    }
+
+    if (!ifu_resp_valid) {
+        if (ifu_flush) {
+            c->ifu_wait_flush++;
+        } else if (icache_miss_busy || (ifu_req_valid && !ifu_req_ready)) {
+            c->ifu_wait_cache++;
+        } else {
+            c->ifu_wait_other++;
+        }
+    } else if (!ifu_resp_ready) {
+        c->ifu_wait_backend++;
+    }
+
+    if (icache_req_hit) {
+        c->icache_hit++;
+    }
+    if (icache_req_miss) {
+        c->icache_miss++;
+    }
+    if (icache_miss_busy) {
+        c->icache_miss_cycles++;
+    }
+    if (icache_drop_refill) {
+        c->icache_refill_drop++;
+    }
+    if (icache_invalidate) {
+        c->icache_invalidate++;
+    }
+
+    if (lsu_mem_req_fire) {
+        if (lsu_input_is_load) c->lsu_load++;
+        if (lsu_input_is_store) c->lsu_store++;
+    }
+    if (lsu_state_busy) {
+        if (lsu_input_is_load) c->lsu_load_cycles++;
+        if (lsu_input_is_store) c->lsu_store_cycles++;
+    }
 }
 
-
-void PerformanceCounter_idu_identify_inst(int inst) {
-	if (finish_bootloader) {
-		if (TYPE_INST_CAL(inst)) {
-			idu_identify_cal_sdram++;
-			return;
-		} else if (TYPE_INST_JMP(inst)) {
-			idu_identify_jmp_sdram++;
-			return;
-		} else if (TYPE_INST_LS(inst)) {
-			idu_identify_ls_sdram++;
-			if (TYPE_INST_LOAD(inst)) {
-				idu_identify_load_sdram++;
-			} else if (TYPE_INST_STORE(inst)) {
-				idu_identify_store_sdram++;
-			}
-			return;
-		} else if (TYPE_INST_CSR(inst)) {
-			idu_identify_csr_sdram++;
-			return;
-		} else {
-			idu_identify_unknown_sdram++;
-			return;
-		}
-	} else {
-		if (TYPE_INST_CAL(inst)) {
-			idu_identify_cal_flash++;
-			return;
-		} else if (TYPE_INST_JMP(inst)) {
-			idu_identify_jmp_flash++;
-			return;
-		} else if (TYPE_INST_LS(inst)) {
-			idu_identify_ls_flash++;
-			if (TYPE_INST_LOAD(inst)) {
-				idu_identify_load_flash++;
-			} else if (TYPE_INST_STORE(inst)) {
-				idu_identify_store_flash++;
-			}
-			return;
-		} else if (TYPE_INST_CSR(inst)) {
-			idu_identify_csr_flash++;
-			return;
-		} else {
-			idu_identify_unknown_flash++;
-			return;
-		}
-	}
+void PerformanceCounter_record_lsu_redirect(uint32_t pc) {
+    pmc[region_of_pc(pc)].lsu_redirect++;
 }
 
+void PerformanceCounter_record_commit(uint32_t pc, uint32_t inst, uint64_t retire_cycles) {
+    pmc_counter_t *c = &pmc[region_of_pc(pc)];
+    pmc_inst_t type = classify_inst(inst);
+
+    c->retired++;
+    c->inst[type]++;
+    c->inst_cycles[type] += retire_cycles;
+
+    if (is_csr_inst(inst)) {
+        c->csr_inst++;
+    }
+    if (is_ecall_inst(inst)) {
+        c->ecall_inst++;
+    }
+    if (is_mret_inst(inst)) {
+        c->mret_inst++;
+    }
+    if (is_fence_i_inst(inst)) {
+        c->fence_i_inst++;
+    }
+}
+
+// 保留旧 DPI-C 函数名，避免以后临时打开旧 RTL 注释时链接失败。
+void is_finish_bootloader(int pc) { (void)pc; }
+void PerformanceCounter_ifu_fetch() {}
+void PerformanceCounter_ifu_fetch_cycles(int start, int finish) { (void)start; (void)finish; }
+void PerformanceCounter_inst_type_total_cycles(int start, int inst) { (void)start; (void)inst; }
+void PerformanceCounter_icache_hit() {}
+void PerformanceCounter_icache_AMAT() {}
+void PerformanceCounter_lsu_load() {}
+void PerformanceCounter_lsu_load_cycles(int start, int finish) { (void)start; (void)finish; }
+void PerformanceCounter_lsu_store() {}
+void PerformanceCounter_lsu_store_cycles(int start, int finish) { (void)start; (void)finish; }
+void PerformanceCounter_exu_finish_cal() {}
+void PerformanceCounter_idu_identify_inst(int inst) { (void)inst; }
 
 void PerformanceCounter_display() {
     printf(ANSI_FG_YELLOW "===== CPU Performance Counter Statistics =====\n" ANSI_NONE);
 
-    // IFU Statistics
-    printf(ANSI_FG_CYAN "\n[IFU - Instruction Fetch Unit]\n" ANSI_NONE);
-    printf("Bootloader (flash & sram):\n");
-    printf("  Instruction Fetch Count:        %ld\n", ifu_fetch_inst_flash);
-    printf("  Instruction Fetch Cycles:       %ld\n", ifu_fetch_inst_cycles_flash);
-    printf("Normal (SDRAM):\n");
-    printf("  Instruction Fetch Count:        %ld\n", ifu_fetch_inst_sdram);
-    printf("  Instruction Fetch Cycles:       %ld\n", ifu_fetch_inst_cycles_sdram);
+    for (int r = 0; r < PMC_REGION_NR; r++) {
+        pmc_counter_t *c = &pmc[r];
 
-	printf(ANSI_FG_CYAN "\n[ICACHE]\n" ANSI_NONE);
-    printf("Bootloader (flash & sram):\n");
-    printf("  Hit Times:        			  %ld\n", icache_hit_flash);
-    printf("Normal (SDRAM):\n");
-    printf("  Hit Times:        			  %ld\n", icache_hit_sdram);
-	printf("Bootloader (flash & sram):\n");
-    printf("  Miss Penalty:        			  %ld\n", icache_amat_flash);
-    printf("Normal (SDRAM):\n");
-    printf("  Miss Penalty:        			  %ld\n", icache_amat_sdram);
-	printf("Bootloader (flash & sram):\n");
-    printf("  Miss Times:        			  %ld\n", ifu_fetch_inst_flash - icache_hit_flash);
-    printf("Normal (SDRAM):\n");
-    printf("  Miss Times:        			  %ld\n", ifu_fetch_inst_sdram - icache_hit_sdram);
-	
+        if (c->cycles == 0 && c->retired == 0) {
+            continue;
+        }
 
-    // Total Statistics
-    printf(ANSI_FG_CYAN "\n[Type - Total Statistics]\n" ANSI_NONE);
-    printf("Bootloader (Flash & sram):\n");
-    printf("  CAL Instructions:               %ld\n", idu_identify_cal_flash);
-    printf("  CAL Instruction Cycles:         %ld\n", inst_type_cal_cycles_flash);
-    printf("  LS Instructions:                %ld\n", idu_identify_ls_flash);
-    printf("  LS Instruction Cycles:          %ld\n", inst_type_ls_cycles_flash);
-	printf("  LOAD Instructions:              %ld\n", idu_identify_load_flash);
-    printf("  LOAD Instruction Cycles:        %ld\n", inst_type_load_cycles_flash);
-	printf("  STORE Instructions:             %ld\n", idu_identify_store_flash);
-    printf("  STORE Instruction Cycles:       %ld\n", inst_type_store_cycles_flash);
-    printf("  JMP Instructions:               %ld\n", idu_identify_jmp_flash);
-    printf("  JMP Instruction Cycles:         %ld\n", inst_type_jmp_cycles_flash);
-    printf("  CSR Instructions:               %ld\n", idu_identify_csr_flash);
-    printf("  CSR Instruction Cycles:         %ld\n", inst_type_csr_cycles_flash);
-    printf("  Unknown Instructions:           %ld\n", idu_identify_unknown_flash);
-    printf("  Unknown Instruction Cycles:     %ld\n", inst_type_unknown_cycles_flash);
-    printf("Normal (SDRAM):\n");
-    printf("  CAL Instructions:               %ld\n", idu_identify_cal_sdram);
-    printf("  CAL Instruction Cycles:         %ld\n", inst_type_cal_cycles_sdram);
-    printf("  LS Instructions:                %ld\n", idu_identify_ls_sdram);
-    printf("  LS Instruction Cycles:          %ld\n", inst_type_ls_cycles_sdram);
-	printf("  LOAD Instructions:              %ld\n", idu_identify_load_sdram);
-    printf("  LOAD Instruction Cycles:        %ld\n", inst_type_load_cycles_sdram);
-	printf("  STORE Instructions:             %ld\n", idu_identify_store_sdram);
-    printf("  STORE Instruction Cycles:       %ld\n", inst_type_store_cycles_sdram);
-    printf("  JMP Instructions:               %ld\n", idu_identify_jmp_sdram);
-    printf("  JMP Instruction Cycles:         %ld\n", inst_type_jmp_cycles_sdram);
-    printf("  CSR Instructions:               %ld\n", idu_identify_csr_sdram);
-    printf("  CSR Instruction Cycles:         %ld\n", inst_type_csr_cycles_sdram);
-    printf("  Unknown Instructions:           %ld\n", idu_identify_unknown_sdram);
-    printf("  Unknown Instruction Cycles:     %ld\n", inst_type_unknown_cycles_sdram);
+        printf(ANSI_FG_CYAN "\n[%s]\n" ANSI_NONE, region_name((pmc_region_t)r));
+        printf("  Cycles:                        %llu\n", (unsigned long long)c->cycles);
+        printf("  Retired instructions:          %llu\n", (unsigned long long)c->retired);
+        print_avg("CPI:", c->cycles, c->retired);
+        printf("  Retire-valid cycles:           %llu\n", (unsigned long long)c->retire_cycles);
+        printf("  Empty-retire cycles:           %llu\n", (unsigned long long)c->empty_retire_cycles);
+        print_avg("cycles per retire-valid:", c->cycles, c->retire_cycles);
 
-    // LSU Statistics
-    printf(ANSI_FG_CYAN" \n[LSU - Load/Store Unit]\n" ANSI_NONE);
-    printf("Bootloader (Load-Flash | store-Sdram):\n");
-    printf("  Load Operations:                %ld\n", lsu_load_data_flash);
-    printf("  Load Cycles:                    %ld\n", lsu_load_data_cycles_flash);
-    printf("  Store Operations:               %ld\n", lsu_store_data_flash);
-    printf("  Store Cycles:                   %ld\n", lsu_store_data_cycles_flash);
-    printf("Normal (SDRAM):\n");
-    printf("  Load Operations:                %ld\n", lsu_load_data_sdram);
-    printf("  Load Cycles:                    %ld\n", lsu_load_data_cycles_sdram);
-    printf("  Store Operations:               %ld\n", lsu_store_data_sdram);
-    printf("  Store Cycles:                   %ld\n", lsu_store_data_cycles_sdram);
+        printf("\n  Instruction Mix\n");
+        for (int i = 0; i < PMC_INST_NR; i++) {
+            printf("  %-8s count:                 %llu\n",
+                inst_name[i], (unsigned long long)c->inst[i]);
+            print_ratio(c->inst[i], c->retired);
+            print_avg("avg retire interval:", c->inst_cycles[i], c->inst[i]);
+        }
 
-    // EXU Statistics
-    printf(ANSI_FG_CYAN "\n[EXU - Execution Unit]\n" ANSI_NONE);
-    printf("Bootloader:\n");
-    printf("  CAL Instructions Executed:      %ld\n", exu_finish_cal_flash);
-    printf("Normal:\n");
-    printf("  CAL Instructions Executed:      %ld\n", exu_finish_cal_sdram);
+        printf("\n  IFU\n");
+        printf("  Fetched responses:             %llu\n", (unsigned long long)c->ifu_resp);
+        printf("  Wait ICache/refill cycles:     %llu\n", (unsigned long long)c->ifu_wait_cache);
+        printf("  Wait backend cycles:           %llu\n", (unsigned long long)c->ifu_wait_backend);
+        printf("  Wait flush cycles:             %llu\n", (unsigned long long)c->ifu_wait_flush);
+        printf("  Wait other cycles:             %llu\n", (unsigned long long)c->ifu_wait_other);
+        print_avg("avg IFU cycles/fetch:", c->cycles, c->ifu_resp);
 
-    printf(ANSI_FG_YELLOW" \n===== End of Statistics =====\n" ANSI_NONE);
+        printf("\n  ICache\n");
+        printf("  Hits:                          %llu\n", (unsigned long long)c->icache_hit);
+        printf("  Misses:                        %llu\n", (unsigned long long)c->icache_miss);
+        printf("  Miss busy cycles:              %llu\n", (unsigned long long)c->icache_miss_cycles);
+        printf("  Dropped refills:               %llu\n", (unsigned long long)c->icache_refill_drop);
+        printf("  Invalidates:                   %llu\n", (unsigned long long)c->icache_invalidate);
+        print_avg("avg miss penalty:", c->icache_miss_cycles, c->icache_miss);
+
+        printf("\n  LSU\n");
+        printf("  Load operations:               %llu\n", (unsigned long long)c->lsu_load);
+        printf("  Load busy cycles:              %llu\n", (unsigned long long)c->lsu_load_cycles);
+        print_avg("avg load latency:", c->lsu_load_cycles, c->lsu_load);
+        printf("  Store operations:              %llu\n", (unsigned long long)c->lsu_store);
+        printf("  Store busy cycles:             %llu\n", (unsigned long long)c->lsu_store_cycles);
+        print_avg("avg store latency:", c->lsu_store_cycles, c->lsu_store);
+
+        printf("\n  Control/System Events\n");
+        printf("  LSU redirects:                 %llu\n", (unsigned long long)c->lsu_redirect);
+        printf("  CSR instructions:              %llu\n", (unsigned long long)c->csr_inst);
+        printf("  ECALL instructions:            %llu\n", (unsigned long long)c->ecall_inst);
+        printf("  MRET instructions:             %llu\n", (unsigned long long)c->mret_inst);
+        printf("  FENCE.I instructions:          %llu\n", (unsigned long long)c->fence_i_inst);
+    }
+
+    printf(ANSI_FG_YELLOW "\n===== End of Statistics =====\n" ANSI_NONE);
 }

@@ -43,6 +43,28 @@ uint32_t cpu_state = RUNNING;
 uint64_t cycle_times = 0;
 uint64_t dynamic_insts = 0;
 
+void PerformanceCounter_display();
+void PerformanceCounter_record_cycle(
+	uint32_t pc,
+	bool wbu_valid,
+	bool ifu_req_valid,
+	bool ifu_req_ready,
+	bool ifu_resp_valid,
+	bool ifu_resp_ready,
+	bool ifu_flush,
+	bool icache_req_hit,
+	bool icache_req_miss,
+	bool icache_miss_busy,
+	bool icache_drop_refill,
+	bool icache_invalidate,
+	bool lsu_mem_req_fire,
+	bool lsu_input_is_load,
+	bool lsu_input_is_store,
+	bool lsu_state_busy
+);
+void PerformanceCounter_record_lsu_redirect(uint32_t pc);
+void PerformanceCounter_record_commit(uint32_t pc, uint32_t inst, uint64_t retire_cycles);
+
 typedef struct {
 	uint32_t pc;
 	uint32_t inst;
@@ -93,6 +115,7 @@ static void record_lsu_redirect() {
 		pending_redirect.pc = get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
 		pending_redirect.target = CORE_SIG(lsu_pc_target);
 		pending_redirect.valid = true;
+		IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_lsu_redirect(pending_redirect.pc));
 	}
 }
 
@@ -136,14 +159,39 @@ static bool take_difftest_skip(uint32_t pc) {
 	return skip;
 }
 
-void PerformanceCounter_display();
+static void record_performance_cycle() {
+	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_cycle(
+		CORE_SIG(u_IFU__DOT__pc_r),
+		CORE_SIG(wbu_valid_i),
+		CORE_SIG(u_IFU__DOT__ic_req_valid),
+		CORE_SIG(u_IFU__DOT__ic_req_ready),
+		CORE_SIG(u_IFU__DOT__ic_resp_valid),
+		CORE_SIG(u_IFU__DOT__ic_resp_ready),
+		CORE_SIG(u_IFU__DOT__flush_i),
+		CORE_SIG(u_IFU__DOT__u_icache__DOT__req_hit),
+		CORE_SIG(u_IFU__DOT__u_icache__DOT__req_miss),
+		CORE_SIG(u_IFU__DOT__u_icache__DOT__state),
+		CORE_SIG(u_IFU__DOT__u_icache__DOT__refill_resp_fire) & CORE_SIG(u_IFU__DOT__u_icache__DOT__drop_refill),
+		CORE_SIG(u_IFU__DOT__inval_icache_i),
+		CORE_SIG(u_LSU__DOT__mem_req_fire),
+		CORE_SIG(u_LSU__DOT__input_is_load),
+		CORE_SIG(u_LSU__DOT__input_is_store),
+		CORE_SIG(u_LSU__DOT__state_busy)
+	));
+}
+
+static void exec_one_cycle() {
+	record_performance_cycle();
+	cycle;
+	cycle_times++;
+}
 
 void halt() {
     cpu_state = IDLE;
 
 	Log("Get 'ebreak' instruction, program over.");
 	
-    printf(ANSI_FG_CYAN "\n\nTotle cycle times = %lu, Total dynamic_ints = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
+    printf(ANSI_FG_CYAN "\n\nTotal cycle times = %lu, Total dynamic_insts = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
 	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_display());
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
@@ -162,6 +210,8 @@ void halt() {
 
 void cpu_exec_one() {
 
+	uint64_t retire_cycles = 0;
+
 	while (1) {
 		record_lsu_redirect();
 		record_lsu_difftest_skip();
@@ -170,7 +220,8 @@ void cpu_exec_one() {
 			commit_info_t commit_info = get_commit_info();
 			current_difftest_skip = take_difftest_skip(commit_info.pc);
 
-			cycle;
+			exec_one_cycle();
+			retire_cycles++;
 		
 			for (int i = 0; i < RF_NUM; i++) {
 				cpu.registerFile[i] = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__register_file)[i];
@@ -178,17 +229,16 @@ void cpu_exec_one() {
 			cpu.pc = commit_info.next_pc;
 			current_inst = commit_info.inst;
 			current_pc = commit_info.pc;
-			if(cpu.pc >= 0xa0000000) cycle_times++;
-			if(cpu.pc >= 0xa0000000) dynamic_insts++;
+			dynamic_insts++;
+			IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_commit(current_pc, current_inst, retire_cycles));
 			if (current_inst == ebreak) {
 				halt();
 			}
 			return;
 		}
 
-		cycle;
-
-		if(cpu.pc >= 0xa0000000) cycle_times++;
+		exec_one_cycle();
+		retire_cycles++;
 	
 	}
 }
