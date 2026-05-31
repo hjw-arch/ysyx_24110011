@@ -110,16 +110,15 @@ wire can_accept_req = (state == S_IDLE) & ~kill_any;
 /*============================================================
  *  6. 握手信号
  *============================================================*/
-wire req_fire         = req_valid_i & req_ready_o;
-wire req_hit          = req_fire & array_hit;
-wire req_miss         = req_fire & ~array_hit;
+wire req_hit          = req_valid_i & can_accept_req & array_hit & resp_ready_i;
+wire req_miss         = req_valid_i & can_accept_req & ~array_hit;
 
 /*============================================================
  *  7. FSM
  *============================================================*/
 always_comb begin
     unique case (state)
-        S_IDLE: nstate = req_miss           ? S_MISS : S_IDLE;      // flush当拍不会接受请求，req_miss包含了kill的情况
+        S_IDLE: nstate = req_miss           ? S_MISS : S_IDLE;      // req_miss 已经过 can_accept_req 过滤，flush 当拍不会接受新请求
         S_MISS: nstate = refill_resp_fire   ? S_IDLE : S_MISS;
     endcase
 end
