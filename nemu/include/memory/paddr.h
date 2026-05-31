@@ -40,7 +40,7 @@ static inline bool in_pmem(paddr_t addr) {
 #else
 
 #define FLASH_BASE	0x30000000
-#define FLASH_SIZE	0x4000000
+#define FLASH_SIZE	0x10000000
 #define FLASH_END	FLASH_BASE + FLASH_SIZE - 1
 
 #define SDRAM_BASE	0xa0000000
@@ -61,4 +61,3 @@ word_t paddr_read(paddr_t addr, int len);
 void paddr_write(paddr_t addr, int len, word_t data);
 
 #endif
-

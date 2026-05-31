@@ -2,7 +2,6 @@
 #include "../Include/common.h"
 #include "../Include/cpu_exec.h"
 #include "../Include/log.h"
-#include "../Include/common.h"
 #include "../Include/device.h"
 #include "../Include/difftest.h"
 
@@ -28,7 +27,13 @@ extern VerilatedVcdC tfp;
 
 #define min_num_to_disasm   10
 
-#define FTRACE_RECORD     record_ftrace(old_pc, old_inst == 0x8067 ? 1 : 0, cpu.pc)
+#define FTRACE_RECORD     record_ftrace(current_pc, current_inst == 0x8067 ? 1 : 0, cpu.pc)
+
+#ifdef SOC
+#define CORE_SIG(name) dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__##name
+#else
+#define CORE_SIG(name) dut.rootp->ysyx__DOT__##name
+#endif
 
 cpu_t cpu;
 uint32_t current_pc, current_inst;
@@ -38,39 +43,97 @@ uint32_t cpu_state = RUNNING;
 uint64_t cycle_times = 0;
 uint64_t dynamic_insts = 0;
 
-// pip_fifo
-// 为流水线阶段做一些调整
-#define PIP_LEVEL		5
-
 typedef struct {
 	uint32_t pc;
 	uint32_t inst;
-} pip_info_t;
+	uint32_t next_pc;
+} commit_info_t;
 
-static pip_info_t pip_info[PIP_LEVEL];
+typedef struct {
+	uint32_t pc;
+	uint32_t target;
+	bool valid;
+} redirect_info_t;
 
-static uint32_t r_ptr, w_ptr;
+typedef struct {
+	uint32_t pc;
+	bool valid;
+} skip_info_t;
 
-static void load_pip_info() {
-	if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__idu_valid_i && !dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__flush) {
-		pip_info[w_ptr].pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__pc;
-		pip_info[w_ptr].inst = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IDU__DOT__inst;
-		w_ptr = ++w_ptr % PIP_LEVEL;
+static redirect_info_t pending_redirect = {};
+static skip_info_t pending_difftest_skip = {};
+static bool current_difftest_skip = false;
+
+static uint32_t get_wide_bits(const WData *data, int hi, int lo) {
+	uint32_t value = 0;
+	for (int bit = lo; bit <= hi; bit++) {
+		if (data[bit / 32] & (1u << (bit % 32))) {
+			value |= 1u << (bit - lo);
+		}
+	}
+	return value;
+}
+
+static bool addr_in_range(uint32_t addr, uint32_t base, uint32_t size) {
+	return addr - base < size;
+}
+
+static bool difftest_addr_is_pmem(uint32_t addr) {
+#ifdef SOC
+	return addr_in_range(addr, 0x30000000u, 0x10000000u) ||  // flash
+	       addr_in_range(addr, 0x0f000000u, 0x00002000u) ||  // SRAM
+	       addr_in_range(addr, 0xa0000000u, 0x02000000u);    // SDRAM
+#else
+	return addr_in_range(addr, RESET_VECTOR, RAM_SIZE);
+#endif
+}
+
+static void record_lsu_redirect() {
+	if (CORE_SIG(lsu_flush)) {
+		pending_redirect.pc = get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
+		pending_redirect.target = CORE_SIG(lsu_pc_target);
+		pending_redirect.valid = true;
 	}
 }
 
-static pip_info_t get_pip_info() {
-	pip_info_t temp = pip_info[r_ptr];
-	r_ptr = ++r_ptr % PIP_LEVEL;
-	return temp;
+static void record_lsu_difftest_skip() {
+#ifdef SOC
+	bool mem_output_fire = CORE_SIG(u_LSU__DOT__output_fire) &
+		(CORE_SIG(u_LSU__DOT__input_is_load) | CORE_SIG(u_LSU__DOT__input_is_store));
+
+	if (mem_output_fire && !difftest_addr_is_pmem(CORE_SIG(u_LSU__DOT__lsu_addr))) {
+		pending_difftest_skip.pc = get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
+		pending_difftest_skip.valid = true;
+	}
+#endif
 }
 
-static uint32_t get_next_pc() {
-	if (r_ptr == w_ptr) {
-		return dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__pc;
+static commit_info_t get_commit_info() {
+	commit_info_t info;
+
+	info.pc = get_wide_bits(CORE_SIG(wbu_data_i).data(), 101, 70);
+	info.inst = get_wide_bits(CORE_SIG(wbu_data_i).data(), 69, 38);
+
+	if (CORE_SIG(wbu_flush)) {
+		info.next_pc = CORE_SIG(wbu_pc_target);
+	} else if (pending_redirect.valid && pending_redirect.pc == info.pc) {
+		info.next_pc = pending_redirect.target;
+		pending_redirect.valid = false;
+	} else {
+		info.next_pc = info.pc + 4;
 	}
 
-	return pip_info[r_ptr].pc;
+	return info;
+}
+
+static bool take_difftest_skip(uint32_t pc) {
+	bool skip = pending_difftest_skip.valid && pending_difftest_skip.pc == pc;
+
+	if (skip) {
+		pending_difftest_skip.valid = false;
+	}
+
+	return skip;
 }
 
 void PerformanceCounter_display();
@@ -100,19 +163,21 @@ void halt() {
 void cpu_exec_one() {
 
 	while (1) {
+		record_lsu_redirect();
+		record_lsu_difftest_skip();
 
-		if (dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__wbu_valid_i) {
+		if (CORE_SIG(wbu_valid_i)) {
+			commit_info_t commit_info = get_commit_info();
+			current_difftest_skip = take_difftest_skip(commit_info.pc);
+
 			cycle;
-
-			load_pip_info();
 		
-			pip_info_t temp_pip_info = get_pip_info();
-			cpu.pc = get_next_pc();
 			for (int i = 0; i < RF_NUM; i++) {
-				cpu.registerFile[i] = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_WBU__DOT__u_registerfile__DOT__register_file[i];
+				cpu.registerFile[i] = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__register_file)[i];
 			}
-			current_inst = temp_pip_info.inst;
-			current_pc = temp_pip_info.pc;
+			cpu.pc = commit_info.next_pc;
+			current_inst = commit_info.inst;
+			current_pc = commit_info.pc;
 			if(cpu.pc >= 0xa0000000) cycle_times++;
 			if(cpu.pc >= 0xa0000000) dynamic_insts++;
 			if (current_inst == ebreak) {
@@ -123,7 +188,6 @@ void cpu_exec_one() {
 
 		cycle;
 
-		load_pip_info();
 		if(cpu.pc >= 0xa0000000) cycle_times++;
 	
 	}
@@ -155,7 +219,10 @@ void cpu_exec(uint32_t n) {
 
         IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
         IFDEF(CONFIG_WATCHPOINT, diff_wp(current_pc));
-		IFDEF(CONFIG_DIFFTEST, if (cpu_state != IDLE); difftest_step(current_pc));
+#ifdef CONFIG_DIFFTEST
+		if (current_difftest_skip) difftest_skip_ref();
+		if (cpu_state != IDLE) difftest_step(current_pc);
+#endif
         IFDEF(CONFIG_DEVICE, device_update());
 		IFDEF(NVBOARD, nvboard_update());
 
@@ -172,5 +239,3 @@ void cpu_exec(uint32_t n) {
         }
     }
 }
-
-

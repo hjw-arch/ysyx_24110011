@@ -22,12 +22,12 @@
 #include "../monitor/sdb/sdb.h"
 #endif
 
-#if   defined(CONFIG_PMEM_MALLOC)
-static uint8_t *pmem = NULL;
-#elif  defined(CONFIG_SOC)
+#if defined(CONFIG_SOC)
 static uint8_t FLASH[FLASH_SIZE] PG_ALIGN = {};
 static uint8_t SDRAM[SDRAM_SIZE] PG_ALIGN = {};
 static uint8_t SRAM[SRAM_SIZE] PG_ALIGN = {};
+#elif defined(CONFIG_PMEM_MALLOC)
+static uint8_t *pmem = NULL;
 #else // CONFIG_PMEM_GARRAY
 static uint8_t pmem[CONFIG_MSIZE] PG_ALIGN = {};
 #endif
@@ -152,7 +152,7 @@ static void out_of_bound(paddr_t addr) {
 }
 
 void init_mem() {
-#if  defined(CONFIG_PMEM_MALLOC)
+#if defined(CONFIG_PMEM_MALLOC) && !defined(CONFIG_SOC)
     pmem = malloc(CONFIG_MSIZE);
     assert(pmem);
 #endif
@@ -165,16 +165,22 @@ void init_mem() {
 
 word_t paddr_read(paddr_t addr, int len) {
     if (likely(in_pmem(addr))) return pmem_read(addr, len);
+#ifdef CONFIG_SOC
+	if(IN_CLINT(addr)) return sim_clint_read(addr);
+	if(IN_UART(addr)) return sim_uart_read(addr);
+#else
     IFDEF(CONFIG_DEVICE, return mmio_read(addr, len));
-	IFDEF(CONFIG_SOC, if(IN_CLINT(addr)) return sim_clint_read(addr));
-	IFDEF(CONFIG_SOC, if(IN_UART(addr)) return sim_uart_read(addr));
+#endif
     out_of_bound(addr);
     return 0;
 }
 
 void paddr_write(paddr_t addr, int len, word_t data) {
     if (likely(in_pmem(addr))) { pmem_write(addr, len, data); return; }
+#ifdef CONFIG_SOC
+	if(IN_UART(addr)) {sim_uart_write(addr, (uint8_t)data); return;}
+#else
     IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data); return);
-	IFDEF(CONFIG_SOC, if(IN_UART(addr)) {sim_uart_write(addr, (uint8_t)data); return;});
+#endif
     out_of_bound(addr);
 }

@@ -12,6 +12,7 @@ extern long img_size;
 
 void init_difftest(char *ref_so_file, long img_size, int port);
 void difftest_step(vaddr_t pc);
+void difftest_skip_ref();
 
 void defftest_reset();
 

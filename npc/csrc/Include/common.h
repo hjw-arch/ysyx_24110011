@@ -2,9 +2,11 @@
 #define COMMON_H
 
 #include "macro.h"
+#include "config.h"
 #include <stdint.h>
 
 #define		RF_NUM			16
+#define     CPU_RESET_VECTOR   (MUXDEF(SOC, 0x30000000u, 0x80000000u) + PC_RST_OFFSET)
 
 #define cycle  \
 do { \
@@ -27,7 +29,7 @@ do {    \
     for(int i = 0; i < 10; i++) cycle;\
     dut.reset = 0;    \
 	for(int i = 0; i < 10; i++) cycle;\
-    cpu.pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__pc;  \
+    cpu.pc = CPU_RESET_VECTOR;  \
 } while(0) \
 
 #else
@@ -37,7 +39,7 @@ do {    \
     dut.reset = 1;    \
     for(int i = 0; i < 10; i++) cycle;\
     dut.reset = 0;    \
-    cpu.pc = dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_IFU__DOT__pc;  \
+    cpu.pc = CPU_RESET_VECTOR;  \
 } while(0) \
 
 #endif
@@ -47,4 +49,3 @@ typedef MUXDEF(ISA64, uint64_t, uint32_t)   word_t;
 
 
 #endif
-
