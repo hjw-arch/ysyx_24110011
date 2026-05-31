@@ -9,6 +9,8 @@ import pipeline_pkt_pkg::*;
 
 	output	[4:0] 			id_rs1_addr,
 	output	[4:0]			id_rs2_addr,
+	output					id_rs1_used,
+	output					id_rs2_used,
 	input 					hazard,
 
     input					valid_i,
@@ -115,8 +117,12 @@ assign ready_o = ready_i & ~hazard;
 assign rs1_addr = rs1_addr_raw;
 assign rs2_addr = rs2_addr_raw;
 
-assign id_rs1_addr = (valid_i & rs1_used) ? rs1_addr_raw : 5'b0;
-assign id_rs2_addr = (valid_i & rs2_used) ? rs2_addr_raw : 5'b0;
+// hazard/forwarding 比较使用原始 rs 地址；used 在最后一级门控。
+// 这样地址比较器不需要等待 used 解码结果，ID 阶段阻塞路径更短。
+assign id_rs1_addr = rs1_addr_raw;
+assign id_rs2_addr = rs2_addr_raw;
+assign id_rs1_used = valid_i & rs1_used;
+assign id_rs2_used = valid_i & rs2_used;
 
 assign data_o.meta.pc   = pc;
 assign data_o.meta.inst = inst;

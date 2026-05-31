@@ -150,6 +150,8 @@ logic			ifence;
 // forward
 logic [4:0]		id_rs1_addr;
 logic [4:0]		id_rs2_addr;
+logic			id_rs1_used;
+logic			id_rs2_used;
 logic [4:0]		ex_rd_addr;
 logic [4:0]		ls_rd_addr;
 logic [4:0]		wb_rd_addr;
@@ -198,17 +200,15 @@ u_if2id_pip(
 
 
 IDU u_IDU(
-	.clk      	(clock         ),
-	.rst      	(reset         ),
 	.rs1_addr 	(rs1_addr  	   ),
 	.rs2_addr 	(rs2_addr  	   ),
 	.rs1_data 	(rs1_data  	   ),
 	.rs2_data 	(rs2_data  	   ),
 	.id_rs1_addr(id_rs1_addr   ),
 	.id_rs2_addr(id_rs2_addr   ),
+	.id_rs1_used(id_rs1_used   ),
+	.id_rs2_used(id_rs2_used   ),
 	.hazard   	(hazard_valid  ),
-	.flush   	(flush    	   ),
-	.ifence		(ifence),
 	.valid_i  	(idu_valid_i   ),
 	.data_i   	(idu_data_i    ),
 	.ready_o  	(idu_ready_o   ),
@@ -339,6 +339,8 @@ assign wb_rd_addr	=	wbu_rd_addr;
 hazard_temp u_hazard_temp(
 	.id_rs1_addr  	(id_rs1_addr   ),
 	.id_rs2_addr  	(id_rs2_addr   ),
+	.id_rs1_used  	(id_rs1_used   ),
+	.id_rs2_used  	(id_rs2_used   ),
 	.ex_rd_addr   	(ex_rd_addr    ),
 	.ls_rd_addr   	(ls_rd_addr    ),
 	.wb_rd_addr   	(wb_rd_addr    ),
@@ -1090,7 +1092,6 @@ assign clint_bready  		= 		s1_bready;
 
 
 endmodule
-
 
 
 
