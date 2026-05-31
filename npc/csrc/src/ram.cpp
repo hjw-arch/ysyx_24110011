@@ -47,6 +47,10 @@ void *guest_to_host(uint32_t addr) {
 
 #endif
 
+static inline uint32_t align_down(uint32_t addr, uint32_t align) {
+    return addr & ~(align - 1);
+}
+
 int pmem_read(int addr, int len) {
 	// printf("addr = %x, len = %x\n",addr, len);
     uint32_t ret = 0;
@@ -54,7 +58,10 @@ int pmem_read(int addr, int len) {
 	if (len == 0) return 0;
 	if (len == 1) len = 1;
 	if (len == 3) len = 2;
-	if (len == 15) len = 4;
+	if (len == 15) {
+		addr = align_down(addr, 4);
+		len = 4;
+	}
 
     if (addr >= RAM_START_ADDR && addr <= RAM_END_ADDR) {
         switch (len) {
@@ -87,29 +94,18 @@ int pmem_read(int addr, int len) {
 void pmem_write(int addr, int data, int len) {
     // Assert((addr <= RAM_END_ADDR) && (addr >= RAM_START_ADDR), "Addr 0x%08x transbordered the boundary.", addr);
     if (len == 0) return;
-	if (len == 1) len = 1;
-	if (len == 3) len = 2;
-	if (len == 15) len = 4;
 
     if ((addr <= RAM_END_ADDR) && (addr >= RAM_START_ADDR)) {
-        IFDEF(CONFIG_MTRACE, mtrace_write(addr, len == 0 ? 1 : len == 1 ? 2 : 4, data, 0));
-        switch (len) {
-            case 1: // 1
-                *(uint8_t *)guest_to_host(addr) = data;
-                return;
+        uint32_t aligned_addr = align_down(addr, 4);
+        uint8_t *host = (uint8_t *)guest_to_host(aligned_addr);
 
-            case 2: // 2
-                *(uint16_t *)guest_to_host(addr) = data;
-                return;
+        if (len & 0x1) host[0] = data & 0xff;
+        if (len & 0x2) host[1] = (data >> 8) & 0xff;
+        if (len & 0x4) host[2] = (data >> 16) & 0xff;
+        if (len & 0x8) host[3] = (data >> 24) & 0xff;
 
-            case 4: // 4
-                *(uint32_t *)guest_to_host(addr) = data;
-                return;
-
-            default:
-                Assert(0, "pmem_write error, input 'len' is %d", len);
-                return;
-        }
+        IFDEF(CONFIG_MTRACE, mtrace_write(aligned_addr, len, data, 0));
+        return;
     } else {
         IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data));
         return;

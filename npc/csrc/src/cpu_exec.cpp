@@ -32,7 +32,7 @@ extern VerilatedVcdC tfp;
 #ifdef SOC
 #define CORE_SIG(name) dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__##name
 #else
-#define CORE_SIG(name) dut.rootp->ysyx__DOT__##name
+#define CORE_SIG(name) dut.rootp->ysyx__DOT__u_cpu__DOT__##name
 #endif
 
 cpu_t cpu;

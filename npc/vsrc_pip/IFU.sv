@@ -29,7 +29,11 @@ import pipeline_pkt_pkg::*;
     input 			        ready_i
 );
 
+`ifdef SOC
 localparam  RST_PC   =   32'h30000000;
+`else
+localparam  RST_PC   =   32'h80000000;
+`endif
 
 // ==========================================
 // 内部信号 —— IFU ↔ ICache
