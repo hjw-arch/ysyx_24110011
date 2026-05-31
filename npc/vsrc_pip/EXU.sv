@@ -31,8 +31,8 @@ assign valid_o = valid_i;
 assign ready_o = ready_i;
 
 // 前递选择已经在 ID 阶段算好，EX 阶段只做一个小 mux。
-// LS 数据来自当前 EX/LS packet 的 result；WB 数据来自 WBU 的真实写回值，
-// 因此 CSR 指令写回旧 CSR 值时也能正确前递。
+// LS 数据来自当前 EX/LS packet 的 result；WB 数据来自 LS/WB packet 的 result。
+// CSR 写回旧 CSR 值不走 EX 前递，相关性由 hazard 阻塞到 WB 后交给寄存器堆 bypass。
 logic [31:0] rs1_data;
 logic [31:0] rs2_data;
 

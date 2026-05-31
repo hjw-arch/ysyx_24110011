@@ -167,6 +167,7 @@ logic [4:0]		ex_rd_addr;
 logic [4:0]		ls_rd_addr;
 logic			ex_is_load;
 logic			ex_is_csr;
+logic			ls_is_csr;
 logic			ls_can_wb;
 fwd_sel_t		fwd_rs1_sel;
 fwd_sel_t		fwd_rs2_sel;
@@ -258,7 +259,7 @@ EXU u_EXU(
 	.rst     	(reset	 ),
 	.rd_addr_hazard(exu_rd_addr ),
 	.fwd_ls_data_i(lsu_data_i.result),
-	.fwd_wb_data_i(wbu_rf_wdata),
+	.fwd_wb_data_i(wbu_data_i.result),
 	.valid_i 	(exu_valid_i	),
 	.data_i  	(exu_data_i 	),
 	.ready_o 	(exu_ready_o	),
@@ -370,6 +371,7 @@ assign ex_rd_addr	=	exu_rd_addr;
 assign ls_rd_addr	=	lsu_rd_addr;
 assign ex_is_load	=	exu_valid_i & (exu_data_i.mem.cmd == MEM_LOAD);
 assign ex_is_csr	=	exu_valid_i & (exu_data_i.sys.csr_cmd != CSR_CMD_NONE);
+assign ls_is_csr	=	lsu_valid_i & (lsu_data_i.sys.csr_cmd != CSR_CMD_NONE);
 assign ls_can_wb	=	lsu_valid_o & lsu_ready_i;
 
 hazard_unit u_hazard_unit(
@@ -381,6 +383,7 @@ hazard_unit u_hazard_unit(
 	.ex_is_load   	(ex_is_load    ),
 	.ex_is_csr    	(ex_is_csr     ),
 	.ls_rd_addr   	(ls_rd_addr    ),
+	.ls_is_csr    	(ls_is_csr     ),
 	.ls_can_wb    	(ls_can_wb     ),
 	.fwd_rs1_sel  	(fwd_rs1_sel   ),
 	.fwd_rs2_sel  	(fwd_rs2_sel   ),
