@@ -43,6 +43,7 @@ import pipeline_pkt_pkg::*;
 	output	[4:0]		rd_addr_hazard,
     output  [31:0]      pc_target_o,
     output              flush_o,
+	input				kill_i,
 
 	input 				valid_i,
 	input	ex2ls_pkt_t data_i,
@@ -83,16 +84,18 @@ import pipeline_pkt_pkg::*;
 	wire state_busy = state == S_BUSY;
 	wire state_resp = state == S_RESP;
 
-	wire mem_req_fire   = state_idle & valid_i & input_is_mem;
+	wire input_killed   = kill_i & state_idle;
+	wire mem_req_fire   = ~input_killed & state_idle & valid_i & input_is_mem;
 	wire mem_resp_valid = state_resp | (state_busy & axi_done);
 
 	// 非访存指令直接透传到 WBU。
 	// load/store 期间反压住 EX/LS 寄存器，让级间寄存器保持当前 packet，
 	// LSU 内部不再额外保存整包数据，面积更小。
-	assign ready_o = state_idle ? ((valid_i & input_is_mem) ? 1'b0 : ready_i) :
+	assign ready_o = input_killed ? 1'b1 :
+					 state_idle ? ((valid_i & input_is_mem) ? 1'b0 : ready_i) :
 					 (mem_resp_valid & ready_i);
 
-	assign valid_o = state_idle ? (valid_i & ~input_is_mem) : mem_resp_valid;
+	assign valid_o = ~input_killed & (state_idle ? (valid_i & ~input_is_mem) : mem_resp_valid);
 
 	always_comb begin
 		unique case (state)
@@ -138,14 +141,14 @@ import pipeline_pkt_pkg::*;
 	assign data_o.result = out_result;
 
 	wire [4:0] rd_addr = data_i.meta.inst[11:7];
-	assign rd_addr_hazard = rd_addr & {5{valid_i & data_i.wb.rd_wen}};
+	assign rd_addr_hazard = rd_addr & {5{valid_i & data_i.wb.rd_wen & ~input_killed}};
 
 	// LSU 只负责普通控制流重定向；fence.i/ecall/mret 统一在 WBU 提交点处理。
 	wire        out_redirect_valid = data_i.redirect.valid;
 	wire [31:0] out_redirect_addr  = data_i.redirect.addr;
 	wire        output_fire        = valid_o & ready_i;
 
-	assign flush_o     = output_fire & out_redirect_valid;
+	assign flush_o     = ~input_killed & output_fire & out_redirect_valid;
 	assign pc_target_o = out_redirect_addr;
 
 	// AXI

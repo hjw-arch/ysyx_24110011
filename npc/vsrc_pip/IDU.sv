@@ -11,6 +11,8 @@ import pipeline_pkt_pkg::*;
 	output	[4:0]			id_rs2_addr,
 	output					id_rs1_used,
 	output					id_rs2_used,
+	input	fwd_sel_t		fwd_rs1_sel_i,
+	input	fwd_sel_t		fwd_rs2_sel_i,
 	input 					hazard,
 
     input					valid_i,
@@ -129,6 +131,8 @@ assign data_o.meta.inst = inst;
 
 assign data_o.ex.rs1_used = rs1_used;
 assign data_o.ex.rs2_used = rs2_used;
+assign data_o.ex.fwd_rs1_sel = fwd_rs1_sel_i;
+assign data_o.ex.fwd_rs2_sel = fwd_rs2_sel_i;
 
 // ALU 操作按 bit 直接生成，避免写成优先级 mux 链。
 // 这部分更像一个小 PLA：

@@ -95,6 +95,10 @@ assign io_slave_rdata   	= 	32'b0;
 assign io_slave_rlast   	= 	1'b0;
 assign io_slave_rid     	= 	4'b0000;
 
+// 当前工程目标是 RV32E。后续需要完整 RV32I 时，只需要把这里改成 0，
+// 寄存器堆会从 16 个通用寄存器切到 32 个。
+localparam bit USE_RV32E = 1'b1;
+
 
 // IF
 logic 			ifu_valid_o;
@@ -128,10 +132,10 @@ ls2wb_pkt_t		lsu_data_o;
 logic			lsu_ready_i;
 
 // WB
-logic [4:0]		wbu_rd_addr;
 logic			wbu_valid_i;
 ls2wb_pkt_t		wbu_data_i;
 logic			wbu_ready_o;
+logic [31:0]	wbu_rf_wdata;
 
 
 // RF
@@ -161,7 +165,11 @@ logic			id_rs1_used;
 logic			id_rs2_used;
 logic [4:0]		ex_rd_addr;
 logic [4:0]		ls_rd_addr;
-logic [4:0]		wb_rd_addr;
+logic			ex_is_load;
+logic			ex_is_csr;
+logic			ls_can_wb;
+fwd_sel_t		fwd_rs1_sel;
+fwd_sel_t		fwd_rs2_sel;
 logic			hazard_valid;
 
 
@@ -217,6 +225,8 @@ IDU u_IDU(
 	.id_rs2_addr(id_rs2_addr   ),
 	.id_rs1_used(id_rs1_used   ),
 	.id_rs2_used(id_rs2_used   ),
+	.fwd_rs1_sel_i(fwd_rs1_sel ),
+	.fwd_rs2_sel_i(fwd_rs2_sel ),
 	.hazard   	(hazard_valid  ),
 	.valid_i  	(idu_valid_i   ),
 	.data_i   	(idu_data_i    ),
@@ -247,6 +257,8 @@ EXU u_EXU(
 	.clk     	(clock	 ),
 	.rst     	(reset	 ),
 	.rd_addr_hazard(exu_rd_addr ),
+	.fwd_ls_data_i(lsu_data_i.result),
+	.fwd_wb_data_i(wbu_rf_wdata),
 	.valid_i 	(exu_valid_i	),
 	.data_i  	(exu_data_i 	),
 	.ready_o 	(exu_ready_o	),
@@ -308,6 +320,7 @@ LSU u_LSU(
 	.rd_addr_hazard(lsu_rd_addr),
 	.pc_target_o(lsu_pc_target),
 	.flush_o(lsu_flush),
+	.kill_i		(wbu_flush	  ),
 	.valid_i 	(lsu_valid_i  ),
 	.data_i  	(lsu_data_i   ),
 	.ready_o 	(lsu_ready_o  ),
@@ -334,14 +347,16 @@ u_ls2wb_pip(
 
 
 
-WBU u_WBU(
+WBU #(
+	.RV32E		(USE_RV32E		)
+) u_WBU(
 	.clk		(clock			),
 	.rst		(reset			),
 	.rs1_addr	(rs1_addr		),
 	.rs2_addr	(rs2_addr		),
 	.rs1_data	(rs1_data		),
 	.rs2_data	(rs2_data		),
-	.rd_addr_hazard(wbu_rd_addr),
+	.rf_wdata_o	(wbu_rf_wdata	),
 	.flush_o	(wbu_flush		),
 	.flush_addr_o(wbu_pc_target	),
 	.invalidate_ic_o(ifence		),
@@ -353,16 +368,22 @@ WBU u_WBU(
 
 assign ex_rd_addr	=	exu_rd_addr;
 assign ls_rd_addr	=	lsu_rd_addr;
-assign wb_rd_addr	=	wbu_rd_addr;
+assign ex_is_load	=	exu_valid_i & (exu_data_i.mem.cmd == MEM_LOAD);
+assign ex_is_csr	=	exu_valid_i & (exu_data_i.sys.csr_cmd != CSR_CMD_NONE);
+assign ls_can_wb	=	lsu_valid_o & lsu_ready_i;
 
-hazard_temp u_hazard_temp(
+hazard_unit u_hazard_unit(
 	.id_rs1_addr  	(id_rs1_addr   ),
 	.id_rs2_addr  	(id_rs2_addr   ),
 	.id_rs1_used  	(id_rs1_used   ),
 	.id_rs2_used  	(id_rs2_used   ),
 	.ex_rd_addr   	(ex_rd_addr    ),
+	.ex_is_load   	(ex_is_load    ),
+	.ex_is_csr    	(ex_is_csr     ),
 	.ls_rd_addr   	(ls_rd_addr    ),
-	.wb_rd_addr   	(wb_rd_addr    ),
+	.ls_can_wb    	(ls_can_wb     ),
+	.fwd_rs1_sel  	(fwd_rs1_sel   ),
+	.fwd_rs2_sel  	(fwd_rs2_sel   ),
 	.hazard_valid 	(hazard_valid  )
 );
 
@@ -1111,6 +1132,3 @@ assign clint_bready  		= 		s1_bready;
 
 
 endmodule
-
-
-

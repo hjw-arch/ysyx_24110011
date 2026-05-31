@@ -7,6 +7,8 @@ import pipeline_pkt_pkg::*;
     input               rst,
 
     output  [4:0]       rd_addr_hazard,
+    input   [31:0]      fwd_ls_data_i,
+    input   [31:0]      fwd_wb_data_i,
 
     input               valid_i,
     input   id2ex_pkt_t data_i,
@@ -19,14 +21,36 @@ import pipeline_pkt_pkg::*;
 
 wire [31:0] inst     = data_i.meta.inst;
 wire [31:0] pc       = data_i.meta.pc;
-wire [31:0] rs1_data = data_i.rs1_data;
-wire [31:0] rs2_data = data_i.rs2_data;
+wire [31:0] rs1_raw  = data_i.rs1_data;
+wire [31:0] rs2_raw  = data_i.rs2_data;
 wire [31:0] imm      = data_i.imm;
 
 wire [4:0] rd_addr = inst[11:7];
 
 assign valid_o = valid_i;
 assign ready_o = ready_i;
+
+// 前递选择已经在 ID 阶段算好，EX 阶段只做一个小 mux。
+// LS 数据来自当前 EX/LS packet 的 result；WB 数据来自 WBU 的真实写回值，
+// 因此 CSR 指令写回旧 CSR 值时也能正确前递。
+logic [31:0] rs1_data;
+logic [31:0] rs2_data;
+
+always_comb begin
+    unique case (data_i.ex.fwd_rs1_sel)
+        FWD_SEL_LS: rs1_data = fwd_ls_data_i;
+        FWD_SEL_WB: rs1_data = fwd_wb_data_i;
+        default:    rs1_data = rs1_raw;
+    endcase
+end
+
+always_comb begin
+    unique case (data_i.ex.fwd_rs2_sel)
+        FWD_SEL_LS: rs2_data = fwd_ls_data_i;
+        FWD_SEL_WB: rs2_data = fwd_wb_data_i;
+        default:    rs2_data = rs2_raw;
+    endcase
+end
 
 // ALU 输入选择：
 //   00: rs1, rs2

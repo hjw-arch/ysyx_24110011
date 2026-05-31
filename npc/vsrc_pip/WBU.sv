@@ -2,6 +2,9 @@
 
 module WBU
 import pipeline_pkt_pkg::*;
+#(
+    parameter bit RV32E = 1'b1
+)
 (
     input               clk,
     input               rst,
@@ -11,7 +14,7 @@ import pipeline_pkt_pkg::*;
     output  [31:0]      rs1_data,
     output  [31:0]      rs2_data,
 
-    output  [4:0]       rd_addr_hazard,
+    output  [31:0]      rf_wdata_o,
 
     output              flush_o,
     output  [31:0]      flush_addr_o,
@@ -64,9 +67,11 @@ assign ready_o = 1'b1;
 wire [31:0] rf_wdata = csr_valid ? csr_rdata : data_i.result;
 wire        rf_wen   = valid_i & data_i.wb.rd_wen;
 
-assign rd_addr_hazard = rd_addr & {5{rf_wen}};
+assign rf_wdata_o = rf_wdata;
 
-registerfile u_registerfile (
+registerfile #(
+    .RV32E     (RV32E)
+) u_registerfile (
     .clk       (clk),
     .wen       (rf_wen),
     .rd_addr   (rd_addr),
