@@ -78,26 +78,8 @@ ALU u_ALU(
 );
 
 
-logic [31:0] csr_rdata;
-logic [31:0] csr_mtvec;
-logic [31:0] csr_mepc;
-
-CSR u_CSR(
-	.clk        	(clk      	),
-	.rst        	(rst      	),
-	.wen        	(csr_wen    ),
-	.cmd        	(csr_cmd    ),
-	.ecall	 		(csr_ecall	),
-	.addr       	(csr_addr   ),
-	.sdata      	(rs1_data   ),
-	.pc         	(pc       	),
-	.rdata      	(csr_rdata  ),
-	.mtvec      	(csr_mtvec  ),
-	.mepc       	(csr_mepc   )
-);
-
 logic [31:0]	exu_result;
-assign			exu_result = csr_wen ? csr_rdata : alu_result;
+assign			exu_result = alu_result;
 
 
 // output
@@ -130,18 +112,8 @@ always_comb begin
 	endcase
 end
 
-logic [31:0] pc_target_temp;
-always_comb begin
-	unique case({csr_ecall, csr_mret})
-		2'b01: pc_target_temp = csr_mepc;
-		2'b10: pc_target_temp = csr_mtvec;
-		default: pc_target_temp = pc_cal_target;
-	endcase
-end
 
-assign pc_target = pc_target_temp;
-
-assign	flush = is_jump & valid_i | is_branch & branch_valid & valid_i | csr_ecall & valid_i | csr_mret & valid_i;
+// assign	flush = is_jump & valid_i | is_branch & branch_valid & valid_i;
 
 assign rd_addr_hazard = rd_addr & {5{valid_i}};
 

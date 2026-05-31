@@ -47,6 +47,20 @@ registerfile u_registerfile(
 );
 
 
+CSR u_CSR(
+	.clk        	(clk      	),
+	.rst        	(rst      	),
+	.wen        	(csr_wen    ),
+	.cmd        	(csr_cmd    ),
+	.ecall	 		(csr_ecall	),
+	.addr       	(csr_addr   ),
+	.sdata      	(rs1_data   ),
+	.pc         	(pc       	),
+	.rdata      	(csr_rdata  ),
+	.mtvec      	(csr_mtvec  ),
+	.mepc       	(csr_mepc   )
+);
+
 
 	
 endmodule 
