@@ -143,9 +143,16 @@ logic [31:0]	rs2_data;
 // flush
 logic 			flush;
 logic [31:0]	pc_target;
+logic			lsu_flush;
+logic [31:0]	lsu_pc_target;
+logic			wbu_flush;
+logic [31:0]	wbu_pc_target;
 
 // ifence
 logic			ifence;
+
+assign flush     = wbu_flush | lsu_flush;
+assign pc_target = wbu_flush ? wbu_pc_target : lsu_pc_target;
 
 // forward
 logic [4:0]		id_rs1_addr;
@@ -174,9 +181,9 @@ IFU u_IFU(
 	.RID     	(IFU_RID      ),
 	.RDATA   	(IFU_RDATA    ),
 	.RRESP   	(IFU_RRESP    ),
-	.ifence  	(ifence   	  ),
-	.pc_target 	(pc_target    ),
-	.flush   	(flush        ),
+	.inval_icache_i(ifence   	  ),
+	.flush_addr_i 	(pc_target    ),
+	.flush_i   	(flush        ),
 	.valid_o 	(ifu_valid_o  ),
 	.data_o  	(ifu_data_o   ),
 	.ready_i 	(ifu_ready_i  )
@@ -185,9 +192,11 @@ IFU u_IFU(
 
 
 pip_reg #(
-	.DATA_WIDTH 	($bits(if2id_pkt_t)))
+	.WIDTH 	($bits(if2id_pkt_t)))
 u_if2id_pip(
 	.clk        	(clock       ),
+	.rst        	(reset       ),
+	.flush      	(flush       ),
 	.pre_valid  	(ifu_valid_o ),
 	.pre_data   	(ifu_data_o  ),
 	.next_ready 	(idu_ready_o ),
@@ -219,9 +228,11 @@ IDU u_IDU(
 
 
 pip_reg #(
-	.DATA_WIDTH 	($bits(id2ex_pkt_t)))
+	.WIDTH 	($bits(id2ex_pkt_t)))
 u_id2ex_pip(
 	.clk        	(clock       ),
+	.rst        	(reset       ),
+	.flush      	(flush       ),
 	.pre_valid  	(idu_valid_o ),
 	.pre_data   	(idu_data_o  ),
 	.next_ready 	(exu_ready_o ),
@@ -235,8 +246,6 @@ u_id2ex_pip(
 EXU u_EXU(
 	.clk     	(clock	 ),
 	.rst     	(reset	 ),
-	.pc_target	(pc_target		),
-	.flush		(flush			),
 	.rd_addr_hazard(exu_rd_addr ),
 	.valid_i 	(exu_valid_i	),
 	.data_i  	(exu_data_i 	),
@@ -249,9 +258,11 @@ EXU u_EXU(
 
 
 pip_reg #(
-	.DATA_WIDTH 	($bits(ex2ls_pkt_t)))
+	.WIDTH 	($bits(ex2ls_pkt_t)))
 u_ex2ls_pip(
 	.clk        	(clock       ),
+	.rst        	(reset       ),
+	.flush      	(flush       ),
 	.pre_valid  	(exu_valid_o ),
 	.pre_data   	(exu_data_o  ),
 	.next_ready 	(lsu_ready_o ),
@@ -295,6 +306,8 @@ LSU u_LSU(
 	.BVALID  	(LSU_BVALID   ),
 	.BREADY  	(LSU_BREADY   ),
 	.rd_addr_hazard(lsu_rd_addr),
+	.pc_target_o(lsu_pc_target),
+	.flush_o(lsu_flush),
 	.valid_i 	(lsu_valid_i  ),
 	.data_i  	(lsu_data_i   ),
 	.ready_o 	(lsu_ready_o  ),
@@ -306,9 +319,11 @@ LSU u_LSU(
 
 
 pip_reg #(
-	.DATA_WIDTH 	($bits(ls2wb_pkt_t)))
+	.WIDTH 	($bits(ls2wb_pkt_t)))
 u_ls2wb_pip(
 	.clk        	(clock       ),
+	.rst        	(reset       ),
+	.flush      	(wbu_flush   ),
 	.pre_valid  	(lsu_valid_o ),
 	.pre_data   	(lsu_data_o  ),
 	.next_ready 	(wbu_ready_o ),
@@ -321,11 +336,15 @@ u_ls2wb_pip(
 
 WBU u_WBU(
 	.clk		(clock			),
+	.rst		(reset			),
 	.rs1_addr	(rs1_addr		),
 	.rs2_addr	(rs2_addr		),
 	.rs1_data	(rs1_data		),
 	.rs2_data	(rs2_data		),
 	.rd_addr_hazard(wbu_rd_addr),
+	.flush_o	(wbu_flush		),
+	.flush_addr_o(wbu_pc_target	),
+	.invalidate_ic_o(ifence		),
 	.valid_i	(wbu_valid_i	),
 	.data_i		(wbu_data_i		),
 	.ready_o	(wbu_ready_o	)
@@ -1092,10 +1111,6 @@ assign clint_bready  		= 		s1_bready;
 
 
 endmodule
-
-
-
-
 
 
 

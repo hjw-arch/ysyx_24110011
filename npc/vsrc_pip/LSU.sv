@@ -41,8 +41,8 @@ import pipeline_pkt_pkg::*;
     output				BREADY,
 	
 	output	[4:0]		rd_addr_hazard,
-    output              invalidate_ic_o,
     output  [31:0]      pc_target_o,
+    output              flush_o,
 
 	input 				valid_i,
 	input	ex2ls_pkt_t data_i,
@@ -53,93 +53,104 @@ import pipeline_pkt_pkg::*;
 	input 				ready_i
 );
 
-//================= Load Types =================//
-typedef enum logic [2:0] {
-  LOAD_TYPE_LB   = 3'b000,
-  LOAD_TYPE_LH   = 3'b001,
-  LOAD_TYPE_LW   = 3'b010,
-  LOAD_TYPE_LBU  = 3'b100,
-  LOAD_TYPE_LHU  = 3'b101
-} load_type_e;
+	//================= Load Types =================//
+	typedef enum logic [2:0] {
+		LOAD_TYPE_LB  = 3'b000,
+		LOAD_TYPE_LH  = 3'b001,
+		LOAD_TYPE_LW  = 3'b010,
+		LOAD_TYPE_LBU = 3'b100,
+		LOAD_TYPE_LHU = 3'b101
+	} load_type_e;
 
+	typedef enum logic [1:0] {
+		S_IDLE,
+		S_BUSY,
+		S_RESP
+	} state_t;
 
-/*
-typedef struct packed {
-    logic   [31:0]  result;
-    logic   [31:0]  rs2_data;
-    logic           ls_store;
-    logic           ls_load;
-    logic   [2:0]   ls_type;
-    logic   [4:0]   rd_addr;
-} ex2ls_pkt_t;
+	state_t state, nstate;
 
-*/
+	logic [31:0] load_result_r;
+	logic [31:0] lsu_rdata;
+	logic [31:0] axi_rdata;
+	logic        axi_done;
 
-// 解码
-wire [31:0]		lsu_addr	=	data_i.result;
-wire [31:0]		lsu_wdata	=	data_i.rs2_data;
-wire 			lsu_store	=	data_i.ls_store;
-wire			lsu_load	=	data_i.ls_load;
-wire [2:0]		lsu_type	=	data_i.ls_type;
-wire [4:0]      rd_addr     =   data_i.rd_addr;
-// wire [4:0]		rest_data	=	data_i[4:0];
+	wire input_is_load  = data_i.mem.cmd == MEM_LOAD;
+	wire input_is_store = data_i.mem.cmd == MEM_STORE;
+	wire input_is_mem   = input_is_load | input_is_store;
 
-// 内部信号
-logic	[31:0]	rd_data;
-logic	[31:0]	lsu_rdata;
-logic	[31:0]	axi_rdata;
-logic	[1:0]	axi_rresp;
-logic	[1:0]	axi_bresp;
-logic			axi_done;
+	wire state_idle = state == S_IDLE;
+	wire state_busy = state == S_BUSY;
+	wire state_resp = state == S_RESP;
 
-// 状态机
-logic state, nstate;			// 0: IDLE 1: BUSY		LSU无需管WBU的ready信号
+	wire mem_req_fire   = state_idle & valid_i & input_is_mem;
+	wire mem_resp_valid = state_resp | (state_busy & axi_done);
 
-always_ff @(posedge clk) begin
-	state <= rst ? 1'b0 : nstate;
-end
+	// 非访存指令直接透传到 WBU。
+	// load/store 期间反压住 EX/LS 寄存器，让级间寄存器保持当前 packet，
+	// LSU 内部不再额外保存整包数据，面积更小。
+	assign ready_o = state_idle ? ((valid_i & input_is_mem) ? 1'b0 : ready_i) :
+					 (mem_resp_valid & ready_i);
 
-assign nstate = valid_i & lsu_load | valid_i & lsu_store | state & ~axi_done;
+	assign valid_o = state_idle ? (valid_i & ~input_is_mem) : mem_resp_valid;
 
+	always_comb begin
+		unique case (state)
+			S_IDLE: nstate = mem_req_fire ? S_BUSY : S_IDLE;
+			S_BUSY: nstate = axi_done ? (ready_i ? S_IDLE : S_RESP) : S_BUSY;
+			S_RESP: nstate = ready_i ? S_IDLE : S_RESP;
+			default: nstate = S_IDLE;
+		endcase
+	end
 
-always_comb begin
-	case(lsu_type)
-		LOAD_TYPE_LB:	lsu_rdata = {{24{axi_rdata[7]}}, axi_rdata[7:0]};
-		LOAD_TYPE_LH:	lsu_rdata = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
-		LOAD_TYPE_LW:	lsu_rdata = axi_rdata;
-		LOAD_TYPE_LBU:	lsu_rdata = {24'b0, axi_rdata[7:0]};
-		LOAD_TYPE_LHU:	lsu_rdata = {16'b0, axi_rdata[15:0]};
-		default:		lsu_rdata = 32'b0;
-	endcase
-end
+	always_ff @(posedge clk) begin
+		state <= rst ? S_IDLE : nstate;
+	end
 
-assign valid_o = valid_i & ~lsu_load & ~lsu_store | state & axi_done;
-assign ready_o = ~nstate;
+	// 如果 WBU 当拍不能接收，load 数据需要暂存在 LSU 内部。
+	always_ff @(posedge clk) begin
+		if (state_busy & axi_done) begin
+			load_result_r <= lsu_rdata;
+		end
+	end
 
-/*
-// assign data_o = {rd_data, lsu_load, rest_data};
+	wire [31:0] lsu_addr  = data_i.result;
+	wire [31:0] lsu_wdata = data_i.store_data;
+	wire [2:0]  lsu_type  = data_i.meta.inst[14:12];
 
-typedef struct packed {
-    logic   [31:0]  result;
-    logic   [4:0]   rd_addr;
-    logic           is_load;
-} ls2wb_pkt_t;
-*/
+	always_comb begin
+		unique case (load_type_e'(lsu_type))
+			LOAD_TYPE_LB:  lsu_rdata = {{24{axi_rdata[7]}},  axi_rdata[7:0]};
+			LOAD_TYPE_LH:  lsu_rdata = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
+			LOAD_TYPE_LW:  lsu_rdata = axi_rdata;
+			LOAD_TYPE_LBU: lsu_rdata = {24'b0, axi_rdata[7:0]};
+			LOAD_TYPE_LHU: lsu_rdata = {16'b0, axi_rdata[15:0]};
+			default:       lsu_rdata = 32'b0;
+		endcase
+	end
 
-assign rd_data = lsu_load ? lsu_rdata : lsu_addr;
-// assign data_o = {rd_data, lsu_load, rest_data};
-assign data_o.result    =   rd_data;
-assign data_o.rd_addr   =   data_i.rd_addr;
-assign data_o.is_load   =   lsu_load;
+	wire [31:0] mem_result = state_resp ? load_result_r : lsu_rdata;
+	wire [31:0] out_result = input_is_load ? mem_result : data_i.result;
 
-assign rd_addr_hazard   =   rd_addr & {5{valid_i | state}};
-assign invalidate_ic_o  =   data_i.is_fence_i & valid_i & ready_o;      // 只发一次
-assign pc_target_o      =   data_i.pc + 32'h4;
+	assign data_o.meta   = data_i.meta;
+	assign data_o.wb     = data_i.wb;
+	assign data_o.sys    = data_i.sys;
+	assign data_o.result = out_result;
 
-// AXI
+	wire [4:0] rd_addr = data_i.meta.inst[11:7];
+	assign rd_addr_hazard = rd_addr & {5{valid_i & data_i.wb.rd_wen}};
 
-wire	wen	=	lsu_store & valid_i;
-wire	ren	=	lsu_load  & valid_i;
+	// LSU 只负责普通控制流重定向；fence.i/ecall/mret 统一在 WBU 提交点处理。
+	wire        out_redirect_valid = data_i.redirect.valid;
+	wire [31:0] out_redirect_addr  = data_i.redirect.addr;
+	wire        output_fire        = valid_o & ready_i;
+
+	assign flush_o     = output_fire & out_redirect_valid;
+	assign pc_target_o = out_redirect_addr;
+
+	// AXI
+	wire wen = mem_req_fire & input_is_store;
+	wire ren = mem_req_fire & input_is_load;
 
 axi4_full_master u_axi4_full_master(
     .clk        	(clk         ),
@@ -154,8 +165,8 @@ axi4_full_master u_axi4_full_master(
     .raddr      	(lsu_addr    ),
     .rdata      	(axi_rdata   ),/* verilator lint_off PINCONNECTEMPTY */
 	.rdata_valid	(),
-    .rresp      	(axi_rresp   ),
-    .wresp      	(axi_bresp   ),
+    .rresp      	(),
+    .wresp      	(),
     .done       	(axi_done    ),
     .ARREADY    	(ARREADY     ),
     .ARVALID    	(ARVALID     ),
