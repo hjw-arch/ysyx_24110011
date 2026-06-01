@@ -6,8 +6,15 @@
 
 #define __GUEST_ISA__     RISCV32
 #define RV32
-#define CONFIG_RVE
 // #define RV64
+
+#if defined(CONFIG_RVE) && defined(CONFIG_RVI)
+#error "CONFIG_RVE and CONFIG_RVI cannot both be defined"
+#endif
+
+#if !defined(CONFIG_RVE) && !defined(CONFIG_RVI)
+#define CONFIG_RVE 1
+#endif
 
 // SOC/NPC 模式由 Makefile 通过 -DSOC/-DNPC 选择。
 

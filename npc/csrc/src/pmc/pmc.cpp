@@ -1,5 +1,6 @@
 #include "common.h"
 #include "log.h"
+#include "pmc.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -414,141 +415,113 @@ static bool is_fence_i_inst(uint32_t inst) {
     return bits(inst, 6, 2) == 0x03 && bits(inst, 14, 12) == 0x1;
 }
 
-void PerformanceCounter_record_cycle(
-    uint32_t pc,
-    bool wbu_valid,
-    uint32_t wbu_pc,
-    bool ifu_req_valid,
-    bool ifu_req_ready,
-    bool ifu_resp_valid,
-    bool ifu_resp_ready,
-    bool ifu_flush,
-    bool icache_req_hit,
-    bool icache_req_miss,
-    bool icache_miss_busy,
-    bool icache_drop_refill,
-    bool icache_invalidate,
-    bool lsu_mem_req_fire,
-    bool lsu_input_is_load,
-    bool lsu_input_is_store,
-    bool lsu_state_busy,
-    bool hazard_valid,
-    bool rs1_block_ex,
-    bool rs2_block_ex,
-    bool rs1_block_ls,
-    bool rs2_block_ls,
-    bool ex_is_load,
-    bool ex_is_csr,
-    bool ls_is_csr,
-    bool ls_can_wb,
-    bool idu_valid,
-    uint8_t fwd_rs1_sel,
-    uint8_t fwd_rs2_sel,
-    bool rf_rs1_bypass,
-    bool rf_rs2_bypass
-) {
-    pmc_counter_t *c = &pmc[region_of_pc(pc)];
-    bool empty_retire = !wbu_valid;
-    bool icache_wait = icache_miss_busy || (ifu_req_valid && !ifu_req_ready);
+void PerformanceCounter_record_cycle(const pmc_cycle_sample_t *sample) {
+    pmc_counter_t *c = &pmc[region_of_pc(sample->pc)];
+    bool empty_retire = !sample->wbu_valid;
+    bool icache_wait = sample->icache_miss_busy ||
+                       (sample->ifu_req_valid && !sample->ifu_req_ready);
 
     c->cycles++;
-    if (wbu_valid) {
+    if (sample->wbu_valid) {
         c->retire_cycles++;
     } else {
         c->empty_retire_cycles++;
     }
 
-    if (ifu_resp_valid && ifu_resp_ready) {
+    if (sample->ifu_resp_valid && sample->ifu_resp_ready) {
         c->ifu_resp++;
     }
 
-    if (!ifu_resp_valid) {
-        if (ifu_flush) {
+    if (!sample->ifu_resp_valid) {
+        if (sample->ifu_flush) {
             c->ifu_wait_flush++;
-        } else if (icache_miss_busy || (ifu_req_valid && !ifu_req_ready)) {
+        } else if (sample->icache_miss_busy ||
+                   (sample->ifu_req_valid && !sample->ifu_req_ready)) {
             c->ifu_wait_cache++;
         } else {
             c->ifu_wait_other++;
         }
-    } else if (!ifu_resp_ready) {
+    } else if (!sample->ifu_resp_ready) {
         c->ifu_wait_backend++;
     }
 
-    if (icache_req_hit) {
+    if (sample->icache_req_hit) {
         c->icache_hit++;
     }
-    if (icache_req_miss) {
+    if (sample->icache_req_miss) {
         c->icache_miss++;
     }
-    if (icache_miss_busy) {
+    if (sample->icache_miss_busy) {
         c->icache_miss_cycles++;
     }
-    if (icache_drop_refill) {
+    if (sample->icache_drop_refill) {
         c->icache_refill_drop++;
         c->icache_drop_cause[pending_drop_cause]++;
         pending_drop_cause = PMC_DROP_NONE;
     }
-    if (icache_invalidate) {
+    if (sample->icache_invalidate) {
         c->icache_invalidate++;
     }
 
-    if (lsu_mem_req_fire) {
-        if (lsu_input_is_load) c->lsu_load++;
-        if (lsu_input_is_store) c->lsu_store++;
+    if (sample->lsu_mem_req_fire) {
+        if (sample->lsu_input_is_load) c->lsu_load++;
+        if (sample->lsu_input_is_store) c->lsu_store++;
     }
-    if (lsu_state_busy) {
-        if (lsu_input_is_load) c->lsu_load_cycles++;
-        if (lsu_input_is_store) c->lsu_store_cycles++;
+    if (sample->lsu_state_busy) {
+        if (sample->lsu_input_is_load) c->lsu_load_cycles++;
+        if (sample->lsu_input_is_store) c->lsu_store_cycles++;
     }
 
-    if (hazard_valid) {
+    if (sample->hazard_valid) {
         c->raw_hazard_cycles++;
     }
-    if ((rs1_block_ex | rs2_block_ex) & ex_is_load) {
+    if ((sample->rs1_block_ex | sample->rs2_block_ex) & sample->ex_is_load) {
         c->load_use_stall_cycles++;
     }
-    if (((rs1_block_ex | rs2_block_ex) & ex_is_csr) |
-        ((rs1_block_ls | rs2_block_ls) & ls_is_csr)) {
+    if (((sample->rs1_block_ex | sample->rs2_block_ex) & sample->ex_is_csr) |
+        ((sample->rs1_block_ls | sample->rs2_block_ls) & sample->ls_is_csr)) {
         c->csr_use_stall_cycles++;
     }
-    if ((rs1_block_ls | rs2_block_ls) & ~ls_can_wb & ~ls_is_csr) {
+    if ((sample->rs1_block_ls | sample->rs2_block_ls) &
+        !sample->ls_can_wb & !sample->ls_is_csr) {
         c->ls_not_ready_stall_cycles++;
     }
 
-    if (idu_valid && !hazard_valid) {
-        if (fwd_rs1_sel & 0x1) c->fwd_rs1_from_ls++;
-        if (fwd_rs2_sel & 0x1) c->fwd_rs2_from_ls++;
-        if (fwd_rs1_sel & 0x2) c->fwd_rs1_from_wb++;
-        if (fwd_rs2_sel & 0x2) c->fwd_rs2_from_wb++;
+    if (sample->idu_valid && !sample->hazard_valid) {
+        if (sample->fwd_rs1_sel & 0x1) c->fwd_rs1_from_ls++;
+        if (sample->fwd_rs2_sel & 0x1) c->fwd_rs2_from_ls++;
+        if (sample->fwd_rs1_sel & 0x2) c->fwd_rs1_from_wb++;
+        if (sample->fwd_rs2_sel & 0x2) c->fwd_rs2_from_wb++;
     }
-    if (rf_rs1_bypass) c->rf_bypass_rs1++;
-    if (rf_rs2_bypass) c->rf_bypass_rs2++;
+    if (sample->rf_rs1_bypass) c->rf_bypass_rs1++;
+    if (sample->rf_rs2_bypass) c->rf_bypass_rs2++;
 
     if (empty_retire) {
-        pmc_stack_t control_first = stack_control_first(recovery.active, lsu_state_busy,
-                                                        icache_wait, hazard_valid, ifu_flush);
-        pmc_stack_t resource_first = stack_resource_first(recovery.active, lsu_state_busy,
-                                                          icache_wait, hazard_valid, ifu_flush);
+        pmc_stack_t control_first = stack_control_first(recovery.active, sample->lsu_state_busy,
+                                                        icache_wait, sample->hazard_valid,
+                                                        sample->ifu_flush);
+        pmc_stack_t resource_first = stack_resource_first(recovery.active, sample->lsu_state_busy,
+                                                          icache_wait, sample->hazard_valid,
+                                                          sample->ifu_flush);
         c->cpi_stack_control_first[control_first]++;
         c->cpi_stack_resource_first[resource_first]++;
     }
 
-    record_active_recovery(wbu_valid, wbu_pc, empty_retire, ifu_resp_valid,
-                           ifu_resp_ready, ifu_flush, icache_wait);
+    record_active_recovery(sample->wbu_valid, sample->wbu_pc, empty_retire,
+                           sample->ifu_resp_valid, sample->ifu_resp_ready,
+                           sample->ifu_flush, icache_wait);
 }
 
-void PerformanceCounter_record_lsu_redirect(uint32_t pc, uint32_t target, uint32_t inst,
-                                            bool kill_if, bool kill_id, bool kill_ex,
-                                            bool icache_miss_busy) {
-    start_redirect_recovery(pc, target, inst, kill_if, kill_id, kill_ex, false,
-                            icache_miss_busy, false);
+void PerformanceCounter_record_lsu_redirect(const pmc_lsu_redirect_sample_t *sample) {
+    start_redirect_recovery(sample->pc, sample->target, sample->inst,
+                            sample->kill_if, sample->kill_id, sample->kill_ex,
+                            false, sample->icache_miss_busy, false);
 }
 
-void PerformanceCounter_record_wbu_redirect(uint32_t pc, uint32_t target, uint32_t inst,
-                                            bool kill_if, bool kill_id, bool kill_ex,
-                                            bool kill_ls, bool icache_miss_busy) {
-    start_redirect_recovery(pc, target, inst, kill_if, kill_id, kill_ex, kill_ls,
-                            icache_miss_busy, true);
+void PerformanceCounter_record_wbu_redirect(const pmc_wbu_redirect_sample_t *sample) {
+    start_redirect_recovery(sample->pc, sample->target, sample->inst,
+                            sample->kill_if, sample->kill_id, sample->kill_ex,
+                            sample->kill_ls, sample->icache_miss_busy, true);
 }
 
 void PerformanceCounter_record_commit(uint32_t pc, uint32_t inst, uint64_t retire_cycles) {

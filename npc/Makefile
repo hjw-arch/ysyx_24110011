@@ -54,6 +54,13 @@ SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
 SIM_VINC            = $(abspath ./vsrc)
 SIM_CLFAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
+NPC_ISA             ?= RVE
+VALID_ISAS          = RVE RVI
+ifeq ($(filter $(NPC_ISA),$(VALID_ISAS)),)
+$(error NPC_ISA must be one of: $(VALID_ISAS))
+endif
+NPC_ISA_CFLAG       = -DCONFIG_$(NPC_ISA)
+NPC_ISA_VDEFINE     = +define+CONFIG_$(NPC_ISA)
 SIM_PKG				= $(shell find $(abspath ./vsrc/include) -name "*.sv")			# pkg 需要被优先编译
 SIM_VSRC            = $(SIM_PKG) $(shell find $(abspath ./vsrc) -name "*.v" -or -name "*.sv" ! -path "*/include/*")
 SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv %define_pkg.sv, $(SIM_VSRC))
@@ -110,12 +117,13 @@ run: prepare_build $(VERILATOR_SRC)
 TOP_NAME_FOR_NPC    	?= 	ysyx
 VERILATOR_SRC_NPC   	= 	$(SIM_CSRC) $(SIM_VSRC_NO_PC)
 VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC)
+VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC $(NPC_ISA_CFLAG))
 VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
 
+# 注意这里没有 SOC_VFLAGS
 VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace \
                            $(VERILATOR_VINC_NPC) $(VERILATOR_CFLAGS_NPC) $(VERILATOR_LDFLAGS_NPC) $(VERILATOR_WNO) \
-                           --top-module $(TOP_NAME_FOR_NPC) +define+NPC # 注意这里没有 SOC_VFLAGS
+                           --top-module $(TOP_NAME_FOR_NPC) +define+NPC $(NPC_ISA_VDEFINE)
 
 npc: prepare_build $(VERILATOR_SRC_NPC)
 	@echo

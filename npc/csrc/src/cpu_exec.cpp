@@ -4,6 +4,7 @@
 #include "../Include/log.h"
 #include "../Include/device.h"
 #include "../Include/difftest.h"
+#include "../Include/pmc.h"
 
 #ifdef SOC
 
@@ -42,61 +43,6 @@ uint32_t cpu_state = RUNNING;
 
 uint64_t cycle_times = 0;
 uint64_t dynamic_insts = 0;
-
-void PerformanceCounter_display();
-void PerformanceCounter_record_cycle(
-	uint32_t pc,
-	bool wbu_valid,
-	uint32_t wbu_pc,
-	bool ifu_req_valid,
-	bool ifu_req_ready,
-	bool ifu_resp_valid,
-	bool ifu_resp_ready,
-	bool ifu_flush,
-	bool icache_req_hit,
-	bool icache_req_miss,
-	bool icache_miss_busy,
-	bool icache_drop_refill,
-	bool icache_invalidate,
-	bool lsu_mem_req_fire,
-	bool lsu_input_is_load,
-	bool lsu_input_is_store,
-	bool lsu_state_busy,
-	bool hazard_valid,
-	bool rs1_block_ex,
-	bool rs2_block_ex,
-	bool rs1_block_ls,
-	bool rs2_block_ls,
-	bool ex_is_load,
-	bool ex_is_csr,
-	bool ls_is_csr,
-	bool ls_can_wb,
-	bool idu_valid,
-	uint8_t fwd_rs1_sel,
-	uint8_t fwd_rs2_sel,
-	bool rf_rs1_bypass,
-	bool rf_rs2_bypass
-);
-void PerformanceCounter_record_lsu_redirect(
-	uint32_t pc,
-	uint32_t target,
-	uint32_t inst,
-	bool kill_if,
-	bool kill_id,
-	bool kill_ex,
-	bool icache_miss_busy
-);
-void PerformanceCounter_record_wbu_redirect(
-	uint32_t pc,
-	uint32_t target,
-	uint32_t inst,
-	bool kill_if,
-	bool kill_id,
-	bool kill_ex,
-	bool kill_ls,
-	bool icache_miss_busy
-);
-void PerformanceCounter_record_commit(uint32_t pc, uint32_t inst, uint64_t retire_cycles);
 
 typedef struct {
 	uint32_t pc;
@@ -164,30 +110,34 @@ static void record_lsu_redirect() {
 		pending_redirect.pc = get_lsu_pc();
 		pending_redirect.target = CORE_SIG(lsu_pc_target);
 		pending_redirect.valid = true;
-		IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_lsu_redirect(
-			pending_redirect.pc,
-			pending_redirect.target,
-			get_lsu_inst(),
-			CORE_SIG(ifu_valid_o),
-			CORE_SIG(idu_valid_i),
-			CORE_SIG(exu_valid_i),
-			CORE_SIG(u_IFU__DOT__u_icache__DOT__state)
-		));
+#ifdef PERFORMANCE_COUNTER
+		pmc_lsu_redirect_sample_t sample = {};
+		sample.pc = pending_redirect.pc;
+		sample.target = pending_redirect.target;
+		sample.inst = get_lsu_inst();
+		sample.kill_if = CORE_SIG(ifu_valid_o);
+		sample.kill_id = CORE_SIG(idu_valid_i);
+		sample.kill_ex = CORE_SIG(exu_valid_i);
+		sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
+		PerformanceCounter_record_lsu_redirect(&sample);
+#endif
 	}
 }
 
 static void record_wbu_redirect() {
 	if (CORE_SIG(wbu_flush)) {
-		IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_wbu_redirect(
-			get_wbu_pc(),
-			CORE_SIG(wbu_pc_target),
-			get_wbu_inst(),
-			CORE_SIG(ifu_valid_o),
-			CORE_SIG(idu_valid_i),
-			CORE_SIG(exu_valid_i),
-			CORE_SIG(lsu_valid_i),
-			CORE_SIG(u_IFU__DOT__u_icache__DOT__state)
-		));
+#ifdef PERFORMANCE_COUNTER
+		pmc_wbu_redirect_sample_t sample = {};
+		sample.pc = get_wbu_pc();
+		sample.target = CORE_SIG(wbu_pc_target);
+		sample.inst = get_wbu_inst();
+		sample.kill_if = CORE_SIG(ifu_valid_o);
+		sample.kill_id = CORE_SIG(idu_valid_i);
+		sample.kill_ex = CORE_SIG(exu_valid_i);
+		sample.kill_ls = CORE_SIG(lsu_valid_i);
+		sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
+		PerformanceCounter_record_wbu_redirect(&sample);
+#endif
 	}
 }
 
@@ -232,39 +182,48 @@ static bool take_difftest_skip(uint32_t pc) {
 }
 
 static void record_performance_cycle() {
-	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_cycle(
-		CORE_SIG(u_IFU__DOT__pc_r),
-		CORE_SIG(wbu_valid_i),
-		get_wbu_pc(),
-		CORE_SIG(u_IFU__DOT__ic_req_valid),
-		CORE_SIG(u_IFU__DOT__ic_req_ready),
-		CORE_SIG(u_IFU__DOT__ic_resp_valid),
-		CORE_SIG(u_IFU__DOT__ic_resp_ready),
-		CORE_SIG(u_IFU__DOT__flush_i),
-		CORE_SIG(u_IFU__DOT__u_icache__DOT__req_hit),
-		CORE_SIG(u_IFU__DOT__u_icache__DOT__req_miss),
-		CORE_SIG(u_IFU__DOT__u_icache__DOT__state),
-		CORE_SIG(u_IFU__DOT__u_icache__DOT__refill_resp_fire) & CORE_SIG(u_IFU__DOT__u_icache__DOT__drop_refill),
-		CORE_SIG(u_IFU__DOT__inval_icache_i),
-		CORE_SIG(u_LSU__DOT__mem_req_fire),
-		CORE_SIG(u_LSU__DOT__input_is_load),
-		CORE_SIG(u_LSU__DOT__input_is_store),
-		CORE_SIG(u_LSU__DOT__state_busy),
-		CORE_SIG(hazard_valid),
-		CORE_SIG(u_hazard_unit__DOT__rs1_block_ex),
-		CORE_SIG(u_hazard_unit__DOT__rs2_block_ex),
-		CORE_SIG(u_hazard_unit__DOT__rs1_block_ls),
-		CORE_SIG(u_hazard_unit__DOT__rs2_block_ls),
-		CORE_SIG(ex_is_load),
-		CORE_SIG(ex_is_csr),
-		CORE_SIG(ls_is_csr),
-		CORE_SIG(ls_can_wb),
-		CORE_SIG(idu_valid_i),
-		CORE_SIG(fwd_rs1_sel),
-		CORE_SIG(fwd_rs2_sel),
-		CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs1_bypass),
-		CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs2_bypass)
-	));
+#ifdef PERFORMANCE_COUNTER
+	pmc_cycle_sample_t sample = {};
+	sample.pc = CORE_SIG(u_IFU__DOT__pc_r);
+	sample.wbu_valid = CORE_SIG(wbu_valid_i);
+	sample.wbu_pc = get_wbu_pc();
+
+	sample.ifu_req_valid = CORE_SIG(u_IFU__DOT__ic_req_valid);
+	sample.ifu_req_ready = CORE_SIG(u_IFU__DOT__ic_req_ready);
+	sample.ifu_resp_valid = CORE_SIG(u_IFU__DOT__ic_resp_valid);
+	sample.ifu_resp_ready = CORE_SIG(u_IFU__DOT__ic_resp_ready);
+	sample.ifu_flush = CORE_SIG(u_IFU__DOT__flush_i);
+
+	sample.icache_req_hit = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_hit);
+	sample.icache_req_miss = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_miss);
+	sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
+	sample.icache_drop_refill =
+		CORE_SIG(u_IFU__DOT__u_icache__DOT__refill_resp_fire) &
+		CORE_SIG(u_IFU__DOT__u_icache__DOT__drop_refill);
+	sample.icache_invalidate = CORE_SIG(u_IFU__DOT__inval_icache_i);
+
+	sample.lsu_mem_req_fire = CORE_SIG(u_LSU__DOT__mem_req_fire);
+	sample.lsu_input_is_load = CORE_SIG(u_LSU__DOT__input_is_load);
+	sample.lsu_input_is_store = CORE_SIG(u_LSU__DOT__input_is_store);
+	sample.lsu_state_busy = CORE_SIG(u_LSU__DOT__state_busy);
+
+	sample.hazard_valid = CORE_SIG(hazard_valid);
+	sample.rs1_block_ex = CORE_SIG(u_hazard_unit__DOT__rs1_block_ex);
+	sample.rs2_block_ex = CORE_SIG(u_hazard_unit__DOT__rs2_block_ex);
+	sample.rs1_block_ls = CORE_SIG(u_hazard_unit__DOT__rs1_block_ls);
+	sample.rs2_block_ls = CORE_SIG(u_hazard_unit__DOT__rs2_block_ls);
+	sample.ex_is_load = CORE_SIG(ex_is_load);
+	sample.ex_is_csr = CORE_SIG(ex_is_csr);
+	sample.ls_is_csr = CORE_SIG(ls_is_csr);
+	sample.ls_can_wb = CORE_SIG(ls_can_wb);
+	sample.idu_valid = CORE_SIG(idu_valid_i);
+	sample.fwd_rs1_sel = CORE_SIG(fwd_rs1_sel);
+	sample.fwd_rs2_sel = CORE_SIG(fwd_rs2_sel);
+	sample.rf_rs1_bypass = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs1_bypass);
+	sample.rf_rs2_bypass = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs2_bypass);
+
+	PerformanceCounter_record_cycle(&sample);
+#endif
 }
 
 static void exec_one_cycle() {

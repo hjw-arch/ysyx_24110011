@@ -59,7 +59,7 @@ void defftest_reset() {
 
 static bool difftest_checkregs(cpu_t *ref) {
     int flag = 0;
-    for (int i = 1; i < RF_NUM; i++) {		// 0不比；RVE 当前只比较 x1-x15
+    for (int i = 1; i < RF_NUM; i++) {		// x0 不比；RF_NUM 由 RVE/RVI 编译配置决定
         if (ref->registerFile[i] != cpu.registerFile[i]) {
             printf("ref->reg[%d] = 0x%08x---------npc->reg[%d] = 0x%08x\n", i, ref->registerFile[i], i, cpu.registerFile[i]);
             flag = 1;

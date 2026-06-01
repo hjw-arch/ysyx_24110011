@@ -95,9 +95,13 @@ assign io_slave_rdata   	= 	32'b0;
 assign io_slave_rlast   	= 	1'b0;
 assign io_slave_rid     	= 	4'b0000;
 
-// 当前工程目标是 RV32E。后续需要完整 RV32I 时，只需要把这里改成 0，
-// 寄存器堆会从 16 个通用寄存器切到 32 个。
+// SoC/面积评估默认使用 RV32E；NPC-only 仿真可由 Makefile 传 CONFIG_RVI，
+// 在 elaboration 阶段切换为 32 个通用寄存器，不引入运行时选择电路。
+`ifdef CONFIG_RVI
+localparam bit USE_RV32E = 1'b0;
+`else
 localparam bit USE_RV32E = 1'b1;
+`endif
 
 
 // IF
