@@ -47,6 +47,7 @@ void PerformanceCounter_display();
 void PerformanceCounter_record_cycle(
 	uint32_t pc,
 	bool wbu_valid,
+	uint32_t wbu_pc,
 	bool ifu_req_valid,
 	bool ifu_req_ready,
 	bool ifu_resp_valid,
@@ -60,9 +61,41 @@ void PerformanceCounter_record_cycle(
 	bool lsu_mem_req_fire,
 	bool lsu_input_is_load,
 	bool lsu_input_is_store,
-	bool lsu_state_busy
+	bool lsu_state_busy,
+	bool hazard_valid,
+	bool rs1_block_ex,
+	bool rs2_block_ex,
+	bool rs1_block_ls,
+	bool rs2_block_ls,
+	bool ex_is_load,
+	bool ex_is_csr,
+	bool ls_is_csr,
+	bool ls_can_wb,
+	bool idu_valid,
+	uint8_t fwd_rs1_sel,
+	uint8_t fwd_rs2_sel,
+	bool rf_rs1_bypass,
+	bool rf_rs2_bypass
 );
-void PerformanceCounter_record_lsu_redirect(uint32_t pc);
+void PerformanceCounter_record_lsu_redirect(
+	uint32_t pc,
+	uint32_t target,
+	uint32_t inst,
+	bool kill_if,
+	bool kill_id,
+	bool kill_ex,
+	bool icache_miss_busy
+);
+void PerformanceCounter_record_wbu_redirect(
+	uint32_t pc,
+	uint32_t target,
+	uint32_t inst,
+	bool kill_if,
+	bool kill_id,
+	bool kill_ex,
+	bool kill_ls,
+	bool icache_miss_busy
+);
 void PerformanceCounter_record_commit(uint32_t pc, uint32_t inst, uint64_t retire_cycles);
 
 typedef struct {
@@ -110,12 +143,51 @@ static bool difftest_addr_is_pmem(uint32_t addr) {
 #endif
 }
 
+static uint32_t get_lsu_pc() {
+	return get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
+}
+
+static uint32_t get_lsu_inst() {
+	return get_wide_bits(CORE_SIG(lsu_data_i).data(), 136, 105);
+}
+
+static uint32_t get_wbu_pc() {
+	return get_wide_bits(CORE_SIG(wbu_data_i).data(), 101, 70);
+}
+
+static uint32_t get_wbu_inst() {
+	return get_wide_bits(CORE_SIG(wbu_data_i).data(), 69, 38);
+}
+
 static void record_lsu_redirect() {
 	if (CORE_SIG(lsu_flush)) {
-		pending_redirect.pc = get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
+		pending_redirect.pc = get_lsu_pc();
 		pending_redirect.target = CORE_SIG(lsu_pc_target);
 		pending_redirect.valid = true;
-		IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_lsu_redirect(pending_redirect.pc));
+		IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_lsu_redirect(
+			pending_redirect.pc,
+			pending_redirect.target,
+			get_lsu_inst(),
+			CORE_SIG(ifu_valid_o),
+			CORE_SIG(idu_valid_i),
+			CORE_SIG(exu_valid_i),
+			CORE_SIG(u_IFU__DOT__u_icache__DOT__state)
+		));
+	}
+}
+
+static void record_wbu_redirect() {
+	if (CORE_SIG(wbu_flush)) {
+		IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_wbu_redirect(
+			get_wbu_pc(),
+			CORE_SIG(wbu_pc_target),
+			get_wbu_inst(),
+			CORE_SIG(ifu_valid_o),
+			CORE_SIG(idu_valid_i),
+			CORE_SIG(exu_valid_i),
+			CORE_SIG(lsu_valid_i),
+			CORE_SIG(u_IFU__DOT__u_icache__DOT__state)
+		));
 	}
 }
 
@@ -134,8 +206,8 @@ static void record_lsu_difftest_skip() {
 static commit_info_t get_commit_info() {
 	commit_info_t info;
 
-	info.pc = get_wide_bits(CORE_SIG(wbu_data_i).data(), 101, 70);
-	info.inst = get_wide_bits(CORE_SIG(wbu_data_i).data(), 69, 38);
+	info.pc = get_wbu_pc();
+	info.inst = get_wbu_inst();
 
 	if (CORE_SIG(wbu_flush)) {
 		info.next_pc = CORE_SIG(wbu_pc_target);
@@ -163,6 +235,7 @@ static void record_performance_cycle() {
 	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_cycle(
 		CORE_SIG(u_IFU__DOT__pc_r),
 		CORE_SIG(wbu_valid_i),
+		get_wbu_pc(),
 		CORE_SIG(u_IFU__DOT__ic_req_valid),
 		CORE_SIG(u_IFU__DOT__ic_req_ready),
 		CORE_SIG(u_IFU__DOT__ic_resp_valid),
@@ -176,7 +249,21 @@ static void record_performance_cycle() {
 		CORE_SIG(u_LSU__DOT__mem_req_fire),
 		CORE_SIG(u_LSU__DOT__input_is_load),
 		CORE_SIG(u_LSU__DOT__input_is_store),
-		CORE_SIG(u_LSU__DOT__state_busy)
+		CORE_SIG(u_LSU__DOT__state_busy),
+		CORE_SIG(hazard_valid),
+		CORE_SIG(u_hazard_unit__DOT__rs1_block_ex),
+		CORE_SIG(u_hazard_unit__DOT__rs2_block_ex),
+		CORE_SIG(u_hazard_unit__DOT__rs1_block_ls),
+		CORE_SIG(u_hazard_unit__DOT__rs2_block_ls),
+		CORE_SIG(ex_is_load),
+		CORE_SIG(ex_is_csr),
+		CORE_SIG(ls_is_csr),
+		CORE_SIG(ls_can_wb),
+		CORE_SIG(idu_valid_i),
+		CORE_SIG(fwd_rs1_sel),
+		CORE_SIG(fwd_rs2_sel),
+		CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs1_bypass),
+		CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs2_bypass)
 	));
 }
 
@@ -214,6 +301,7 @@ void cpu_exec_one() {
 
 	while (1) {
 		record_lsu_redirect();
+		record_wbu_redirect();
 		record_lsu_difftest_skip();
 
 		if (CORE_SIG(wbu_valid_i)) {
