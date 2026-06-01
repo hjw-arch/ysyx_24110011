@@ -1,144 +1,176 @@
-module LSU (
-    input  clk,
-    input  rst,
+`include "./include/pipeline_pkt_pkg.sv"
+module LSU
+import pipeline_pkt_pkg::*;
+(
+	input 			clk,
+	input 			rst,
 
-    input  exu_valid,
-    input  [108 : 0] exu_data,
-    output lsu_ready,
+	// AXI
+    output 	[31:0] 		ARADDR,
+    output 	[3 : 0] 	ARID,
+    output	[7 : 0] 	ARLEN,
+    output	[2 : 0] 	ARSIZE,
+    output	[1 : 0] 	ARBURST,
+	output 				ARVALID,
+	input 				ARREADY,
 
-    output lsu_valid,
-    output reg [103 : 0] lsu_data,
-    input  wbu_ready,
+    input	[3:0] 		RID,
+    input	[31:0] 		RDATA,
+    input	[1:0] 		RRESP,
+	input  				RVALID,
+	input  				RLAST,
+    output				RREADY,
 
-    // 连接SRAM
-    // 来自上游模块的预使能信号
-    input  pre_lsu_ren,
-    input  pre_lsu_wen,
-    output prerequest,      // 给到总线仲裁器
+    output	[31:0]		AWADDR,
+    output	[7:0]		AWLEN,
+    output	[2:0]		AWSIZE,
+    output	[3:0]		AWID,
+    output	[1:0]		AWBURST,
+	output				AWVALID,
+	input  				AWREADY,
 
-    // output declaration of module axi4_lite_master
-    output [31:0] ARADDR,
-    output ARVALID,
-    output [3 : 0] ARID,
-    output [7 : 0] ARLEN,
-    output [2 : 0] ARSIZE,
-    output [1 : 0] ARBURST,
-    output RREADY,
+    output	[31:0] 		WDATA,
+    output				WLAST,
+    output	[3:0] 		WSTRB,
+    output				WVALID,
+	input				WREADY,
 
-    output [31:0] AWADDR,
-    output AWVALID,
-    output [7 : 0] AWLEN,
-    output [2 : 0] AWSIZE,
-    output [3 : 0] AWID,
-    output [1 : 0] AWBURST,
-    output [31:0] WDATA,
-    output WLAST,
-    output [3:0] WSTRB,
-    output WVALID,
-    output BREADY,
+	input	[3:0] 		BID,
+    input	[1:0] 		BRESP,
+	input				BVALID,
+    output				BREADY,
 
-    // input declaration of slave
-    input  ARREADY,
-    input  RVALID,
-    input  RLAST,
-    input  [3 : 0] RID,
-    input  [31:0] RDATA,
-    input  [1:0] RRESP,
+	output	[4:0]		rd_addr_hazard,
+    output  [31:0]      pc_target_o,
+    output              flush_o,
+	input				kill_i,
 
-    input  AWREADY,
-    input  WREADY,
-    input  BVALID,
-    input  [3 : 0] BID,
-    input  [1 : 0] BRESP
+	input 				valid_i,
+	input	ex2ls_pkt_t data_i,
+	output 				ready_o,
+
+	output 				valid_o,
+	output	ls2wb_pkt_t data_o,
+	input 				ready_i
 );
 
+	//================= Load Types =================//
+	typedef enum logic [2:0] {
+		LOAD_TYPE_LB  = 3'b000,
+		LOAD_TYPE_LH  = 3'b001,
+		LOAD_TYPE_LW  = 3'b010,
+		LOAD_TYPE_LBU = 3'b100,
+		LOAD_TYPE_LHU = 3'b101
+	} load_type_e;
 
-wire [31 : 0] lsu_addr = exu_data[108 : 77];
-wire lsu_ren = exu_data[76];
-wire lsu_wen = exu_data[75];
-wire [2 : 0] lsu_op = exu_data[74 : 72];
-wire [31 : 0] lsu_wdata = exu_data[71 : 40];
-wire [39 : 0] rest_exu_data = exu_data[39 : 0];
+	typedef enum logic [1:0] {
+		S_IDLE,
+		S_BUSY,
+		S_RESP
+	} state_t;
 
+	state_t state, nstate;
 
+	logic [31:0] load_result_r;
+	logic [31:0] lsu_rdata;
+	logic [31:0] axi_rdata;
+	logic        axi_done;
 
-// 五级流水线时，lsu是必经之路，但是多周期lsu可以跳过，不过我不打算跳过了
-// 五级流水线时，S_WAIT_READY不需要，只要发生valid就可以，不需要这种状态机，多周期这里不更改了
+	wire input_is_load  = data_i.mem.cmd == MEM_LOAD;
+	wire input_is_store = data_i.mem.cmd == MEM_STORE;
+	wire input_is_mem   = input_is_load | input_is_store;
 
-// import "DPI-C" function int pmem_read(input int addr, input int len);
-// import "DPI-C" function void pmem_write(input int addr, input int data, input int len);
+	wire state_idle = state == S_IDLE;
+	wire state_busy = state == S_BUSY;
+	wire state_resp = state == S_RESP;
 
-typedef enum logic { 
-    S_IDLE,
-    S_WAIT_READY
-} lsu_state_t;
+	wire input_killed   = kill_i & state_idle;
+	wire mem_req_fire   = ~input_killed & state_idle & valid_i & input_is_mem;
+	wire mem_resp_valid = state_resp | (state_busy & axi_done);
 
-lsu_state_t state, next_state;
+	// 非访存指令直接透传到 WBU。
+	// load/store 期间反压住 EX/LS 寄存器，让级间寄存器保持当前 packet，
+	// LSU 内部不再额外保存整包数据，面积更小。
+	assign ready_o = input_killed ? 1'b1 :
+					 state_idle ? ((valid_i & input_is_mem) ? 1'b0 : ready_i) :
+					 (mem_resp_valid & ready_i);
 
-always_ff @(posedge clk) begin
-    state <= rst ? S_IDLE : next_state;
-end
+	assign valid_o = ~input_killed & (state_idle ? (valid_i & ~input_is_mem) : mem_resp_valid);
 
-always_comb begin
-    case(state)
-        S_IDLE:
-            next_state = (lsu_valid & ~wbu_ready) ? S_WAIT_READY : S_IDLE;
-        S_WAIT_READY:
-            next_state = (wbu_ready) ? S_IDLE : S_WAIT_READY;
-        default:
-            next_state = S_IDLE;
-    endcase
-end
+	always_comb begin
+		unique case (state)
+			S_IDLE: nstate = mem_req_fire ? S_BUSY : S_IDLE;
+			S_BUSY: nstate = axi_done ? (ready_i ? S_IDLE : S_RESP) : S_BUSY;
+			S_RESP: nstate = ready_i ? S_IDLE : S_RESP;
+			default: nstate = S_IDLE;
+		endcase
+	end
 
-reg has_new_data;
-always_ff @(posedge clk) begin
-    has_new_data <= (exu_valid & lsu_ready) ? 1'b1 : 1'b0;
-end
+	always_ff @(posedge clk) begin
+		state <= rst ? S_IDLE : nstate;
+	end
 
-assign lsu_ready = wbu_ready;
-assign lsu_valid = done & lsu_ren | done & lsu_wen | ~lsu_ren & ~lsu_wen & has_new_data | (state == S_WAIT_READY);
+	// 如果 WBU 当拍不能接收，load 数据需要暂存在 LSU 内部。
+	always_ff @(posedge clk) begin
+		if (state_busy & axi_done) begin
+			load_result_r <= lsu_rdata;
+		end
+	end
 
-// 读
-// 符号扩展
-wire [31 : 0] rdata_extend;
-assign rdata_extend[31 : 16] =  {16{rdata[7] & ~lsu_op[2] & ~lsu_op[1] & ~lsu_op[0]}} | {16{rdata[15] & ~lsu_op[2] & ~lsu_op[1] & lsu_op[0]}} | rdata[31 : 16] & {16{lsu_op[1]}};
-assign rdata_extend[15 : 8] = {8{rdata[7] & ~lsu_op[2] & ~lsu_op[1] & ~lsu_op[0]}} | rdata[15 : 8] & {8{lsu_op[0] | lsu_op[1]}};
-assign rdata_extend[7 : 0] = rdata[7 : 0];
+	wire [31:0] lsu_addr  = data_i.result;
+	wire [31:0] lsu_wdata = data_i.store_data;
+	wire [2:0]  lsu_type  = data_i.meta.inst[14:12];
 
-always_ff @(posedge clk) begin
-    lsu_data <= (lsu_valid & wbu_ready) ? {exu_data[108 : 77], rdata_extend, rest_exu_data} : lsu_data;
-end
+	always_comb begin
+		unique case (load_type_e'(lsu_type))
+			LOAD_TYPE_LB:  lsu_rdata = {{24{axi_rdata[7]}},  axi_rdata[7:0]};
+			LOAD_TYPE_LH:  lsu_rdata = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
+			LOAD_TYPE_LW:  lsu_rdata = axi_rdata;
+			LOAD_TYPE_LBU: lsu_rdata = {24'b0, axi_rdata[7:0]};
+			LOAD_TYPE_LHU: lsu_rdata = {16'b0, axi_rdata[15:0]};
+			default:       lsu_rdata = 32'b0;
+		endcase
+	end
 
-// output declaration of module axi4_lite_master
-wire wen = lsu_wen & has_new_data;
-wire ren = lsu_ren & has_new_data;
+	wire [31:0] mem_result = state_resp ? load_result_r : lsu_rdata;
+	wire [31:0] out_result = input_is_load ? mem_result : data_i.result;
 
-// 提前通知仲裁器
-assign prerequest = exu_valid & lsu_ready & pre_lsu_ren | exu_valid & lsu_ready & pre_lsu_wen;
+	assign data_o.meta   = data_i.meta;
+	assign data_o.wb     = data_i.wb;
+	assign data_o.sys    = data_i.sys;
+	assign data_o.result = out_result;
 
-// output declaration of module axi4_full_master
-wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
-wire [1:0] rresp;
-wire [1:0] wresp;
-wire done;
+	wire [4:0] rd_addr = data_i.meta.inst[11:7];
+	assign rd_addr_hazard = rd_addr & {5{valid_i & data_i.wb.rd_wen & ~input_killed}};
 
+	// LSU 只负责普通控制流重定向；fence.i/ecall/mret 统一在 WBU 提交点处理。
+	wire        out_redirect_valid = data_i.redirect.valid;
+	wire [31:0] out_redirect_addr  = data_i.redirect.addr;
+	wire        output_fire        = valid_o & ready_i;
+
+	assign flush_o     = ~input_killed & output_fire & out_redirect_valid;
+	assign pc_target_o = out_redirect_addr;
+
+	// AXI
+	wire wen = mem_req_fire & input_is_store;
+	wire ren = mem_req_fire & input_is_load;
 
 axi4_full_master u_axi4_full_master(
     .clk        	(clk         ),
     .rst        	(rst         ),
-    .wen        	(wen         ),
+    .wen        	(wen		 ),
     .ren        	(ren         ),
-    .user_ready 	(wbu_ready   ),
-    .size        	(lsu_op[1:0] ),
+    .user_ready 	(1'b1	     ),
+    .size        	(lsu_type[1:0] ),
 	.len			(8'b0 		 ),
     .waddr      	(lsu_addr    ),
     .wdata      	(lsu_wdata   ),
     .raddr      	(lsu_addr    ),
-    .rdata      	(rdata       ),/* verilator lint_off PINCONNECTEMPTY */
+    .rdata      	(axi_rdata   ),/* verilator lint_off PINCONNECTEMPTY */
 	.rdata_valid	(),
-    .rresp      	(rresp       ),
-    .wresp      	(wresp       ),
-    .done       	(done        ),
+    .rresp      	(),
+    .wresp      	(),
+    .done       	(axi_done    ),
     .ARREADY    	(ARREADY     ),
     .ARVALID    	(ARVALID     ),
     .ARADDR     	(ARADDR      ),
@@ -171,36 +203,5 @@ axi4_full_master u_axi4_full_master(
 );
 
 
-/************************** 性能计数器 *****************************/
-
-// import "DPI-C" function void PerformanceCounter_lsu_load();
-// import "DPI-C" function void PerformanceCounter_lsu_store();
-// import "DPI-C" function void PerformanceCounter_lsu_load_cycles(int start, int finish);
-// import "DPI-C" function void PerformanceCounter_lsu_store_cycles(int start, int finish);
-
-// always_ff @(posedge clk) begin
-// 	if (done & lsu_ren)  PerformanceCounter_lsu_load();
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (done & lsu_wen)  PerformanceCounter_lsu_store();
-// end
-// /* verilator lint_off WIDTHEXPAND */
-// always_ff @(posedge clk) begin
-// 	if (!rst & lsu_ren) PerformanceCounter_lsu_load_cycles(has_new_data, done);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (!rst & lsu_wen) PerformanceCounter_lsu_store_cycles(has_new_data, done);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (has_new_data) $display("LSU!\n");
-// end
-
-
-/******************************************************************/
-
 
 endmodule
-

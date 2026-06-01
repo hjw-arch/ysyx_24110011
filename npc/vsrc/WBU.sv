@@ -1,59 +1,97 @@
-module WBU #(parameter WIDTH = 32) (
-    // 给到IDU
-    input [4 : 0] rs1_addr,
-    input [4 : 0] rs2_addr,
-    output [31 : 0] rs1_data,
-    output [31 : 0] rs2_data,
+`include "./include/pipeline_pkt_pkg.sv"
 
-    // 真正的WBU
-    input clk,  /* verilator lint_off UNUSEDSIGNAL */
-    input rst,
+module WBU
+import pipeline_pkt_pkg::*;
+#(
+    parameter bit RV32E = 1'b1
+)
+(
+    input               clk,
+    input               rst,
 
-    input lsu_valid,
-    input [103 : 0] lsu_data,
-    output wbu_valid
+    input   [4:0]       rs1_addr,
+    input   [4:0]       rs2_addr,
+    output  [31:0]      rs1_data,
+    output  [31:0]      rs2_data,
+
+    output  [31:0]      rf_wdata_o,
+
+    output              flush_o,
+    output  [31:0]      flush_addr_o,
+    output              invalidate_ic_o,
+
+    input               valid_i,
+    input   ls2wb_pkt_t data_i,
+    output              ready_o
 );
 
+wire [31:0] inst     = data_i.meta.inst;
+wire [31:0] pc       = data_i.meta.pc;
+wire [4:0]  rd_addr  = inst[11:7];
+wire [11:0] csr_addr = inst[31:20];
 
-// 作为最后一个阶段，WB不需要状态机，接到新的任务就直接执行
-// 因此LSU或许也不需要WAIT_READY这个状态，只要准备好就直接发，而WB只要接到新任务就直接写，但在这里我不进行这样的处理，等到五级流水线再说
-// 多周期节省数据通路，直接在WB完成CSR的全部操作
+wire csr_valid = data_i.sys.csr_cmd != CSR_CMD_NONE;
+wire ecall     = data_i.sys.priv_redir == PRIV_REDIR_ECALL;
+wire mret      = data_i.sys.priv_redir == PRIV_REDIR_MRET;
+wire fence_i   = data_i.sys.fence_i;
 
-wire [31 : 0] alu_result = lsu_data[103 : 72];
-wire [31 : 0] lsu_rdata = lsu_data[71 : 40];
-wire rd_wen = lsu_data[39];
-wire [4 : 0] rd_addr = lsu_data[38 : 34];
-wire [1 : 0] rd_input_sel = lsu_data[33 : 32];
-wire [31 : 0] csr_data_o = lsu_data[31 : 0];
+wire [31:0] csr_src = data_i.result;
+wire csr_src_zero = ~|csr_src;
 
-reg has_new_data;
-always_ff @(posedge clk) begin
-    has_new_data <= lsu_valid ? 1'b1 : 1'b0;
-end
+// CSRRW 无条件写 CSR；CSRRS/CSRRC 源为 0 时只读不写，避免无意义翻转。
+wire csr_write_en = valid_i & csr_valid &
+                    ((data_i.sys.csr_cmd == CSR_CMD_WRITE) | ~csr_src_zero);
 
-assign wbu_valid = has_new_data;
+wire [31:0] csr_rdata;
+wire [31:0] csr_mtvec;
+wire [31:0] csr_mepc;
 
-
-// 若为五级流水线，这里的csr_data需要通过上游模块传过来
-wire [WIDTH - 1 : 0] rd_data = rd_input_sel == 2'b01 ? lsu_rdata : 
-                               rd_input_sel == 2'b10 ? csr_data_o : 
-                               alu_result;
-
-registerfile #(32) RF_INTER (
-    .clk(clk),
-    .wen(rd_wen & has_new_data),
-    .rd_addr(rd_addr),
-    .rd_data(rd_data),
-    .rs1_addr(rs1_addr),
-    .rs1_data(rs1_data),
-    .rs2_addr(rs2_addr),
-    .rs2_data(rs2_data)
+CSR u_CSR (
+    .clk       (clk),
+    .rst       (rst),
+    .wen       (csr_write_en),
+    .cmd       (data_i.sys.csr_cmd),
+    .addr      (csr_addr),
+    .wdata     (csr_src),
+    .ecall_i   (valid_i & ecall),
+    .trap_pc_i (pc),
+    .rdata_o   (csr_rdata),
+    .mtvec_o   (csr_mtvec),
+    .mepc_o    (csr_mepc)
 );
 
-// always_ff @(posedge clk) begin
-// 	if (has_new_data) $display("WBU!\n");
-// end
+// WBU 是提交点，当前没有会阻塞的后级。
+assign ready_o = 1'b1;
 
+// CSR 指令写回旧 CSR 值，普通指令写回前级 result。
+wire [31:0] rf_wdata = csr_valid ? csr_rdata : data_i.result;
+wire        rf_wen   = valid_i & data_i.wb.rd_wen;
+
+assign rf_wdata_o = rf_wdata;
+
+registerfile #(
+    .RV32E     (RV32E)
+) u_registerfile (
+    .clk       (clk),
+    .wen       (rf_wen),
+    .rd_addr   (rd_addr),
+    .rd_data   (rf_wdata),
+    .rs1_addr  (rs1_addr),
+    .rs1_data  (rs1_data),
+    .rs2_addr  (rs2_addr),
+    .rs2_data  (rs2_data)
+);
+
+// ecall/mret/fence.i 都在提交点发起 flush，保证系统事件精确生效。
+wire priv_flush = ecall | mret;
+wire sys_flush  = priv_flush | fence_i;
+
+assign flush_o = valid_i & sys_flush;
+assign invalidate_ic_o = valid_i & fence_i;
+
+// fence.i 的重定向地址是 EXU 已经算好的 pc+4；ecall/mret 来自 CSR。
+assign flush_addr_o = ecall ? csr_mtvec :
+                      mret  ? csr_mepc  :
+                              data_i.result;
 
 endmodule
-

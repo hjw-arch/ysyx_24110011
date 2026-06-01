@@ -1,160 +1,165 @@
-module IFU #(parameter WIDTH = 32) (
-    input clk,
-    input rst,
-    input wbu_valid,
-    input [WIDTH - 1 : 0] pc,
+`include "./include/pipeline_pkt_pkg.sv"
+module IFU
+import pipeline_pkt_pkg::*;
+(
+    input			        clk,
+    input			        rst,
 
-    output ifu_valid,
-    output reg [63 : 0] ifu_data,
-    input idu_ready,
+    output	[31:0] 	        ARADDR,
+    output			        ARVALID,
+    output 			        RREADY,
+    output	[3:0] 	        ARID,
+    output	[7:0] 	        ARLEN,
+    output	[2:0] 	        ARSIZE,
+    output	[1:0] 	        ARBURST,
 
-    // 连接SRAM
-    // output declaration of module axi4_lite_master
-    output prerequest,      // 仅仅适用于多周期处理器
-    output [31:0] ARADDR,
-    output ARVALID,
-    output RREADY,
-    output [3 : 0] ARID,
-    output [7 : 0] ARLEN,
-    output [2 : 0] ARSIZE,
-    output [1 : 0] ARBURST,
+    input 			        ARREADY,
+    input 			        RVALID,
+    input 			        RLAST,
+    input	[3:0] 	        RID,
+    input	[31:0] 	        RDATA,
+    input	[1:0] 	        RRESP,
 
-    // input declaration of slave
-    input ARREADY,
-    input RVALID,
-    input RLAST,
-    input [3 : 0] RID,
-    input [31 : 0] RDATA,
-    input [1 : 0] RRESP
+	input 			        inval_icache_i,         // icache内容失效
+	input	[31:0] 	        flush_addr_i,			// 真正的PC值
+	input			        flush_i,				// 确认推测错误，需要刷新流水线
+
+    output 			        valid_o,
+    output	if2id_pkt_t     data_o,
+    input 			        ready_i
 );
 
-typedef enum logic { 
-    S_IDLE,
-    S_WAIT_READY
-} ifu_state_t;
+`ifdef SOC
+localparam  RST_PC   =   32'h30000000;
+`else
+localparam  RST_PC   =   32'h80000000;
+`endif
 
-ifu_state_t state, next_state;
+// ==========================================
+// 内部信号 —— IFU ↔ ICache
+// ==========================================
+
+logic				ic_req_valid;
+logic	[31:0]		ic_req_addr;
+logic				ic_req_ready;
+
+logic				ic_resp_valid;
+logic	[31:0]		ic_resp_data;
+logic	[31:0]		ic_resp_addr;/* verilator lint_off UNUSEDSIGNAL */
+logic               ic_resp_err;
+logic				ic_resp_ready;
+
+
+
+// ==========================================
+// 1. PC 寄存器
+// ==========================================
+wire	ic_req_fire	= ic_req_valid & ic_req_ready;
+
+logic   [31:0]  pc_r, pc_n;
+
+assign pc_n	=	flush_i ? flush_addr_i :            // 这里当前设置为flush当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
+				ic_req_fire ? pc_r + 4 :
+				pc_r;
 
 always_ff @(posedge clk) begin
-    state <= rst ? S_IDLE : next_state;
+    if (rst) begin
+        pc_r <= RST_PC;
+    end else begin
+        pc_r <= pc_n;
+    end
 end
 
-always_comb begin
-    case(state)
-        S_IDLE:
-            next_state = (ifu_valid && !idu_ready) ? S_WAIT_READY : S_IDLE;
-        S_WAIT_READY:
-            next_state = (idu_ready) ? S_IDLE : S_WAIT_READY;
-        default:
-            next_state = state;
-    endcase
-end
-
-reg start;
-always_ff @(posedge clk) begin
-    start <= wbu_valid | rst ? 1'b1 : 1'b0;
-end
-
-// `ifdef SOC
-
-assign ifu_valid = i2c_valid | (state == S_WAIT_READY);
+// ==========================================
+// 2. 对 ICache 的请求
+// ==========================================
+assign	ic_req_valid	=	~flush_i;
+assign	ic_req_addr		=	pc_r;
 
 
-always_ff @(posedge clk) begin
-    ifu_data <= (ifu_valid & idu_ready) ? {i2c_data, pc} : ifu_data;
-end
+// ==========================================
+// 3. 对下游的输出
+// ==========================================
 
-assign prerequest = 1'b0;	// 需要修改，暂时为了cache妥协
+assign	valid_o		= ic_resp_valid & ~flush_i;
+assign	data_o.inst = ic_resp_data;
+assign	data_o.pc	= ic_resp_addr;
 
-// output declaration of module axi4_full_master
-wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
-wire rdata_valid;
-wire [1:0] rresp;
-wire done;
-
-// output declaration of module icache
-wire i2c_ready;
-wire i2c_valid;
-wire [31:0] i2c_data;
-wire i2m_valid;
-wire [31:0] i2m_addr;
-wire i2m_ready;
+// ready 信号
+assign	ic_resp_ready = flush_i | ready_i;
 
 
-// 流水线时，icache要大改
-_icache #(
-	.BLOCK_SIZE 	(16   ),
-	.BLOCK_NUM  	(16  ),
-	.ADDR_WIDTH 	(32  ),
-	.DATA_WIDTH 	(32  ))
-u_icache(
-	.clk       	(clk        ),
-	.rst       	(rst        ),
-	.c2i_addr  	(pc		    ),
-	.c2i_valid 	(start		),
-	.i2c_ready 	(i2c_ready  ),
-	.i2c_valid 	(i2c_valid  ),
-	.i2c_data  	(i2c_data   ),
-	.c2i_ready 	(1'b1 		),
-	.c2i_ifence	(1'b0),
-	.i2m_valid 	(i2m_valid  ),
-	.i2m_addr  	(i2m_addr   ),
-	.m2i_ready 	(1'b1       ),
-	.m2i_data  	(rdata      ),
-	.m2i_valid 	(rdata_valid),
-	.m2i_done	(done		),
-	.i2m_ready 	(i2m_ready  )
+// ==========================================
+// 5. Refill 通道内部连线（icache ↔ adapter）
+// ==========================================
+logic                   refill_req_valid;
+logic [31:0]            refill_req_addr;
+logic                   refill_req_ready;
+logic                   refill_resp_valid;
+logic [127:0]           refill_resp_data;
+logic                   refill_resp_err;
+logic                   refill_resp_ready;
+
+
+// ==========================================
+// 6. ICache 例化
+// ==========================================
+icache #(
+    .ADDR_WIDTH(32),
+    .LINE_BYTES(16),
+    .NUM_LINES (4)
+) u_icache (
+    .clk                (clk),
+    .rst                (rst),
+    // IFU ↔ ICache
+    .req_valid_i        (ic_req_valid),
+    .req_addr_i         (ic_req_addr),
+    .req_ready_o        (ic_req_ready),
+    .resp_valid_o       (ic_resp_valid),
+    .resp_data_o        (ic_resp_data),
+    .resp_addr_o        (ic_resp_addr),
+    .resp_err_o         (ic_resp_err),
+    .resp_ready_i       (ic_resp_ready),
+    .kill_i             (flush_i),
+    .inval_i            (inval_icache_i),
+    // ICache ↔ Adapter
+    .refill_req_valid_o (refill_req_valid),
+    .refill_req_addr_o  (refill_req_addr),
+    .refill_req_ready_i (refill_req_ready),
+    .refill_resp_valid_i(refill_resp_valid),
+    .refill_resp_data_i (refill_resp_data),
+    .refill_resp_err_i  (refill_resp_err),
+    .refill_resp_ready_o(refill_resp_ready)
 );
-
-
-
-axi4_full_master u_axi4_full_master(
-    .clk        	(clk         ),
-    .rst        	(rst         ),
-    .wen        	(1'b0        ),
-    .ren        	(i2m_valid   ),
-    .user_ready 	(i2m_ready   ),
-	.size			(2'b10		 ),
-    .len        	(8'b11       ),
-    .waddr      	(32'b0       ),
-    .wdata      	(32'b0       ),
-	.rdata_valid	(rdata_valid ),
-    .raddr      	(i2m_addr    ),
-    .rdata      	(rdata       ),
-    .rresp      	(rresp       ),/* verilator lint_off PINCONNECTEMPTY */
-    .wresp      	(            ),
-    .done       	(done        ),
-    .ARREADY    	(ARREADY     ),
-    .ARVALID    	(ARVALID     ),
-    .ARADDR     	(ARADDR      ),
-    .ARID       	(ARID        ),
-    .ARLEN      	(ARLEN       ),
-    .ARSIZE     	(ARSIZE      ),
-    .ARBURST    	(ARBURST     ),
-    .RREADY     	(RREADY      ),
-    .RVALID     	(RVALID      ),
-    .RDATA      	(RDATA       ),
-    .RLAST      	(RLAST       ),
-    .RID        	(RID         ),
-    .RRESP      	(RRESP       )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWADDR     	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWVALID    	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWID       	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWLEN      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWSIZE     	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWBURST    	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .AWREADY    	(1'b0        ),
-    .WDATA      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .WSTRB      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .WLAST      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .WVALID     	(            )/* verilator lint_off PINCONNECTEMPTY */,
-    .WREADY     	(1'b0        ),
-    .BRESP      	(2'b00       ),
-    .BVALID     	(1'b0        ),
-    .BID        	(4'b0        ),
-    .BREADY     	(            )/* verilator lint_off PINCONNECTEMPTY */
+// ==========================================
+// 7. AXI Read Adapter 例化
+// ==========================================
+axi_read_adapter u_axi_adapter (
+    .clk                (clk),
+    .rst                (rst),
+    // Adapter ↔ ICache
+    .req_valid_i        (refill_req_valid),
+    .req_addr_i         (refill_req_addr),
+    .req_ready_o        (refill_req_ready),
+    .resp_valid_o       (refill_resp_valid),
+    .resp_data_o        (refill_resp_data),
+    .resp_err_o         (refill_resp_err),
+    .resp_ready_i       (refill_resp_ready),
+    // Adapter ↔ AXI Bus
+    .ARADDR             (ARADDR),
+    .ARVALID            (ARVALID),
+    .ARLEN              (ARLEN),
+    .ARSIZE             (ARSIZE),
+    .ARBURST            (ARBURST),
+    .ARID               (ARID),
+    .ARREADY            (ARREADY),
+    .RDATA              (RDATA),
+    .RVALID             (RVALID),
+    .RLAST              (RLAST),
+    .RRESP              (RRESP),
+    .RID                (RID),
+    .RREADY             (RREADY)
 );
-
 
 /************************** 性能计数器 *****************************/
 
@@ -176,203 +181,8 @@ axi4_full_master u_axi4_full_master(
 // end
 
 // always_ff @(posedge clk) begin
-// 	if (!rst) PerformanceCounter_inst_type_total_cycles(start, i2c_data);
+// 	if (!rst) PerformanceCounter_inst_type_total_cycles(start, i2c_inst);
 // end
 
 
-/******************************************************************/
-
-	
-// `else
-
-
-// assign ifu_valid = done | (state == S_WAIT_READY);
-
-// // 模拟SRAM取指
-// always_ff @(posedge clk) begin
-//     ifu_data <= (ifu_valid & idu_ready) ? {rdata, pc} : ifu_data;
-// end
-
-// assign prerequest = wbu_valid;
-
-// // output declaration of module axi4_full_master
-// wire [31:0] rdata;  /* verilator lint_off UNUSEDSIGNAL */
-// wire rdata_valid;
-// wire [1:0] rresp;
-// wire done;
-
-// // Not used
-
-
-// axi4_full_master u_axi4_full_master(
-//     .clk        	(clk         ),
-//     .rst        	(rst         ),
-//     .wen        	(1'b0        ),
-//     .ren        	(start       ),
-//     .user_ready 	(idu_ready   ),
-//     .size        	(2'b10       ),
-// 	.len			(8'b0		 ),
-//     .waddr      	(32'b0       ),
-//     .wdata      	(32'b0       ),
-//     .raddr      	(pc          ),
-// 	.rdata_valid	(rdata_valid ),
-//     .rdata      	(rdata       ),
-//     .rresp      	(rresp       ),/* verilator lint_off PINCONNECTEMPTY */
-//     .wresp      	(            ),
-//     .done       	(done        ),
-//     .ARREADY    	(ARREADY     ),
-//     .ARVALID    	(ARVALID     ),
-//     .ARADDR     	(ARADDR      ),
-//     .ARID       	(ARID        ),
-//     .ARLEN      	(ARLEN       ),
-//     .ARSIZE     	(ARSIZE      ),
-//     .ARBURST    	(ARBURST     ),
-//     .RREADY     	(RREADY      ),
-//     .RVALID     	(RVALID      ),
-//     .RDATA      	(RDATA       ),
-//     .RLAST      	(RLAST       ),
-//     .RID        	(RID         ),
-//     .RRESP      	(RRESP       )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWADDR     	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWVALID    	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWID       	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWLEN      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWSIZE     	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWBURST    	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .AWREADY    	(1'b0        ),
-//     .WDATA      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .WSTRB      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .WLAST      	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .WVALID     	(            )/* verilator lint_off PINCONNECTEMPTY */,
-//     .WREADY     	(1'b0        ),
-//     .BRESP      	(2'b00       ),
-//     .BVALID     	(1'b0        ),
-//     .BID        	(4'b0        ),
-//     .BREADY     	(            )/* verilator lint_off PINCONNECTEMPTY */
-// );
-
-
-	
-// `endif
-
-
-
-
 endmodule
-
-
-module _icache #(
-    parameter BLOCK_SIZE    =   16,
-    parameter BLOCK_NUM     =   16,
-    parameter ADDR_WIDTH    =   32,
-    parameter DATA_WIDTH    =   32
-) (
-    input                           clk,
-    input                           rst,
-    // 与IFU (指令取指单元) 数据交互
-    input      [ADDR_WIDTH-1:0]     c2i_addr,   // CPU发来的指令地址
-    input                           c2i_valid,  // CPU请求有效信号
-    output                          i2c_ready,  // Cache是否准备好接收CPU请求
-    output                          i2c_valid,  // Cache返回给CPU的数据是否有效
-    output     logic [DATA_WIDTH-1:0]     i2c_data,   // Cache返回给CPU的指令数据
-    input                           c2i_ready,  // CPU是否准备好接收Cache数据
-	input							c2i_ifence,
-    // 与主内存 (Memory) 交互
-    output                          i2m_valid,  // Cache向主存的请求是否有效
-    output     [ADDR_WIDTH-1:0]     i2m_addr,   // Cache向主存请求的地址 (块地址)
-    input                           m2i_ready,  // 主存是否准备好接收Cache请求
-    input      [DATA_WIDTH-1:0]     m2i_data,   // 主存返回给Cache的数据
-    input                           m2i_valid,  // 主存返回的数据是否有效
-	input 							m2i_done,
-    output                          i2m_ready   // Cache是否准备好接收主存数据
-);
-
-// Calculated parameters
-localparam BLOCK_WIDTH	 =	 BLOCK_SIZE * 8;
-localparam INDEX_WIDTH   =   $clog2(BLOCK_NUM);
-localparam OFFSET_WIDTH  =   $clog2(BLOCK_SIZE);
-localparam TAG_WIDTH     =   ADDR_WIDTH - INDEX_WIDTH - OFFSET_WIDTH;
-
-
-localparam	IDLE		=	2'b00,
-			REQ_MEM		=	2'b01,
-			WAIT_MEM	=	2'b11;
-
-assign	i2c_ready	=	state[0];
-
-
-// Cache storage
-logic [BLOCK_NUM-1:0] 		cache_valid;
-logic [TAG_WIDTH-1:0] 		cache_tag 	[BLOCK_NUM-1:0];
-logic [BLOCK_WIDTH-1:0] 	cache_data 	[BLOCK_NUM-1:0];
-
-always_ff @(posedge clk) begin
-	if (rst | c2i_ifence) begin
-		cache_valid <= {BLOCK_NUM{1'b0}};
-	end else begin
-		if (m2i_done) begin
-            cache_data[index] <=  {m2i_data, m2i_data_buffer};
-            cache_tag[index] <= tag;
-            cache_valid[index] <= 1;
-        end
-	end
-end
-
-logic   [TAG_WIDTH-1:0]     tag;
-logic   [INDEX_WIDTH-1:0]   index;
-logic   [OFFSET_WIDTH-1:0]  offset;
-
-assign  index   =   c2i_addr[INDEX_WIDTH + OFFSET_WIDTH - 1 : OFFSET_WIDTH];
-assign  tag     =   c2i_addr[ADDR_WIDTH - 1 : ADDR_WIDTH - TAG_WIDTH];
-assign  offset  =   c2i_addr[OFFSET_WIDTH - 1 : 0];
-
-/********************** 命中信号 ********************/
-logic   hit;
-assign  hit     =      ~state[0] & cache_valid[index] & (cache_tag[index] == tag);
-
-/********************** 状态机 ********************/
-logic	[1:0]   state,  nstate;
-always_ff @(posedge clk) begin
-    state <= rst ? IDLE : nstate;
-end
-
-assign nstate[0]	=	~state[0] & ~state[1] & ~hit | state[0] & ~m2i_done;
-assign nstate[1]	=	state[0] & ~m2i_done;
-
-
-/********************** 与mem通信 ********************/
-// assign  i2m_valid   =   state[0] & ~m2i_done;
-assign  i2m_valid   =   state[0] & ~state[1];
-assign  i2m_addr    =   {tag, index, {OFFSET_WIDTH{1'b0}}};
-assign  i2m_ready   =   1'b1;
-
-
-/************************* 填充 ***********************/
-logic [BLOCK_WIDTH - DATA_WIDTH - 1 : 0] m2i_data_buffer;
-
-always_ff @(posedge clk) begin
-	m2i_data_buffer <= m2i_valid ? {m2i_data, m2i_data_buffer[BLOCK_WIDTH - DATA_WIDTH - 1 : DATA_WIDTH]} : m2i_data_buffer;	// 其实可以提前一个周期，这里先不这么干
-end
-
-
-/************************* 返回上层数据 *************************/
-assign   i2c_valid    =   c2i_valid & hit | state[1] & state[0] & m2i_done;
-
-
-always_comb begin
-	case({offset[3:2], state[0]})
-		3'b001: i2c_data = m2i_data_buffer[31:0];
-		3'b011: i2c_data = m2i_data_buffer[63:32];
-		3'b101: i2c_data = m2i_data_buffer[95:64];
-		3'b111: i2c_data = m2i_data;
-		3'b000: i2c_data = cache_data[index][31:0];
-		3'b010: i2c_data = cache_data[index][63:32];
-		3'b100: i2c_data = cache_data[index][95:64];
-		3'b110: i2c_data = cache_data[index][127:96];
-	endcase
-end
-
-
-endmodule
-
-
