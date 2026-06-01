@@ -54,6 +54,19 @@ SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
 SIM_VINC            = $(abspath ./vsrc)
 SIM_CLFAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
+SOC_ISA             ?= RVE
+NPC_ISA             ?= RVI
+VALID_ISAS          = RVE RVI
+ifeq ($(filter $(SOC_ISA),$(VALID_ISAS)),)
+$(error SOC_ISA must be one of: $(VALID_ISAS))
+endif
+ifeq ($(filter $(NPC_ISA),$(VALID_ISAS)),)
+$(error NPC_ISA must be one of: $(VALID_ISAS))
+endif
+SOC_ISA_CFLAG       = -DCONFIG_$(SOC_ISA)
+SOC_ISA_VDEFINE     = +define+CONFIG_$(SOC_ISA)
+NPC_ISA_CFLAG       = -DCONFIG_$(NPC_ISA)
+NPC_ISA_VDEFINE     = +define+CONFIG_$(NPC_ISA)
 SIM_PKG				= $(shell find $(abspath ./vsrc/include) -name "*.sv")			# pkg 需要被优先编译
 SIM_VSRC            = $(SIM_PKG) $(shell find $(abspath ./vsrc) -name "*.v" -or -name "*.sv" ! -path "*/include/*")
 SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv %define_pkg.sv, $(SIM_VSRC))
@@ -81,12 +94,12 @@ export ASAN_OPTIONS = verify_asan_link_order=0    # 关掉内存泄漏检测    
 VERILATOR           = verilator
 VERILATOR_SRC       = $(SIM_CSRC) $(SIM_VSRC_NO_PC) $(SOC_VSRC) $(SOC_TOP_MOD_FILE)
 VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC)
+VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC $(SOC_ISA_CFLAG))
 VERILATOR_VINC      = $(addprefix -y , $(SIM_VINC) $(SOC_VINC))
 VERILATOR_WNO       = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-NULLPORT --Wno-PINCONNECTEMPTY --Wno-ASSIGNDLY --Wno-DEFPARAM --Wno-UNDRIVEN --Wno-UNUSEDPARAM --Wno-SYNCASYNCNET --autoflush --Wno-EOFNEWLINE
 VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace $(VERILATOR_VINC) \
                       $(SOC_VFLAGS)  $(VERILATOR_CFLAGS) $(VERILATOR_LDFLAGS) $(VERILATOR_WNO)  \
-                      --top-module $(TOP_NAME) +define+SOC
+                      --top-module $(TOP_NAME) +define+SOC $(SOC_ISA_VDEFINE)
 
 default: run
 all: run
@@ -110,12 +123,13 @@ run: prepare_build $(VERILATOR_SRC)
 TOP_NAME_FOR_NPC    	?= 	ysyx
 VERILATOR_SRC_NPC   	= 	$(SIM_CSRC) $(SIM_VSRC_NO_PC)
 VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC)
+VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC $(NPC_ISA_CFLAG))
 VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
 
+# 注意这里没有 SOC_VFLAGS
 VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace \
                            $(VERILATOR_VINC_NPC) $(VERILATOR_CFLAGS_NPC) $(VERILATOR_LDFLAGS_NPC) $(VERILATOR_WNO) \
-                           --top-module $(TOP_NAME_FOR_NPC) +define+NPC # 注意这里没有 SOC_VFLAGS
+                           --top-module $(TOP_NAME_FOR_NPC) +define+NPC $(NPC_ISA_VDEFINE)
 
 npc: prepare_build $(VERILATOR_SRC_NPC)
 	@echo
