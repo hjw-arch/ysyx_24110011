@@ -1,3 +1,4 @@
+#include <config.h>
 #ifdef CONFIG_DEVICE
 
 #include "../Include/device.h"
