@@ -1,17 +1,23 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <dlfcn.h>
-#include "../Include/common.h"
-#include "../Include/cpu_exec.h"
-#include "../Include/difftest.h"
-#include "../Include/ram.h"
-#include "../Include/sdb.h"
+#include "common.h"
+#include "cpu_exec.h"
+#include "difftest.h"
+#include "ram.h"
+#include "sdb.h"
 
 void (*difftest_memcpy)(vaddr_t addr, void *buf, size_t n, bool direction) = NULL;
 void (*difftest_regcpy)(void *dut, bool direction) = NULL;
 void (*difftest_exec)(uint64_t n) = NULL;
 void (*difftest_raise_intr)(uint64_t NO) = NULL;
 void (*difftest_init)(int) = NULL;
+
+static bool is_skip_ref = false;
+
+void difftest_skip_ref() {
+    is_skip_ref = true;
+}
 
 void init_difftest(char *ref_so_file, long img_size, int port) {
   assert(ref_so_file != NULL);
@@ -53,7 +59,7 @@ void defftest_reset() {
 
 static bool difftest_checkregs(cpu_t *ref) {
     int flag = 0;
-    for (int i = 1; i < 32; i++) {		// 0不比
+    for (int i = 1; i < RF_NUM; i++) {		// 0不比；RVE 当前只比较 x1-x15
         if (ref->registerFile[i] != cpu.registerFile[i]) {
             printf("ref->reg[%d] = 0x%08x---------npc->reg[%d] = 0x%08x\n", i, ref->registerFile[i], i, cpu.registerFile[i]);
             flag = 1;
@@ -78,8 +84,15 @@ static void checkregs(cpu_t *ref, vaddr_t pc) {
 
 void difftest_step(vaddr_t pc) {
     cpu_t ref_info;
+
+    if (is_skip_ref) {
+        // SoC 外设访问具有时序/副作用差异；DUT 执行后直接同步到 ref。
+        difftest_regcpy(&cpu, DIFFTEST_TO_REF);
+        is_skip_ref = false;
+        return;
+    }
+
     difftest_exec(1);
     difftest_regcpy(&ref_info, DIFFTEST_TO_DUT);
     checkregs(&ref_info, pc);
 }
-

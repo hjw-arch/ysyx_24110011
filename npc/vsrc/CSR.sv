@@ -1,103 +1,89 @@
-// 仅仅是简单实现，并不是完整版本，即使是此版本中的寄存器设置也不完整
-module CSR (
-	input  						clk,
-	input  						rst,
-	input  						wen_i,
+`include "./include/pipeline_pkt_pkg.sv"
 
-	input  						is_ecall_i,
-	input  			[11 : 0] 	addr_i,
-	input  			[31 : 0] 	data_i,
-	input 			[31 : 0]	pc_i,
+module CSR
+import pipeline_pkt_pkg::*;
+(
+    input               clk,
+    input               rst,
 
-	output 	logic	[31 : 0]	data_o,
-	output 	logic	[31 : 0]	mtvec_o,
-	output	logic	[31 : 0]	mepc_o
+    input               wen,
+    input   csr_cmd_t   cmd,
+    input   [11:0]      addr,
+    input   [31:0]      wdata,
+
+    input               ecall_i,
+    input   [31:0]      trap_pc_i,
+
+    output  logic [31:0] rdata_o,
+    output  [31:0]      mtvec_o,
+    output  [31:0]      mepc_o
 );
 
-// CSR寄存器
-reg		[31 : 0]		mcause;
-reg		[31 : 0]		mstatus;
-reg		[31 : 0]		mtvec;
-reg		[31 : 0]		mepc;
-logic	[31 : 0]		mvendorid;
-logic	[31 : 0]		marchid;
+localparam logic [11:0] CSR_MSTATUS  = 12'h300;
+localparam logic [11:0] CSR_MTVEC    = 12'h305;
+localparam logic [11:0] CSR_MEPC     = 12'h341;
+localparam logic [11:0] CSR_MCAUSE   = 12'h342;
+localparam logic [11:0] CSR_MVENDORID= 12'hF11;
+localparam logic [11:0] CSR_MARCHID  = 12'hF12;
 
+localparam logic [31:0] MVENDORID_VALUE = 32'h7973_7978;
+localparam logic [31:0] MARCHID_VALUE   = 32'h016f_e3bb;
 
-// 标识
-wire is_mcause 		= 	(addr_i[7 : 0] == 8'h42);
-wire is_mstatus 	= 	(addr_i[7 : 0] == 8'h00);
-wire is_mtvec 		= 	(addr_i[7 : 0] == 8'h05);
-wire is_mepc 		= 	(addr_i[7 : 0] == 8'h41);
+logic [31:0] mstatus_r;
+logic [31:0] mtvec_r;
+logic [31:0] mepc_r;
+logic [31:0] mcause_r;
 
-// 特殊写入操作
-wire special_op	= is_ecall_i;
+wire is_mstatus = addr == CSR_MSTATUS;
+wire is_mtvec   = addr == CSR_MTVEC;
+wire is_mepc    = addr == CSR_MEPC;
+wire is_mcause  = addr == CSR_MCAUSE;
 
-/******************************* 标识寄存器 ***********************************/
-
-// mvendorid
-assign mvendorid = 32'h79737978;
-
-// mvendorid
-assign marchid = 32'h016FE3BB;
-
-
-/******************************* M寄存器 ***********************************/
-// mcause
-always_ff @(posedge clk) begin
-	if (rst) begin
-		mcause <= 32'b0;
-	end else begin
-		case ({special_op, wen_i, is_mcause})
-			3'b100: mcause <= 32'd11;
-			3'b011: mcause <= data_i;
-			default: mcause <= mcause;
-		endcase
-	end
-end
-
-
-// mstatus
-// 简单实现，无复位值
-always_ff @(posedge clk) begin
-	case ({special_op, wen_i, is_mstatus})
-		3'b100: mstatus <= 32'h1800;
-		3'b011: mstatus <= data_i;
-		default: mstatus <= mstatus;
-	endcase
-end
-
-// mtvec
-// 简单实现，无复位值
-always_ff @(posedge clk) begin
-	mtvec <= (wen_i & is_mtvec) ? data_i : mtvec;
-end
-
-// mepc
-// 简单实现，无复位值
-always_ff @(posedge clk) begin
-	case ({special_op, wen_i, is_mepc})
-		3'b100: mepc <= pc_i;
-		3'b011: mepc <= data_i;
-		default: mepc <= mepc;
-	endcase
-end
-
-
-/******************************* 读寄存器 ***********************************/
+// CSR 读是组合逻辑，WBU 用旧值写回 rd；CSR 写在同一个时钟沿提交。
 always_comb begin
-	case(addr_i[7 : 0])
-		8'h42: data_o = mcause;
-		8'h00: data_o = mstatus;
-		8'h05: data_o = mtvec;
-		8'h41: data_o = mepc;
-		8'h11: data_o = mvendorid;
-		8'h12: data_o = marchid;
-		default: data_o = 32'h0;
-	endcase
+    unique case (addr)
+        CSR_MSTATUS:   rdata_o = mstatus_r;
+        CSR_MTVEC:     rdata_o = mtvec_r;
+        CSR_MEPC:      rdata_o = mepc_r;
+        CSR_MCAUSE:    rdata_o = mcause_r;
+        CSR_MVENDORID: rdata_o = MVENDORID_VALUE;
+        CSR_MARCHID:   rdata_o = MARCHID_VALUE;
+        default:       rdata_o = 32'b0;
+    endcase
 end
 
-assign mtvec_o 	= 	mtvec;
-assign mepc_o	=	mepc;
+logic [31:0] csr_wdata;
+always_comb begin
+    unique case (cmd)
+        CSR_CMD_WRITE: csr_wdata = wdata;
+        CSR_CMD_SET:   csr_wdata = rdata_o | wdata;
+        CSR_CMD_CLEAR: csr_wdata = rdata_o & ~wdata;
+        default:       csr_wdata = rdata_o;
+    endcase
+end
 
+always_ff @(posedge clk) begin
+    if (rst) begin
+        mstatus_r <= 32'h0000_1800;
+        mtvec_r   <= 32'b0;
+        mepc_r    <= 32'b0;
+        mcause_r  <= 32'b0;
+    end else begin
+        if (ecall_i) begin
+            mepc_r   <= trap_pc_i;
+            mcause_r <= 32'd11;
+            // 当前阶段只实现 M-mode，保持一个简单稳定的 mstatus 值即可。
+            mstatus_r <= 32'h0000_1800;
+        end else if (wen) begin
+            if (is_mstatus) mstatus_r <= csr_wdata;
+            if (is_mtvec)   mtvec_r   <= csr_wdata;
+            if (is_mepc)    mepc_r    <= csr_wdata;
+            if (is_mcause)  mcause_r  <= csr_wdata;
+        end
+    end
+end
+
+assign mtvec_o = mtvec_r;
+assign mepc_o  = mepc_r;
 
 endmodule

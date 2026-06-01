@@ -51,11 +51,11 @@ prepare_build:
 # 本地仿真环境参数
 TOP_NAME            ?= ysyx
 SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
-SIM_VINC            = $(abspath ./vsrc_pip)
+SIM_VINC            = $(abspath ./vsrc)
 SIM_CLFAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
-SIM_PKG				= $(shell find $(abspath ./vsrc_pip/include) -name "*.sv")			# pkg 需要被优先编译
-SIM_VSRC            = $(SIM_PKG) $(shell find $(abspath ./vsrc_pip) -name "*.v" -or -name "*.sv" ! -path "*/include/*")
+SIM_PKG				= $(shell find $(abspath ./vsrc/include) -name "*.sv")			# pkg 需要被优先编译
+SIM_VSRC            = $(SIM_PKG) $(shell find $(abspath ./vsrc) -name "*.v" -or -name "*.sv" ! -path "*/include/*")
 SIM_VSRC_NO_PC		= $(filter-out %PC.sv %IFU.sv %define_pkg.sv, $(SIM_VSRC))
 SIM_CSRC            = $(shell find $(abspath ./csrc/src) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
 ## LLVM参数
@@ -93,7 +93,7 @@ all: run
 run: prepare_build $(VERILATOR_SRC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc_pip/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS) $(VERILATOR_SRC) --public ./vsrc/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"
@@ -120,7 +120,7 @@ VERILATOR_FLAGS_NPC 	= -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --
 npc: prepare_build $(VERILATOR_SRC_NPC)
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc_pip/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS_NPC) $(VERILATOR_SRC_NPC) --public ./vsrc/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"
@@ -152,7 +152,7 @@ NVBOARD_CFLAGS = $(addprefix -CFLAGS , $(addprefix -I, $(INC_PATH)) $(CXXFLAGS))
 sim: $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE) prepare_build
 	@echo
 	@echo "---------------- Simulation start -----------------"
-	$(VERILATOR) $(VERILATOR_FLAGS) $(NVBOARD_CFLAGS) $(VERILATOR_SRC) $(NVBOARD_CSRC) $(addprefix -LDFLAGS , $(LDFLAGS)) --public ./vsrc/PC.sv --public ./vsrc/IFU.sv
+	$(VERILATOR) $(VERILATOR_FLAGS) $(NVBOARD_CFLAGS) $(VERILATOR_SRC) $(NVBOARD_CSRC) $(addprefix -LDFLAGS , $(LDFLAGS)) --public ./vsrc/IFU.sv
 	@echo
 	@echo
 	@echo "---------------- Simulation running -----------------"

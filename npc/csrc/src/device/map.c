@@ -37,16 +37,30 @@ word_t map_read(paddr_t addr, int len, IOMap *map) {
     }
     paddr_t offset = addr - map->low;
     invoke_callback(map->callback, offset, len, 0);
-    word_t ret = *(uint32_t *)(map->space + offset);
+    uint8_t *space = (uint8_t *)map->space;
+    word_t ret = *(uint32_t *)(space + offset);
     IFDEF(CONFIG_DTRACE, record_dtrace(map->name, 0));
     return ret;
 }
 
-void map_write(paddr_t addr, int len, word_t data, IOMap *map) {
-    assert(len >= 1 && len <= 8);
+// 写通道传进来的是 AXI WSTRB 字节掩码，不是访问字节数。
+void map_write(paddr_t addr, int wmask, word_t data, IOMap *map) {
+    assert(map != NULL);
+    assert(wmask != 0 && (wmask & ~0xf) == 0);
+
+    uint8_t *space = (uint8_t *)map->space;
+    paddr_t aligned_addr = addr & ~0x3u;
+
+    for (int i = 0; i < 4; i++) {
+        if (wmask & (1 << i)) {
+            paddr_t byte_addr = aligned_addr + i;
+            assert(map_inside(map, byte_addr));
+            space[byte_addr - map->low] = (data >> (i * 8)) & 0xff;
+        }
+    }
+
     paddr_t offset = addr - map->low;
-    *(uint32_t *)(map->space + offset) = data;
-    invoke_callback(map->callback, offset, len, 1);
+    invoke_callback(map->callback, offset, wmask, 1);
     IFDEF(CONFIG_DTRACE, record_dtrace(map->name, 1));
 }
 

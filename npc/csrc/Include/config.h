@@ -9,7 +9,7 @@
 #define CONFIG_RVE
 // #define RV64
 
-#define SOC						1
+// SOC/NPC 模式由 Makefile 通过 -DSOC/-DNPC 选择。
 
 // #define CONFIG_WATCHPOINT   1
 
