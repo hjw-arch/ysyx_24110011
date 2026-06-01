@@ -60,10 +60,10 @@ uint64_t get_time();
 
 void init_map();
 word_t map_read(paddr_t addr, int len, IOMap *map);
-void map_write(paddr_t addr, int len, word_t data, IOMap *map);
+void map_write(paddr_t addr, int wmask, word_t data, IOMap *map);
 
 word_t mmio_read(paddr_t addr, int len);
-void mmio_write(paddr_t addr, int len, word_t data);
+void mmio_write(paddr_t addr, int wmask, word_t data);
 
 void add_mmio_map(const char *name, paddr_t addr, void *space, uint32_t len, io_callback_t callback);
 
