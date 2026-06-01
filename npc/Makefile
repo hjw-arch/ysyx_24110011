@@ -54,17 +54,11 @@ SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include))
 SIM_VINC            = $(abspath ./vsrc)
 SIM_CLFAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -L/home/hjw-arch/ysyx-workbench/npc/ -lnemu
-SOC_ISA             ?= RVE
-NPC_ISA             ?= RVI
+NPC_ISA             ?= RVE
 VALID_ISAS          = RVE RVI
-ifeq ($(filter $(SOC_ISA),$(VALID_ISAS)),)
-$(error SOC_ISA must be one of: $(VALID_ISAS))
-endif
 ifeq ($(filter $(NPC_ISA),$(VALID_ISAS)),)
 $(error NPC_ISA must be one of: $(VALID_ISAS))
 endif
-SOC_ISA_CFLAG       = -DCONFIG_$(SOC_ISA)
-SOC_ISA_VDEFINE     = +define+CONFIG_$(SOC_ISA)
 NPC_ISA_CFLAG       = -DCONFIG_$(NPC_ISA)
 NPC_ISA_VDEFINE     = +define+CONFIG_$(NPC_ISA)
 SIM_PKG				= $(shell find $(abspath ./vsrc/include) -name "*.sv")			# pkg 需要被优先编译
@@ -94,12 +88,12 @@ export ASAN_OPTIONS = verify_asan_link_order=0    # 关掉内存泄漏检测    
 VERILATOR           = verilator
 VERILATOR_SRC       = $(SIM_CSRC) $(SIM_VSRC_NO_PC) $(SOC_VSRC) $(SOC_TOP_MOD_FILE)
 VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC $(SOC_ISA_CFLAG))
+VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC)
 VERILATOR_VINC      = $(addprefix -y , $(SIM_VINC) $(SOC_VINC))
 VERILATOR_WNO       = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-NULLPORT --Wno-PINCONNECTEMPTY --Wno-ASSIGNDLY --Wno-DEFPARAM --Wno-UNDRIVEN --Wno-UNUSEDPARAM --Wno-SYNCASYNCNET --autoflush --Wno-EOFNEWLINE
 VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace $(VERILATOR_VINC) \
                       $(SOC_VFLAGS)  $(VERILATOR_CFLAGS) $(VERILATOR_LDFLAGS) $(VERILATOR_WNO)  \
-                      --top-module $(TOP_NAME) +define+SOC $(SOC_ISA_VDEFINE)
+                      --top-module $(TOP_NAME) +define+SOC
 
 default: run
 all: run
