@@ -69,6 +69,8 @@ SIM_CSRC            = $(shell find $(abspath ./csrc/src) -name "*.c" -or -name "
 LLVMCFLAGS          = $(shell llvm-config --cxxflags) -fPIE
 LLVMCFLAGS          = $(echo $LLVMCFLAGS | sed 's/ -D__STDC_FORMAT_MACROS//')  # 去掉D__STDC_FORMAT_MACROS
 LLVMLDFLAGS         = $(shell llvm-config --libs)
+SDL_CFLAGS          = $(shell pkg-config --cflags sdl2)
+SDL_LDFLAGS         = $(shell pkg-config --libs sdl2)
 
 # SOC参数
 SOC_VSRC            = $(shell find $(abspath ../ysyxSoC/perip) -type f -name "*.v")
@@ -87,8 +89,8 @@ export ASAN_OPTIONS = verify_asan_link_order=0    # 关掉内存泄漏检测    
 
 VERILATOR           = verilator
 VERILATOR_SRC       = $(SIM_CSRC) $(SIM_VSRC_NO_PC) $(SOC_VSRC) $(SOC_TOP_MOD_FILE)
-VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DSOC)
+VERILATOR_LDFLAGS   = $(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS) $(SDL_LDFLAGS))
+VERILATOR_CFLAGS    = $(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) $(SDL_CFLAGS) -DSOC)
 VERILATOR_VINC      = $(addprefix -y , $(SIM_VINC) $(SOC_VINC))
 VERILATOR_WNO       = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-NULLPORT --Wno-PINCONNECTEMPTY --Wno-ASSIGNDLY --Wno-DEFPARAM --Wno-UNDRIVEN --Wno-UNUSEDPARAM --Wno-SYNCASYNCNET --autoflush --Wno-EOFNEWLINE
 VERILATOR_FLAGS     = -Mdir $(OBJ_DIR) -cc --exe --build -O3 --x-assign fast --x-initial fast -sv -Wall --trace $(VERILATOR_VINC) \
@@ -116,8 +118,8 @@ run: prepare_build $(VERILATOR_SRC)
 
 TOP_NAME_FOR_NPC    	?= 	ysyx
 VERILATOR_SRC_NPC   	= 	$(SIM_CSRC) $(SIM_VSRC_NO_PC)
-VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS))
-VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) -DNPC $(NPC_ISA_CFLAG))
+VERILATOR_LDFLAGS_NPC 	= 	$(addprefix -LDFLAGS , $(SIM_LDFLAGS) $(LLVMLDFLAGS) $(SDL_LDFLAGS))
+VERILATOR_CFLAGS_NPC  	= 	$(addprefix -CFLAGS , $(LLVMCFLAGS) $(SIM_CLFAGS) $(SDL_CFLAGS) -DNPC $(NPC_ISA_CFLAG))
 VERILATOR_VINC_NPC    	= 	$(addprefix -y , $(SIM_VINC))
 
 # 注意这里没有 SOC_VFLAGS

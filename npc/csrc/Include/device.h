@@ -1,9 +1,10 @@
 #ifndef DEVICE_H
 #define DEVICE_H
 
+#include <config.h>
+
 #ifdef CONFIG_DEVICE
 
-#include <config.h>
 #include <stdint.h>
 #include <sys/time.h>
 #include "ram.h"

@@ -81,7 +81,7 @@ assign	ic_req_addr		=	pc_r;
 // 3. 对下游的输出
 // ==========================================
 
-assign	valid_o		= ic_resp_valid & ~flush_i;
+assign	valid_o		= ic_resp_valid & ~flush_i;         // 实际上不要 ~flush_i也行，由icache自己处理
 assign	data_o.inst = ic_resp_data;
 assign	data_o.pc	= ic_resp_addr;
 
@@ -160,29 +160,5 @@ axi_read_adapter u_axi_adapter (
     .RID                (RID),
     .RREADY             (RREADY)
 );
-
-/************************** 性能计数器 *****************************/
-
-// import "DPI-C" function void is_finish_bootloader(input int pc);
-// import "DPI-C" function void PerformanceCounter_ifu_fetch();
-// import "DPI-C" function void PerformanceCounter_ifu_fetch_cycles(input int start, input int finish);
-// import "DPI-C" function void PerformanceCounter_inst_type_total_cycles(input int start, input int inst);
-
-// always_ff @(posedge clk) begin
-// 	if (wbu_valid) is_finish_bootloader(pc);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (i2c_valid) PerformanceCounter_ifu_fetch();
-// end
-// /* verilator lint_off WIDTHEXPAND */
-// always_ff @(posedge clk) begin
-// 	if (!rst) PerformanceCounter_ifu_fetch_cycles(start, i2c_valid);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (!rst) PerformanceCounter_inst_type_total_cycles(start, i2c_inst);
-// end
-
 
 endmodule

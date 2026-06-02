@@ -32,7 +32,7 @@
 
 
 // device
-// #define CONFIG_DEVICE       1
+#define CONFIG_DEVICE       1
 
 #define PERFORMANCE_COUNTER		1
 
