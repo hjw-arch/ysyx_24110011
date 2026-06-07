@@ -152,6 +152,7 @@ import pipeline_pkt_pkg::*;
 	assign pc_target_o = out_redirect_addr;
 
 	// AXI
+	// 这里全程发信号直到状态机回到idle，可能存在时序问题
 	wire wen = mem_req_fire & input_is_store;
 	wire ren = mem_req_fire & input_is_load;
 
