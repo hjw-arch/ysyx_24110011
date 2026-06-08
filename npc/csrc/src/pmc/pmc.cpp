@@ -17,6 +17,7 @@ enum pmc_inst_t {
     PMC_INST_BRANCH,
     PMC_INST_JUMP,
     PMC_INST_CSR,
+    PMC_INST_SYSTEM,
     PMC_INST_FENCE,
     PMC_INST_UNKNOWN,
     PMC_INST_NR
@@ -133,17 +134,6 @@ typedef struct {
 static pmc_recovery_t recovery = {};
 static pmc_drop_cause_t pending_drop_cause = PMC_DROP_NONE;
 
-static const char *const inst_name[PMC_INST_NR] = {
-    "CAL",
-    "LOAD",
-    "STORE",
-    "BRANCH",
-    "JUMP",
-    "CSR",
-    "FENCE",
-    "UNKNOWN"
-};
-
 static const char *const redirect_name[PMC_REDIR_NR] = {
     "branch",
     "jump",
@@ -201,9 +191,10 @@ static pmc_inst_t classify_inst(uint32_t inst) {
         case 0x18: return PMC_INST_BRANCH;  // BRANCH
         case 0x19: return PMC_INST_JUMP;    // JALR
         case 0x1b: return PMC_INST_JUMP;    // JAL
-        case 0x1c: return PMC_INST_CSR;     // SYSTEM
+        case 0x1c:
+            return funct3 != 0 ? PMC_INST_CSR : PMC_INST_SYSTEM; // CSR or ecall/ebreak/mret
         case 0x03:
-            return funct3 == 0x1 ? PMC_INST_FENCE : PMC_INST_UNKNOWN; // MISC-MEM/FENCE.I
+            return PMC_INST_FENCE;          // MISC-MEM/FENCE/FENCE.I
         case 0x04:                          // OP-IMM
         case 0x05:                          // AUIPC
         case 0x0c:                          // OP
@@ -355,15 +346,6 @@ static void record_active_recovery(bool wbu_valid, uint32_t wbu_pc, bool empty_r
     }
 }
 
-static void print_ratio(uint64_t part, uint64_t total) {
-    if (total == 0) {
-        printf("  ratio:                         n/a\n");
-        return;
-    }
-
-    printf("  ratio:                         %.2f%%\n", 100.0 * (double)part / (double)total);
-}
-
 static void print_avg(const char *name, uint64_t cycles, uint64_t count) {
     if (count == 0) {
         printf("  %-30s n/a\n", name);
@@ -420,6 +402,7 @@ void PerformanceCounter_record_cycle(const pmc_cycle_sample_t *sample) {
     bool empty_retire = !sample->wbu_valid;
     bool icache_wait = sample->icache_miss_busy ||
                        (sample->ifu_req_valid && !sample->ifu_req_ready);
+    bool count_younger_side = !sample->host_trap_commit;
 
     c->cycles++;
     if (sample->wbu_valid) {
@@ -463,11 +446,11 @@ void PerformanceCounter_record_cycle(const pmc_cycle_sample_t *sample) {
         c->icache_invalidate++;
     }
 
-    if (sample->lsu_mem_req_fire) {
+    if (count_younger_side && sample->lsu_mem_req_fire) {
         if (sample->lsu_input_is_load) c->lsu_load++;
         if (sample->lsu_input_is_store) c->lsu_store++;
     }
-    if (sample->lsu_wait_resp) {
+    if (count_younger_side && sample->lsu_wait_resp) {
         if (sample->lsu_input_is_load) c->lsu_load_cycles++;
         if (sample->lsu_input_is_store) c->lsu_store_cycles++;
     }
@@ -546,61 +529,96 @@ void PerformanceCounter_record_commit(uint32_t pc, uint32_t inst, uint64_t retir
     }
 }
 
-// 保留旧 DPI-C 函数名，避免以后临时打开旧 RTL 注释时链接失败。
-void is_finish_bootloader(int pc) { (void)pc; }
-void PerformanceCounter_ifu_fetch() {}
-void PerformanceCounter_ifu_fetch_cycles(int start, int finish) { (void)start; (void)finish; }
-void PerformanceCounter_inst_type_total_cycles(int start, int inst) { (void)start; (void)inst; }
-void PerformanceCounter_icache_hit() {}
-void PerformanceCounter_icache_AMAT() {}
-void PerformanceCounter_lsu_load() {}
-void PerformanceCounter_lsu_load_cycles(int start, int finish) { (void)start; (void)finish; }
-void PerformanceCounter_lsu_store() {}
-void PerformanceCounter_lsu_store_cycles(int start, int finish) { (void)start; (void)finish; }
-void PerformanceCounter_exu_finish_cal() {}
-void PerformanceCounter_idu_identify_inst(int inst) { (void)inst; }
+static uint64_t ifu_fetch_cycles(const pmc_counter_t *c) {
+    return c->ifu_resp + c->ifu_wait_cache + c->ifu_wait_backend +
+           c->ifu_wait_flush + c->ifu_wait_other;
+}
+
+static uint64_t branch_jump_count(const pmc_counter_t *c) {
+    return c->inst[PMC_INST_BRANCH] + c->inst[PMC_INST_JUMP];
+}
+
+static uint64_t branch_jump_cycles(const pmc_counter_t *c) {
+    return c->inst_cycles[PMC_INST_BRANCH] + c->inst_cycles[PMC_INST_JUMP];
+}
+
+static uint64_t icache_accesses(const pmc_counter_t *c) {
+    return c->icache_hit + c->icache_miss;
+}
+
+static void print_u64_metric(const char *name, uint64_t value) {
+    printf("  %-30s %llu\n", name, (unsigned long long)value);
+}
+
+static void print_count_cycles_avg(const char *name, uint64_t count, uint64_t cycles) {
+    printf("  %-12s count: %-14llu cycles: %-14llu avg: ",
+           name, (unsigned long long)count, (unsigned long long)cycles);
+    if (count == 0) {
+        printf("n/a\n");
+    } else {
+        printf("%.2f\n", (double)cycles / (double)count);
+    }
+}
 
 void PerformanceCounter_display() {
     printf(ANSI_FG_YELLOW "===== CPU Performance Counter Statistics =====\n" ANSI_NONE);
 
     for (int r = 0; r < PMC_REGION_NR; r++) {
         pmc_counter_t *c = &pmc[r];
+        uint64_t fetch_cycles = ifu_fetch_cycles(c);
+        uint64_t br_jmp_count = branch_jump_count(c);
+        uint64_t br_jmp_cycles = branch_jump_cycles(c);
+        uint64_t icache_total = icache_accesses(c);
 
         if (c->cycles == 0 && c->retired == 0) {
             continue;
         }
 
         printf(ANSI_FG_CYAN "\n[%s]\n" ANSI_NONE, region_name((pmc_region_t)r));
-        printf("  Cycles:                        %llu\n", (unsigned long long)c->cycles);
-        printf("  Retired instructions:          %llu\n", (unsigned long long)c->retired);
-        print_avg("CPI:", c->cycles, c->retired);
-        printf("  Retire-valid cycles:           %llu\n", (unsigned long long)c->retire_cycles);
-        printf("  Empty-retire cycles:           %llu\n", (unsigned long long)c->empty_retire_cycles);
-        print_avg("cycles per retire-valid:", c->cycles, c->retire_cycles);
 
-        printf("\n  Instruction Mix\n");
-        for (int i = 0; i < PMC_INST_NR; i++) {
-            printf("  %-8s count:                 %llu\n",
-                inst_name[i], (unsigned long long)c->inst[i]);
-            print_ratio(c->inst[i], c->retired);
-            print_avg("avg retire interval:", c->inst_cycles[i], c->inst[i]);
-        }
+        printf("\n  Overview\n");
+        print_u64_metric("Cycles:", c->cycles);
+        print_u64_metric("Retired instructions:", c->retired);
+        print_avg("CPI:", c->cycles, c->retired);
+        print_avg("IPC:", c->retired, c->cycles);
+        print_u64_metric("Retire-valid cycles:", c->retire_cycles);
+        print_u64_metric("Empty-retire cycles:", c->empty_retire_cycles);
 
         printf("\n  IFU\n");
-        printf("  Fetched responses:             %llu\n", (unsigned long long)c->ifu_resp);
-        printf("  Wait ICache/refill cycles:     %llu\n", (unsigned long long)c->ifu_wait_cache);
-        printf("  Wait backend cycles:           %llu\n", (unsigned long long)c->ifu_wait_backend);
-        printf("  Wait flush cycles:             %llu\n", (unsigned long long)c->ifu_wait_flush);
-        printf("  Wait other cycles:             %llu\n", (unsigned long long)c->ifu_wait_other);
-        print_avg("avg IFU cycles/fetch:", c->cycles, c->ifu_resp);
+        print_u64_metric("Fetch count:", c->ifu_resp);
+        print_u64_metric("Fetch total cycles:", fetch_cycles);
+        print_avg("Avg cycles/fetch:", fetch_cycles, c->ifu_resp);
+        print_u64_metric("Wait ICache/refill:", c->ifu_wait_cache);
+        print_u64_metric("Wait backend:", c->ifu_wait_backend);
+        print_u64_metric("Wait flush:", c->ifu_wait_flush);
+        print_u64_metric("Wait other:", c->ifu_wait_other);
+
+        printf("\n  Instruction Classes\n");
+        print_count_cycles_avg("CAL", c->inst[PMC_INST_CAL], c->inst_cycles[PMC_INST_CAL]);
+        print_count_cycles_avg("LOAD", c->inst[PMC_INST_LOAD], c->inst_cycles[PMC_INST_LOAD]);
+        print_count_cycles_avg("STORE", c->inst[PMC_INST_STORE], c->inst_cycles[PMC_INST_STORE]);
+        print_count_cycles_avg("BR/JUMP", br_jmp_count, br_jmp_cycles);
+        print_count_cycles_avg("CSR", c->inst[PMC_INST_CSR], c->inst_cycles[PMC_INST_CSR]);
+        print_count_cycles_avg("SYSTEM", c->inst[PMC_INST_SYSTEM], c->inst_cycles[PMC_INST_SYSTEM]);
+        print_count_cycles_avg("FENCE", c->inst[PMC_INST_FENCE], c->inst_cycles[PMC_INST_FENCE]);
+        print_count_cycles_avg("UNKNOWN", c->inst[PMC_INST_UNKNOWN], c->inst_cycles[PMC_INST_UNKNOWN]);
+
+        printf("\n  LSU\n");
+        print_u64_metric("Load requests:", c->lsu_load);
+        print_u64_metric("Load busy cycles:", c->lsu_load_cycles);
+        print_avg("Avg load latency:", c->lsu_load_cycles, c->lsu_load);
+        print_u64_metric("Store requests:", c->lsu_store);
+        print_u64_metric("Store busy cycles:", c->lsu_store_cycles);
+        print_avg("Avg store latency:", c->lsu_store_cycles, c->lsu_store);
 
         printf("\n  ICache\n");
-        printf("  Hits:                          %llu\n", (unsigned long long)c->icache_hit);
-        printf("  Misses:                        %llu\n", (unsigned long long)c->icache_miss);
-        printf("  Miss busy cycles:              %llu\n", (unsigned long long)c->icache_miss_cycles);
-        printf("  Dropped refills:               %llu\n", (unsigned long long)c->icache_refill_drop);
-        printf("  Invalidates:                   %llu\n", (unsigned long long)c->icache_invalidate);
-        print_avg("avg miss penalty:", c->icache_miss_cycles, c->icache_miss);
+        print_u64_metric("Hits:", c->icache_hit);
+        print_u64_metric("Misses:", c->icache_miss);
+        print_percent_metric("Hit rate:", c->icache_hit, icache_total);
+        print_u64_metric("Miss penalty cycles:", c->icache_miss_cycles);
+        print_avg("Avg miss penalty:", c->icache_miss_cycles, c->icache_miss);
+        print_u64_metric("Dropped refills:", c->icache_refill_drop);
+        print_u64_metric("Invalidates:", c->icache_invalidate);
         for (int i = 0; i < PMC_DROP_NR; i++) {
             if (c->icache_drop_cause[i] != 0) {
                 printf("  drop %-22s %llu\n", drop_cause_name[i],
@@ -608,68 +626,59 @@ void PerformanceCounter_display() {
             }
         }
 
-        printf("\n  LSU\n");
-        printf("  Load operations:               %llu\n", (unsigned long long)c->lsu_load);
-        printf("  Load busy cycles:              %llu\n", (unsigned long long)c->lsu_load_cycles);
-        print_avg("avg load latency:", c->lsu_load_cycles, c->lsu_load);
-        printf("  Store operations:              %llu\n", (unsigned long long)c->lsu_store);
-        printf("  Store busy cycles:             %llu\n", (unsigned long long)c->lsu_store_cycles);
-        print_avg("avg store latency:", c->lsu_store_cycles, c->lsu_store);
+        printf("\n  RAW/Forwarding Detail\n");
+        print_u64_metric("RAW stall cycles:", c->raw_hazard_cycles);
+        print_u64_metric("Load-use stall cycles:", c->load_use_stall_cycles);
+        print_u64_metric("CSR-use stall cycles:", c->csr_use_stall_cycles);
+        print_u64_metric("LS not-ready stalls:", c->ls_not_ready_stall_cycles);
+        print_u64_metric("Fwd rs1 from LS:", c->fwd_rs1_from_ls);
+        print_u64_metric("Fwd rs2 from LS:", c->fwd_rs2_from_ls);
+        print_u64_metric("Fwd rs1 from WB:", c->fwd_rs1_from_wb);
+        print_u64_metric("Fwd rs2 from WB:", c->fwd_rs2_from_wb);
+        print_u64_metric("RF bypass rs1:", c->rf_bypass_rs1);
+        print_u64_metric("RF bypass rs2:", c->rf_bypass_rs2);
 
-        printf("\n  RAW/Forwarding\n");
-        printf("  RAW stall cycles:              %llu\n", (unsigned long long)c->raw_hazard_cycles);
-        printf("  load-use stall cycles:         %llu\n", (unsigned long long)c->load_use_stall_cycles);
-        printf("  CSR-use stall cycles:          %llu\n", (unsigned long long)c->csr_use_stall_cycles);
-        printf("  LS not-ready stall cycles:     %llu\n", (unsigned long long)c->ls_not_ready_stall_cycles);
-        printf("  fwd rs1 from LS:               %llu\n", (unsigned long long)c->fwd_rs1_from_ls);
-        printf("  fwd rs2 from LS:               %llu\n", (unsigned long long)c->fwd_rs2_from_ls);
-        printf("  fwd rs1 from WB:               %llu\n", (unsigned long long)c->fwd_rs1_from_wb);
-        printf("  fwd rs2 from WB:               %llu\n", (unsigned long long)c->fwd_rs2_from_wb);
-        printf("  RF same-cycle bypass rs1:      %llu\n", (unsigned long long)c->rf_bypass_rs1);
-        printf("  RF same-cycle bypass rs2:      %llu\n", (unsigned long long)c->rf_bypass_rs2);
-
-        printf("\n  Control/System Events\n");
-        printf("  LSU redirects:                 %llu\n", (unsigned long long)c->lsu_redirect);
+        printf("\n  Control/Redirect Detail\n");
+        print_u64_metric("LSU redirects:", c->lsu_redirect);
         for (int i = 0; i < PMC_REDIR_NR; i++) {
             printf("  redirect %-19s %llu\n", redirect_name[i],
                 (unsigned long long)c->redirect[i]);
         }
-        printf("  Redirect recovery cycles:      %llu\n", (unsigned long long)c->redirect_recovery_cycles);
-        printf("  Redirect empty-retire cycles:  %llu\n", (unsigned long long)c->redirect_recovery_empty_cycles);
-        printf("  Redirect windows closed:       %llu\n", (unsigned long long)c->redirect_recovery_closed);
-        printf("  Redirect windows interrupted:  %llu\n", (unsigned long long)c->redirect_recovery_interrupted);
-        print_avg("avg cycles to target retire:", c->redirect_to_target_cycles,
+        print_u64_metric("Redirect recovery cycles:", c->redirect_recovery_cycles);
+        print_u64_metric("Redirect empty cycles:", c->redirect_recovery_empty_cycles);
+        print_u64_metric("Redirect windows closed:", c->redirect_recovery_closed);
+        print_u64_metric("Redirect interrupted:", c->redirect_recovery_interrupted);
+        print_avg("Avg cycles to target:", c->redirect_to_target_cycles,
                   c->redirect_recovery_closed);
-        print_avg("avg empty cycles to target:", c->redirect_to_target_empty_cycles,
+        print_avg("Avg empty cycles/target:", c->redirect_to_target_empty_cycles,
                   c->redirect_recovery_closed);
-        printf("  Redirect IFU wait cache:       %llu\n", (unsigned long long)c->redirect_ifu_wait_cache);
-        printf("  Redirect IFU wait backend:     %llu\n", (unsigned long long)c->redirect_ifu_wait_backend);
-        printf("  Redirect IFU wait flush:       %llu\n", (unsigned long long)c->redirect_ifu_wait_flush);
-        printf("  Redirect IFU wait other:       %llu\n", (unsigned long long)c->redirect_ifu_wait_other);
-        printf("  Flush killed IF responses:     %llu\n", (unsigned long long)c->flush_kill_if);
-        printf("  Flush killed ID stage:         %llu\n", (unsigned long long)c->flush_kill_id);
-        printf("  Flush killed EX stage:         %llu\n", (unsigned long long)c->flush_kill_ex);
-        printf("  Flush killed LS stage:         %llu\n", (unsigned long long)c->flush_kill_ls);
-        printf("  Flush killed total:            %llu\n", (unsigned long long)c->flush_killed_insts);
-        print_avg("avg killed per redirect:", c->flush_killed_insts,
+        print_u64_metric("Redirect IFU wait cache:", c->redirect_ifu_wait_cache);
+        print_u64_metric("Redirect IFU wait backend:", c->redirect_ifu_wait_backend);
+        print_u64_metric("Redirect IFU wait flush:", c->redirect_ifu_wait_flush);
+        print_u64_metric("Redirect IFU wait other:", c->redirect_ifu_wait_other);
+        print_u64_metric("Flush killed IF:", c->flush_kill_if);
+        print_u64_metric("Flush killed ID:", c->flush_kill_id);
+        print_u64_metric("Flush killed EX:", c->flush_kill_ex);
+        print_u64_metric("Flush killed LS:", c->flush_kill_ls);
+        print_u64_metric("Flush killed total:", c->flush_killed_insts);
+        print_avg("Avg killed/redirect:", c->flush_killed_insts,
                   c->lsu_redirect + c->redirect[PMC_REDIR_ECALL] +
                   c->redirect[PMC_REDIR_MRET] + c->redirect[PMC_REDIR_FENCE_I] +
                   c->redirect[PMC_REDIR_OTHER]);
-        print_avg("branch interval:", c->retired, c->inst[PMC_INST_BRANCH]);
-        print_avg("control-flow interval:", c->retired,
-                  c->inst[PMC_INST_BRANCH] + c->inst[PMC_INST_JUMP]);
-        print_avg("redirect interval:", c->retired,
+        print_avg("Branch interval:", c->retired, c->inst[PMC_INST_BRANCH]);
+        print_avg("Control-flow interval:", c->retired, br_jmp_count);
+        print_avg("Redirect interval:", c->retired,
                   c->redirect[PMC_REDIR_BRANCH] + c->redirect[PMC_REDIR_JUMP]);
-        print_percent_metric("taken branch rate:", c->redirect[PMC_REDIR_BRANCH],
+        print_percent_metric("Taken branch rate:", c->redirect[PMC_REDIR_BRANCH],
                              c->inst[PMC_INST_BRANCH]);
-        printf("  CSR instructions:              %llu\n", (unsigned long long)c->csr_inst);
-        printf("  ECALL instructions:            %llu\n", (unsigned long long)c->ecall_inst);
-        printf("  MRET instructions:             %llu\n", (unsigned long long)c->mret_inst);
-        printf("  FENCE.I instructions:          %llu\n", (unsigned long long)c->fence_i_inst);
+        print_u64_metric("CSR instructions:", c->csr_inst);
+        print_u64_metric("ECALL instructions:", c->ecall_inst);
+        print_u64_metric("MRET instructions:", c->mret_inst);
+        print_u64_metric("FENCE.I instructions:", c->fence_i_inst);
 
-        print_stack("CPI Stack, control first", c->cpi_stack_control_first,
+        print_stack("CPI Stack Detail, control first", c->cpi_stack_control_first,
                     c->empty_retire_cycles);
-        print_stack("CPI Stack, resource first", c->cpi_stack_resource_first,
+        print_stack("CPI Stack Detail, resource first", c->cpi_stack_resource_first,
                     c->empty_retire_cycles);
     }
 

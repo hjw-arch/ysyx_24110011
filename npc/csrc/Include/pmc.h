@@ -8,6 +8,7 @@ typedef struct {
 	uint32_t pc;
 	bool     wbu_valid;
 	uint32_t wbu_pc;
+	bool     host_trap_commit;
 
 	bool ifu_req_valid;
 	bool ifu_req_ready;

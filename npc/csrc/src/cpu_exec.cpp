@@ -106,6 +106,10 @@ static uint32_t get_wbu_inst() {
 }
 
 static void record_lsu_redirect() {
+	if (CORE_SIG(ls2wb_valid) && get_wbu_inst() == ebreak) {
+		return;
+	}
+
 	if (CORE_SIG(lsu_redirect_valid)) {
 		pending_redirect.pc = get_lsu_pc();
 		pending_redirect.target = CORE_SIG(lsu_redirect_pc);
@@ -187,6 +191,7 @@ static void record_performance_cycle() {
 	sample.pc = CORE_SIG(u_IFU__DOT__pc_r);
 	sample.wbu_valid = CORE_SIG(ls2wb_valid);
 	sample.wbu_pc = get_wbu_pc();
+	sample.host_trap_commit = sample.wbu_valid && get_wbu_inst() == ebreak;
 
 	sample.ifu_req_valid = CORE_SIG(u_IFU__DOT__ic_req_valid);
 	sample.ifu_req_ready = CORE_SIG(u_IFU__DOT__ic_req_ready);
