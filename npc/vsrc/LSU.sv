@@ -40,9 +40,9 @@ import pipeline_pkt_pkg::*;
 	input				BVALID,
     output				BREADY,
 
-	output	[4:0]		rd_addr_hazard,
-    output  [31:0]      pc_target_o,
-    output              flush_o,
+	output	[4:0]		rd_addr_o,
+    output  [31:0]      redirect_pc_o,
+    output              redirect_valid_o,
 	input				kill_i,
 
 	input 				valid_i,
@@ -50,8 +50,7 @@ import pipeline_pkt_pkg::*;
 	output 				ready_o,
 
 	output 				valid_o,
-	output	ls2wb_pkt_t data_o,
-	input 				ready_i
+	output	ls2wb_pkt_t data_o
 );
 
 	//================= Load Types =================//
@@ -63,58 +62,50 @@ import pipeline_pkt_pkg::*;
 		LOAD_TYPE_LHU = 3'b101
 	} load_type_e;
 
-	typedef enum logic [1:0] {
+	typedef enum logic {
 		S_IDLE,
-		S_BUSY,
-		S_RESP
+		S_WAIT_RESP
 	} state_t;
 
 	state_t state, nstate;
 
-	logic [31:0] load_result_r;
 	logic [31:0] lsu_rdata;
 	logic [31:0] axi_rdata;
 	logic        axi_done;
 
-	wire input_is_load  = data_i.mem.cmd == MEM_LOAD;
-	wire input_is_store = data_i.mem.cmd == MEM_STORE;
-	wire input_is_mem   = input_is_load | input_is_store;
+	wire input_is_load   = data_i.mem.cmd == MEM_LOAD;
+	wire input_is_store  = data_i.mem.cmd == MEM_STORE;
+	wire input_is_mem    = input_is_load | input_is_store;
+	wire input_mem_valid = valid_i & input_is_mem;
 
-	wire state_idle = state == S_IDLE;
-	wire state_busy = state == S_BUSY;
-	wire state_resp = state == S_RESP;
+	wire state_idle      = state == S_IDLE;
+	wire state_wait_resp = state == S_WAIT_RESP;
 
-	wire input_killed   = kill_i & state_idle;
-	wire mem_req_fire   = ~input_killed & state_idle & valid_i & input_is_mem;
-	wire mem_resp_valid = state_resp | (state_busy & axi_done);
+	// AXI 请求一旦发出就不可取消，因此 kill_i 只用于在请求发出前杀掉错误路径访存。
+	wire killed_before_issue = kill_i & state_idle;
+	wire mem_req_fire        = state_idle & input_mem_valid & ~killed_before_issue;
+	wire mem_resp_fire       = state_wait_resp & axi_done;
+	wire non_mem_pass        = state_idle & valid_i & ~input_is_mem & ~killed_before_issue;
 
-	// 非访存指令直接透传到 WBU。
-	// load/store 期间反压住 EX/LS 寄存器，让级间寄存器保持当前 packet，
-	// LSU 内部不再额外保存整包数据，面积更小。
-	assign ready_o = input_killed ? 1'b1 :
-					 state_idle ? ((valid_i & input_is_mem) ? 1'b0 : ready_i) :
-					 (mem_resp_valid & ready_i);
+	// 当前 WBU 固定 ready，LSU 不处理下游反压。
+	// 非访存指令在空闲时直接透传；访存指令发出请求后反压 EX/LS，
+	// 让级间寄存器保持当前 packet，LSU 内部不额外保存整包数据。
+	assign ready_o = killed_before_issue |
+					 (state_idle & ~input_mem_valid) |
+					 mem_resp_fire;
 
-	assign valid_o = ~input_killed & (state_idle ? (valid_i & ~input_is_mem) : mem_resp_valid);
+	assign valid_o = non_mem_pass | mem_resp_fire;
 
 	always_comb begin
 		unique case (state)
-			S_IDLE: nstate = mem_req_fire ? S_BUSY : S_IDLE;
-			S_BUSY: nstate = axi_done ? (ready_i ? S_IDLE : S_RESP) : S_BUSY;
-			S_RESP: nstate = ready_i ? S_IDLE : S_RESP;
-			default: nstate = S_IDLE;
+			S_IDLE:      nstate = mem_req_fire  ? S_WAIT_RESP : S_IDLE;
+			S_WAIT_RESP: nstate = mem_resp_fire ? S_IDLE      : S_WAIT_RESP;
+			default:     nstate = S_IDLE;
 		endcase
 	end
 
 	always_ff @(posedge clk) begin
 		state <= rst ? S_IDLE : nstate;
-	end
-
-	// 如果 WBU 当拍不能接收，load 数据需要暂存在 LSU 内部。
-	always_ff @(posedge clk) begin
-		if (state_busy & axi_done) begin
-			load_result_r <= lsu_rdata;
-		end
 	end
 
 	wire [31:0] lsu_addr  = data_i.result;
@@ -132,8 +123,7 @@ import pipeline_pkt_pkg::*;
 		endcase
 	end
 
-	wire [31:0] mem_result = state_resp ? load_result_r : lsu_rdata;
-	wire [31:0] out_result = input_is_load ? mem_result : data_i.result;
+	wire [31:0] out_result = input_is_load ? lsu_rdata : data_i.result;
 
 	assign data_o.meta   = data_i.meta;
 	assign data_o.wb     = data_i.wb;
@@ -141,18 +131,18 @@ import pipeline_pkt_pkg::*;
 	assign data_o.result = out_result;
 
 	wire [4:0] rd_addr = data_i.meta.inst[11:7];
-	assign rd_addr_hazard = rd_addr & {5{valid_i & data_i.wb.rd_wen & ~input_killed}};
+	assign rd_addr_o = rd_addr & {5{valid_i & data_i.wb.rd_wen & ~killed_before_issue}};
 
 	// LSU 只负责普通控制流重定向；fence.i/ecall/mret 统一在 WBU 提交点处理。
 	wire        out_redirect_valid = data_i.redirect.valid;
 	wire [31:0] out_redirect_addr  = data_i.redirect.addr;
-	wire        output_fire        = valid_o & ready_i;
+	wire        output_fire        = valid_o;
 
-	assign flush_o     = ~input_killed & output_fire & out_redirect_valid;
-	assign pc_target_o = out_redirect_addr;
+	assign redirect_valid_o = output_fire & out_redirect_valid;
+	assign redirect_pc_o    = out_redirect_addr;
 
 	// AXI
-	// 这里全程发信号直到状态机回到idle，可能存在时序问题
+	// wen/ren 是给 AXI master 的启动脉冲；AR/AW/WVALID 的保持由 AXI master 内部完成。
 	wire wen = mem_req_fire & input_is_store;
 	wire ren = mem_req_fire & input_is_load;
 

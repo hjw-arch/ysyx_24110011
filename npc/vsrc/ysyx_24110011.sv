@@ -104,70 +104,64 @@ localparam bit USE_RV32E = 1'b1;
 `endif
 
 
-// IF
-logic 			ifu_valid_o;
-if2id_pkt_t		ifu_data_o;
-logic			ifu_ready_i;
+	// IF/ID
+	logic 			if2id_pre_valid;
+	if2id_pkt_t		if2id_pre_data;
+	logic			if2id_pre_ready;
+	logic 			if2id_valid;
+	if2id_pkt_t		if2id_data;
+	logic 			if2id_ready;
 
-// ID
-logic 			idu_valid_i;
-if2id_pkt_t		idu_data_i;
-logic 			idu_ready_o;
-logic 			idu_valid_o;
-id2ex_pkt_t		idu_data_o;
-logic			idu_ready_i;
+	// ID/EX
+	logic 			id2ex_pre_valid;
+	id2ex_pkt_t		id2ex_pre_data;
+	logic			id2ex_pre_ready;
+	logic			id2ex_valid;
+	id2ex_pkt_t		id2ex_data;
+	logic			id2ex_ready;
 
-// EX
-logic [4:0]		exu_rd_addr;
-logic			exu_valid_i;
-id2ex_pkt_t		exu_data_i;
-logic			exu_ready_o;
-logic			exu_valid_o;
-ex2ls_pkt_t		exu_data_o;
-logic			exu_ready_i;
+	// EX/LS
+	logic			ex2ls_pre_valid;
+	ex2ls_pkt_t		ex2ls_pre_data;
+	logic			ex2ls_pre_ready;
+	logic			ex2ls_valid;
+	ex2ls_pkt_t		ex2ls_data;
+	logic			ex2ls_ready;
 
-// LS
-logic [4:0]		lsu_rd_addr;
-logic			lsu_valid_i;
-ex2ls_pkt_t		lsu_data_i;
-logic			lsu_ready_o;
-logic			lsu_valid_o;
-ls2wb_pkt_t		lsu_data_o;
-logic			lsu_ready_i;
-
-// WB
-logic			wbu_valid_i;
-ls2wb_pkt_t		wbu_data_i;
-logic			wbu_ready_o;
-logic [31:0]	wbu_rf_wdata;
+	// LS/WB
+	logic			ls2wb_pre_valid;
+	ls2wb_pkt_t		ls2wb_pre_data;
+	logic			ls2wb_pre_ready;
+	logic			ls2wb_valid;
+	ls2wb_pkt_t		ls2wb_data;
+	logic			ls2wb_ready;
+	logic [31:0]	rf_wdata;
 
 
-// RF
-logic [4:0]		rs1_addr;
-logic [4:0]		rs2_addr;
-logic [31:0]	rs1_data;
-logic [31:0]	rs2_data;
+	// RF
+	logic [4:0]		rf_rs1_addr;
+	logic [4:0]		rf_rs2_addr;
+	logic [31:0]	rf_rs1_data;
+	logic [31:0]	rf_rs2_data;
 
-// flush
-logic 			flush;
-logic [31:0]	pc_target;
-logic			lsu_flush;
-logic [31:0]	lsu_pc_target;
-logic			wbu_flush;
-logic [31:0]	wbu_pc_target;
+	// redirect/flush
+	logic 			pipeline_flush;
+	logic [31:0]	redirect_pc;
+	logic			lsu_redirect_valid;
+	logic [31:0]	lsu_redirect_pc;
+	logic			wbu_redirect_valid;
+	logic [31:0]	wbu_redirect_pc;
+	logic			icache_inval;
 
-// ifence
-logic			ifence;
-
-assign flush     = wbu_flush | lsu_flush;
-assign pc_target = wbu_flush ? wbu_pc_target : lsu_pc_target;
+	assign pipeline_flush = wbu_redirect_valid | lsu_redirect_valid;
+	assign redirect_pc    = wbu_redirect_valid ? wbu_redirect_pc : lsu_redirect_pc;
 
 // forward
 logic [4:0]		id_rs1_addr;
 logic [4:0]		id_rs2_addr;
-logic			id_rs1_used;
-logic			id_rs2_used;
-logic [4:0]		ex_rd_addr;
+	logic			id_rs1_used;
+	logic			id_rs2_used;
+	logic [4:0]		ex_rd_addr;
 logic [4:0]		ls_rd_addr;
 logic			ex_is_load;
 logic			ex_is_csr;
@@ -193,14 +187,14 @@ IFU u_IFU(
 	.RLAST   	(IFU_RLAST    ),
 	.RID     	(IFU_RID      ),
 	.RDATA   	(IFU_RDATA    ),
-	.RRESP   	(IFU_RRESP    ),
-	.inval_icache_i(ifence   	  ),
-	.flush_addr_i 	(pc_target    ),
-	.flush_i   	(flush        ),
-	.valid_o 	(ifu_valid_o  ),
-	.data_o  	(ifu_data_o   ),
-	.ready_i 	(ifu_ready_i  )
-);
+		.RRESP   	(IFU_RRESP    ),
+		.icache_inval_i(icache_inval),
+		.redirect_pc_i 	(redirect_pc  ),
+		.redirect_valid_i(pipeline_flush),
+		.valid_o 	(if2id_pre_valid),
+		.data_o  	(if2id_pre_data ),
+		.ready_i 	(if2id_pre_ready)
+	);
 
 
 
@@ -208,37 +202,37 @@ pip_reg #(
 	.WIDTH 	($bits(if2id_pkt_t)))
 u_if2id_pip(
 	.clk        	(clock       ),
-	.rst        	(reset       ),
-	.flush      	(flush       ),
-	.pre_valid  	(ifu_valid_o ),
-	.pre_data   	(ifu_data_o  ),
-	.next_ready 	(idu_ready_o ),
-	.pre_ready  	(ifu_ready_i ),
-	.next_data  	(idu_data_i  ),
-	.next_valid 	(idu_valid_i )
-);
+		.rst        	(reset       ),
+		.flush      	(pipeline_flush ),
+		.pre_valid  	(if2id_pre_valid),
+		.pre_data   	(if2id_pre_data ),
+		.next_ready 	(if2id_ready    ),
+		.pre_ready  	(if2id_pre_ready),
+		.next_data  	(if2id_data     ),
+		.next_valid 	(if2id_valid    )
+	);
 
 
 
 
 IDU u_IDU(
-	.rs1_addr 	(rs1_addr  	   ),
-	.rs2_addr 	(rs2_addr  	   ),
-	.rs1_data 	(rs1_data  	   ),
-	.rs2_data 	(rs2_data  	   ),
-	.id_rs1_addr(id_rs1_addr   ),
-	.id_rs2_addr(id_rs2_addr   ),
-	.id_rs1_used(id_rs1_used   ),
-	.id_rs2_used(id_rs2_used   ),
-	.fwd_rs1_sel_i(fwd_rs1_sel ),
-	.fwd_rs2_sel_i(fwd_rs2_sel ),
-	.hazard   	(hazard_valid  ),
-	.valid_i  	(idu_valid_i   ),
-	.data_i   	(idu_data_i    ),
-	.ready_o  	(idu_ready_o   ),
-	.valid_o  	(idu_valid_o   ),
-	.data_o   	(idu_data_o    ),
-	.ready_i  	(idu_ready_i   )
+		.rf_rs1_addr_o(rf_rs1_addr),
+		.rf_rs2_addr_o(rf_rs2_addr),
+		.rf_rs1_data_i(rf_rs1_data),
+		.rf_rs2_data_i(rf_rs2_data),
+		.id_rs1_addr(id_rs1_addr   ),
+		.id_rs2_addr(id_rs2_addr   ),
+		.id_rs1_used(id_rs1_used   ),
+		.id_rs2_used(id_rs2_used   ),
+		.fwd_rs1_sel_i(fwd_rs1_sel ),
+		.fwd_rs2_sel_i(fwd_rs2_sel ),
+		.hazard_i 	(hazard_valid  ),
+		.valid_i  	(if2id_valid   ),
+		.data_i   	(if2id_data    ),
+		.ready_o  	(if2id_ready   ),
+		.valid_o  	(id2ex_pre_valid),
+		.data_o   	(id2ex_pre_data ),
+		.ready_i  	(id2ex_pre_ready)
 );
 
 
@@ -246,31 +240,31 @@ pip_reg #(
 	.WIDTH 	($bits(id2ex_pkt_t)))
 u_id2ex_pip(
 	.clk        	(clock       ),
-	.rst        	(reset       ),
-	.flush      	(flush       ),
-	.pre_valid  	(idu_valid_o ),
-	.pre_data   	(idu_data_o  ),
-	.next_ready 	(exu_ready_o ),
-	.pre_ready  	(idu_ready_i ),
-	.next_data  	(exu_data_i  ),
-	.next_valid 	(exu_valid_i )
-);
+		.rst        	(reset       ),
+		.flush      	(pipeline_flush  ),
+		.pre_valid  	(id2ex_pre_valid),
+		.pre_data   	(id2ex_pre_data ),
+		.next_ready 	(id2ex_ready    ),
+		.pre_ready  	(id2ex_pre_ready),
+		.next_data  	(id2ex_data     ),
+		.next_valid 	(id2ex_valid    )
+	);
 
 
 
-EXU u_EXU(
-	.clk     	(clock	 ),
-	.rst     	(reset	 ),
-	.rd_addr_hazard(exu_rd_addr ),
-	.fwd_ls_data_i(lsu_data_i.result),
-	.fwd_wb_data_i(wbu_data_i.result),
-	.valid_i 	(exu_valid_i	),
-	.data_i  	(exu_data_i 	),
-	.ready_o 	(exu_ready_o	),
-	.valid_o 	(exu_valid_o	),
-	.data_o  	(exu_data_o 	),
-	.ready_i 	(exu_ready_i	)
-);
+	EXU u_EXU(
+		.clk     	(clock	 ),
+		.rst     	(reset	 ),
+		.rd_addr_o  (ex_rd_addr      ),
+		.fwd_ls_data_i(ex2ls_data.result),
+		.fwd_wb_data_i(ls2wb_data.result),
+		.valid_i 	(id2ex_valid	),
+		.data_i  	(id2ex_data 	),
+		.ready_o 	(id2ex_ready	),
+		.valid_o 	(ex2ls_pre_valid),
+		.data_o  	(ex2ls_pre_data ),
+		.ready_i 	(ex2ls_pre_ready)
+	);
 
 
 
@@ -278,15 +272,15 @@ pip_reg #(
 	.WIDTH 	($bits(ex2ls_pkt_t)))
 u_ex2ls_pip(
 	.clk        	(clock       ),
-	.rst        	(reset       ),
-	.flush      	(flush       ),
-	.pre_valid  	(exu_valid_o ),
-	.pre_data   	(exu_data_o  ),
-	.next_ready 	(lsu_ready_o ),
-	.pre_ready  	(exu_ready_i ),
-	.next_data  	(lsu_data_i  ),
-	.next_valid 	(lsu_valid_i )
-);
+		.rst        	(reset       ),
+		.flush      	(pipeline_flush  ),
+		.pre_valid  	(ex2ls_pre_valid),
+		.pre_data   	(ex2ls_pre_data ),
+		.next_ready 	(ex2ls_ready    ),
+		.pre_ready  	(ex2ls_pre_ready),
+		.next_data  	(ex2ls_data     ),
+		.next_valid 	(ex2ls_valid    )
+	);
 
 
 
@@ -319,20 +313,19 @@ LSU u_LSU(
 	.WVALID  	(LSU_WVALID   ),
 	.WREADY  	(LSU_WREADY   ),
 	.BID     	(LSU_BID      ),
-	.BRESP   	(LSU_BRESP    ),
-	.BVALID  	(LSU_BVALID   ),
-	.BREADY  	(LSU_BREADY   ),
-	.rd_addr_hazard(lsu_rd_addr),
-	.pc_target_o(lsu_pc_target),
-	.flush_o(lsu_flush),
-	.kill_i		(wbu_flush	  ),
-	.valid_i 	(lsu_valid_i  ),
-	.data_i  	(lsu_data_i   ),
-	.ready_o 	(lsu_ready_o  ),
-	.valid_o 	(lsu_valid_o  ),
-	.data_o  	(lsu_data_o   ),
-	.ready_i 	(lsu_ready_i  )
-);
+		.BRESP   	(LSU_BRESP    ),
+		.BVALID  	(LSU_BVALID   ),
+		.BREADY  	(LSU_BREADY   ),
+		.rd_addr_o(ls_rd_addr),
+		.redirect_pc_o(lsu_redirect_pc),
+		.redirect_valid_o(lsu_redirect_valid),
+		.kill_i		(wbu_redirect_valid),
+		.valid_i 	(ex2ls_valid  ),
+		.data_i  	(ex2ls_data   ),
+		.ready_o 	(ex2ls_ready  ),
+		.valid_o 	(ls2wb_pre_valid),
+		.data_o  	(ls2wb_pre_data )
+	);
 
 
 
@@ -340,43 +333,42 @@ pip_reg #(
 	.WIDTH 	($bits(ls2wb_pkt_t)))
 u_ls2wb_pip(
 	.clk        	(clock       ),
-	.rst        	(reset       ),
-	.flush      	(wbu_flush   ),
-	.pre_valid  	(lsu_valid_o ),
-	.pre_data   	(lsu_data_o  ),
-	.next_ready 	(wbu_ready_o ),
-	.pre_ready  	(lsu_ready_i ),
-	.next_data  	(wbu_data_i  ),
-	.next_valid 	(wbu_valid_i )
-);
+		.rst        	(reset       ),
+		.flush      	(wbu_redirect_valid),
+		.pre_valid  	(ls2wb_pre_valid  ),
+		.pre_data   	(ls2wb_pre_data   ),
+		.next_ready 	(ls2wb_ready      ),
+		.pre_ready  	(ls2wb_pre_ready  ),
+		.next_data  	(ls2wb_data       ),
+		.next_valid 	(ls2wb_valid      )
+	);
 
 
 
 WBU #(
 	.RV32E		(USE_RV32E		)
-) u_WBU(
-	.clk		(clock			),
-	.rst		(reset			),
-	.rs1_addr	(rs1_addr		),
-	.rs2_addr	(rs2_addr		),
-	.rs1_data	(rs1_data		),
-	.rs2_data	(rs2_data		),
-	.rf_wdata_o	(wbu_rf_wdata	),
-	.flush_o	(wbu_flush		),
-	.flush_addr_o(wbu_pc_target	),
-	.invalidate_ic_o(ifence		),
-	.valid_i	(wbu_valid_i	),
-	.data_i		(wbu_data_i		),
-	.ready_o	(wbu_ready_o	)
-);
+	) u_WBU(
+		.clk		(clock			),
+		.rst		(reset			),
+		.rf_rs1_addr_i(rf_rs1_addr	),
+		.rf_rs2_addr_i(rf_rs2_addr	),
+		.rf_rs1_data_o(rf_rs1_data	),
+		.rf_rs2_data_o(rf_rs2_data	),
+		.rf_wdata_o	(rf_wdata	    ),
+		.redirect_valid_o(wbu_redirect_valid),
+		.redirect_pc_o(wbu_redirect_pc),
+		.icache_inval_o(icache_inval),
+		.valid_i	(ls2wb_valid	),
+		.data_i		(ls2wb_data		),
+		.ready_o	(ls2wb_ready	)
+	);
 
 
-assign ex_rd_addr	=	exu_rd_addr;
-assign ls_rd_addr	=	lsu_rd_addr;
-assign ex_is_load	=	exu_valid_i & (exu_data_i.mem.cmd == MEM_LOAD);
-assign ex_is_csr	=	exu_valid_i & (exu_data_i.sys.csr_cmd != CSR_CMD_NONE);
-assign ls_is_csr	=	lsu_valid_i & (lsu_data_i.sys.csr_cmd != CSR_CMD_NONE);
-assign ls_can_wb	=	lsu_valid_o & lsu_ready_i;
+	assign ex_is_load	=	id2ex_valid & (id2ex_data.mem.cmd == MEM_LOAD);
+	assign ex_is_csr	=	id2ex_valid & (id2ex_data.sys.csr_cmd != CSR_CMD_NONE);
+	assign ls_is_csr	=	ex2ls_valid & (ex2ls_data.sys.csr_cmd != CSR_CMD_NONE);
+	// WBU 固定 ready，LSU valid 即表示 LS 结果本拍可进入 WB/作为转发源。
+	assign ls_can_wb	=	ls2wb_pre_valid;
 
 hazard_unit u_hazard_unit(
 	.id_rs1_addr  	(id_rs1_addr   ),

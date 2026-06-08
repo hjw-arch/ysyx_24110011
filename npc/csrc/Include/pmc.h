@@ -24,7 +24,7 @@ typedef struct {
 	bool lsu_mem_req_fire;
 	bool lsu_input_is_load;
 	bool lsu_input_is_store;
-	bool lsu_state_busy;
+	bool lsu_wait_resp;
 
 	bool hazard_valid;
 	bool rs1_block_ex;

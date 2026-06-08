@@ -6,7 +6,7 @@ import pipeline_pkt_pkg::*;
     input               clk,
     input               rst,
 
-    output  [4:0]       rd_addr_hazard,
+    output  [4:0]       rd_addr_o,
     input   [31:0]      fwd_ls_data_i,
     input   [31:0]      fwd_wb_data_i,
 
@@ -136,6 +136,6 @@ assign data_o.redirect.valid = redirect_valid;
 assign data_o.redirect.addr  = redirect_target;
 
 // hazard 只关心真实会写回的指令，并且 rd=x0 已经在 IDU 的 rd_wen 中被屏蔽。
-assign rd_addr_hazard = rd_addr & {5{valid_i & data_i.wb.rd_wen}};
+assign rd_addr_o = rd_addr & {5{valid_i & data_i.wb.rd_wen}};
 
 endmodule

@@ -467,7 +467,7 @@ void PerformanceCounter_record_cycle(const pmc_cycle_sample_t *sample) {
         if (sample->lsu_input_is_load) c->lsu_load++;
         if (sample->lsu_input_is_store) c->lsu_store++;
     }
-    if (sample->lsu_state_busy) {
+    if (sample->lsu_wait_resp) {
         if (sample->lsu_input_is_load) c->lsu_load_cycles++;
         if (sample->lsu_input_is_store) c->lsu_store_cycles++;
     }
@@ -497,10 +497,10 @@ void PerformanceCounter_record_cycle(const pmc_cycle_sample_t *sample) {
     if (sample->rf_rs2_bypass) c->rf_bypass_rs2++;
 
     if (empty_retire) {
-        pmc_stack_t control_first = stack_control_first(recovery.active, sample->lsu_state_busy,
+        pmc_stack_t control_first = stack_control_first(recovery.active, sample->lsu_wait_resp,
                                                         icache_wait, sample->hazard_valid,
                                                         sample->ifu_flush);
-        pmc_stack_t resource_first = stack_resource_first(recovery.active, sample->lsu_state_busy,
+        pmc_stack_t resource_first = stack_resource_first(recovery.active, sample->lsu_wait_resp,
                                                           icache_wait, sample->hazard_valid,
                                                           sample->ifu_flush);
         c->cpi_stack_control_first[control_first]++;

@@ -20,9 +20,9 @@ import pipeline_pkt_pkg::*;
     input	[31:0] 	        RDATA,
     input	[1:0] 	        RRESP,
 
-	input 			        inval_icache_i,         // icache内容失效
-	input	[31:0] 	        flush_addr_i,			// 真正的PC值
-	input			        flush_i,				// 确认推测错误，需要刷新流水线
+	input 			        icache_inval_i,        // icache 内容失效
+	input	[31:0] 	        redirect_pc_i,          // 重定向后的 PC
+	input			        redirect_valid_i,       // 确认推测错误，需要刷新流水线
 
     output 			        valid_o,
     output	if2id_pkt_t     data_o,
@@ -58,7 +58,7 @@ wire	ic_req_fire	= ic_req_valid & ic_req_ready;
 
 logic   [31:0]  pc_r, pc_n;
 
-assign pc_n	=	flush_i ? flush_addr_i :            // 这里当前设置为flush当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
+assign pc_n	=	redirect_valid_i ? redirect_pc_i :   // 这里当前设置为重定向当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
 				ic_req_fire ? pc_r + 4 :
 				pc_r;
 
@@ -73,7 +73,7 @@ end
 // ==========================================
 // 2. 对 ICache 的请求
 // ==========================================
-assign	ic_req_valid	=	~flush_i;
+assign	ic_req_valid	=	~redirect_valid_i;
 assign	ic_req_addr		=	pc_r;
 
 
@@ -81,12 +81,12 @@ assign	ic_req_addr		=	pc_r;
 // 3. 对下游的输出
 // ==========================================
 
-assign	valid_o		= ic_resp_valid & ~flush_i;         // 实际上不要 ~flush_i也行，由icache自己处理
+assign	valid_o		= ic_resp_valid & ~redirect_valid_i; // 实际上不要 ~redirect_valid_i 也行，由 icache 自己处理
 assign	data_o.inst = ic_resp_data;
 assign	data_o.pc	= ic_resp_addr;
 
 // ready 信号
-assign	ic_resp_ready = flush_i | ready_i;
+assign	ic_resp_ready = redirect_valid_i | ready_i;
 
 
 // ==========================================
@@ -120,8 +120,8 @@ icache #(
     .resp_addr_o        (ic_resp_addr),
     .resp_err_o         (ic_resp_err),
     .resp_ready_i       (ic_resp_ready),
-    .kill_i             (flush_i),
-    .inval_i            (inval_icache_i),
+    .kill_i             (redirect_valid_i),
+    .inval_i            (icache_inval_i),
     // ICache ↔ Adapter
     .refill_req_valid_o (refill_req_valid),
     .refill_req_addr_o  (refill_req_addr),

@@ -2,10 +2,10 @@
 module IDU
 import pipeline_pkt_pkg::*;
 (
-    output	[4:0] 			rs1_addr,
-    output	[4:0] 			rs2_addr,
-    input 	[31:0] 			rs1_data,
-    input	[31:0] 			rs2_data,
+    output	[4:0] 			rf_rs1_addr_o,
+    output	[4:0] 			rf_rs2_addr_o,
+    input 	[31:0] 			rf_rs1_data_i,
+    input	[31:0] 			rf_rs2_data_i,
 
 	output	[4:0] 			id_rs1_addr,
 	output	[4:0]			id_rs2_addr,
@@ -13,7 +13,7 @@ import pipeline_pkt_pkg::*;
 	output					id_rs2_used,
 	input	fwd_sel_t		fwd_rs1_sel_i,
 	input	fwd_sel_t		fwd_rs2_sel_i,
-	input 					hazard,
+	input 					hazard_i,
 
     input					valid_i,
     input	if2id_pkt_t		data_i,
@@ -113,8 +113,8 @@ wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
 // rd_wen 在 ID 阶段顺手屏蔽 x0。后级如需原始 rd 字段，直接从随流水携带的 inst 中切片。
 wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) & |rd_addr_raw;
 
-assign rs1_addr = rs1_addr_raw;
-assign rs2_addr = rs2_addr_raw;
+assign rf_rs1_addr_o = rs1_addr_raw;
+assign rf_rs2_addr_o = rs2_addr_raw;
 
 // hazard/forwarding 比较使用原始 rs 地址；used 在最后一级门控。
 // 这样地址比较器不需要等待 used 解码结果，ID 阶段阻塞路径更短。
@@ -173,13 +173,13 @@ assign data_o.sys.csr_cmd    = {2{is_csr}} & func3[1:0];
 assign data_o.sys.priv_redir = {is_mret, is_ecall};
 assign data_o.sys.fence_i    = is_fence_i;
 
-assign data_o.rs1_data = rs1_data;
-assign data_o.rs2_data = rs2_data;
+assign data_o.rs1_data = rf_rs1_data_i;
+assign data_o.rs2_data = rf_rs2_data_i;
 assign data_o.imm      = imm;
 
 
-assign valid_o = valid_i & ~hazard;
-assign ready_o = ready_i & ~hazard;
+assign valid_o = valid_i & ~hazard_i;
+assign ready_o = ready_i & ~hazard_i;
 
 
 endmodule
