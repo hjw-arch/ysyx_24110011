@@ -87,7 +87,7 @@ static void itrace2file(vaddr_t addr) {
         init_trace_file(&itrace_output_file_fp, itrace_file);
     }
 
-	if (addr < 0xa0000000) return;
+	if (addr < CONFIG_ITRACE_START_ADDR || addr > CONFIG_ITRACE_END_ADDR) return;
 
 	normal_mode_total_inst_num++;
     size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
