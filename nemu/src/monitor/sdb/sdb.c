@@ -17,6 +17,7 @@
 #include <cpu/cpu.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <stdint.h>
 #include "../include/memory/vaddr.h"
 #include "../include/memory/paddr.h"
 #include "sdb.h"
@@ -44,70 +45,79 @@ static char *rl_gets() {
     return line_read;
 }
 
-#ifdef CONFIG_ITRACE
+#define BUFFER_SIZE     16
 
+#if defined(CONFIG_ITRACE) || defined(CONFIG_MTRACE)
+
+void init_trace_file(FILE **trace_file_fp, const char *trace_file) {
+    if (*trace_file_fp) {
+        return;
+    }
+
+    *trace_file_fp = fopen(trace_file, "wb");
+    Assert(*trace_file_fp, "Open trace file '%s' failed.", trace_file);
+}
+
+void close_trace_file(FILE **trace_file_fp, const char *trace_file) {
+    if (!*trace_file_fp) {
+        return;
+    }
+
+    if (fclose(*trace_file_fp) == EOF) {
+        Assert(0, "Close trace file '%s' failed.", trace_file);
+    }
+
+    *trace_file_fp = NULL;
+}
+
+
+#endif
+
+
+#ifdef CONFIG_ITRACE
 #ifdef CONFIG_ITRACE2FILE
 
 static FILE *itrace_output_file_fp = NULL;
 static char *itrace_file = "/home/hjw-arch/ysyx-workbench/ITRACE.bin";
 static uint64_t normal_mode_total_inst_num = 0;
 
-void open_itrace_file() {
-    if (itrace_output_file_fp) {
-        return;
+
+static void itrace2file(vaddr_t addr) {
+    if (!itrace_output_file_fp) {
+        init_trace_file(&itrace_output_file_fp, itrace_file);
     }
 
-    itrace_output_file_fp = fopen(itrace_file, "wb");
-    Assert(itrace_output_file_fp, "Open itrace file failed.");
-}
+	if (addr < CONFIG_ITRACE_START_ADDR || addr > CONFIG_ITRACE_END_ADDR) return;
 
-void close_itrace_file() {
-    if (itrace_output_file_fp) {
-        if (fclose(itrace_output_file_fp) == EOF) {
-            Assert(0, "Close itrace output file failed.");
+	normal_mode_total_inst_num++;
+    size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
+    if (items_written != 1) {
+        fprintf(stderr, "Serious error: Failed to write the address to the trace file!\n");
+        if (ferror(itrace_output_file_fp)) {
+            perror("           文件写入错误详情");
         }
-		printf("Normal mode inst number = %ld\n", normal_mode_total_inst_num);
-        itrace_output_file_fp = NULL;
-    }
-}
-
-void write2itrace(vaddr_t addr) {
-    if (itrace_output_file_fp) {
-		if (addr < 0xa0000000) return;
-		normal_mode_total_inst_num++;
-        size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
-        if (items_written != 1) {
-            fprintf(stderr, "Serious error: Failed to write the address to the trace file!\n");
-            if (ferror(itrace_output_file_fp)) {
-                perror("           文件写入错误详情");
-            }
-            fclose(itrace_output_file_fp);
-            itrace_output_file_fp = NULL; // 避免后续尝试写入
-        }
+        close_trace_file(&itrace_output_file_fp, itrace_file);
     }
 }
 
 #endif
 
-#define BUFFER_SIZE     16
 // ringbuffer
-typedef struct _ringbuf
-{
-    MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr);
+typedef struct _itrace_entry_t {
+    vaddr_t addr;
     uint32_t inst;
-}ringbuf;
-static ringbuf iringbuf[BUFFER_SIZE];
+} itrace_entry_t;
+static itrace_entry_t iringbuf[BUFFER_SIZE];
 static uint32_t iringbuf_index = 0;
 
-void iringbuf_load(MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr), uint32_t inst) {
+void itrace_write(vaddr_t addr, uint32_t inst) {
     iringbuf[iringbuf_index].addr = addr;
-    iringbuf[iringbuf_index++].inst = inst;
-    if (iringbuf_index > BUFFER_SIZE - 1) iringbuf_index = 0;
-	IFDEF(CONFIG_ITRACE2FILE, open_itrace_file());
-	IFDEF(CONFIG_ITRACE2FILE, write2itrace(addr));
+    iringbuf[iringbuf_index].inst = inst;
+    iringbuf_index = (iringbuf_index + 1) % BUFFER_SIZE;
+	IFDEF(CONFIG_ITRACE2FILE, itrace2file(addr));
 }
 
-void iringbuf_display() {
+void itrace_display() {
     uint32_t start_index = iringbuf_index;
     uint32_t end_index = iringbuf_index == 0 ? BUFFER_SIZE - 1 : iringbuf_index - 1;
     uint32_t index = start_index;
@@ -141,23 +151,110 @@ void iringbuf_display() {
     }
     puts("\n");
 
-	IFDEF(CONFIG_ITRACE2FILE, close_itrace_file());
+	IFDEF(CONFIG_ITRACE2FILE, close_trace_file(&itrace_output_file_fp, itrace_file));
 }
 
 #endif
 
 #ifdef CONFIG_MTRACE
-void mtrace_read(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc) {
-    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    if (!is_record_fetch_pc && cpu.pc == addr) return;
-    printf("Guest machine read memory at pc = 0x%08x, addr = 0x%08x, %d byte%s content = 0x%08x\n", cpu.pc, addr, len, len > 1 ? "s," : ", ", content);
+
+// ringbuffer
+typedef struct _mtrace_entry_t {
+    vaddr_t pc;
+    vaddr_t addr;
+    uint32_t len;
+    word_t content;
+    uint32_t is_load;
+} mtrace_entry_t;
+
+static mtrace_entry_t mringbuf[BUFFER_SIZE];
+static uint32_t mringbuf_index = 0;
+
+static FILE *mtrace_output_file_fp = NULL;
+static char *mtrace_file = "/home/hjw-arch/ysyx-workbench/MTRACE.bin";
+
+// 使用 1 字节对齐，确保二进制文件中没有 padding，方便 Python 按固定偏移解析
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t addr;  // 访存物理/虚拟地址
+    uint32_t len;   // 访存长度
+    uint32_t op;    // 0: store, 1: load
+} mtrace_record_t;
+#pragma pack(pop)
+
+void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
+    // op: 
+    //  1: load
+    //  0: store
+
+    // 懒加载
+    if (!mtrace_output_file_fp) {
+        init_trace_file(&mtrace_output_file_fp, mtrace_file);
+    }
+
+    // 统一转换为固定宽度类型，消除 RV32/RV64 差异
+    mtrace_record_t record = {
+        .addr = (uint64_t)addr,
+        .len  = (uint32_t)len,
+        .op   = (uint32_t)op
+    };
+
+    size_t items_written = fwrite(&record, sizeof(record), 1, mtrace_output_file_fp);
+
+    if (items_written != 1) {
+        fprintf(stderr, "Serious error: Failed to write to the mtrace file!\n");
+        if (ferror(mtrace_output_file_fp)) {
+            perror("           文件写入错误详情");
+        }
+        
+        close_trace_file(&mtrace_output_file_fp, mtrace_file);
+        mtrace_output_file_fp = NULL; // 避免后续尝试写入
+    }
 }
 
-void mtrace_write(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc) {
+
+void mtrace_load(vaddr_t addr, uint32_t len, word_t content) {
     if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    printf("Guest machine write memory at pc = 0x%08x, addr = 0x%08x, %d byte%s content = 0x%08x\n", cpu.pc, addr, len, len > 1 ? "s," : ", ", content);
+    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, 1};
+    mringbuf_index = (mringbuf_index + 1) % BUFFER_SIZE;
+    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 1));
 }
+
+void mtrace_store(vaddr_t addr, uint32_t len, word_t content) {
+    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
+    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, 0};
+    mringbuf_index = (mringbuf_index + 1) % BUFFER_SIZE;
+    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 0));
+}
+
+void mtrace_display() {
+    uint32_t start_index = mringbuf_index;
+    uint32_t end_index = mringbuf_index == 0 ? BUFFER_SIZE - 1 : mringbuf_index - 1;
+    uint32_t index = start_index;
+    puts("\nMemory trace:\n");
+    while(1) {
+        if (index > BUFFER_SIZE - 1) index = 0;
+
+        if (mringbuf[index].pc == 0) {          // 空的或者没满
+            if(index == end_index) break;
+            index++;
+            continue;
+        }
+
+        printf("PC: 0x%08x | Addr: 0x%08x | Length: %02d | context: 0x%08x | type: %s\n", mringbuf[index].pc, mringbuf[index].addr, mringbuf[index].len, mringbuf[index].content, 
+        mringbuf[index].is_load ? "load" : "store");
+
+        if(index == end_index) break;
+        index++;
+    }
+    puts("\n");
+
+	IFDEF(CONFIG_MTRACE2FILE, close_trace_file(&mtrace_output_file_fp, mtrace_file));
+}
+
 #endif
+
+
 
 //  ftrace
 #ifdef CONFIG_FTRACE

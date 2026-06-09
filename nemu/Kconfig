@@ -154,6 +154,16 @@ config ITRACE2FILE
     If enabled, instruction tracing information will be written to a file
     instead of being output to the console or other destinations.
 
+config ITRACE_START_ADDR
+  hex
+  default 0xa0000000 if SOC
+  default 0x80000000
+
+config ITRACE_END_ADDR
+  hex
+  default 0xa1ffffff if SOC
+  default 0x87ffffff
+
 config ITRACE_COND
   depends on ITRACE
   string "Only trace instructions when the condition is true"
@@ -164,14 +174,22 @@ config MTRACE
   bool "Enable memory tracer"
   default y
 
-config MTRACE_START_ADDR
+config MTRACE2FILE
   depends on MTRACE
-  hex "Determine where to start recording memory trace"
+  bool "Output memory trace to file"
+  default n
+  help
+    If enabled, memory tracing information will be written to a file
+    instead of being output to the console or other destinations.
+
+config MTRACE_START_ADDR
+  hex
+  default 0xa0000000 if SOC
   default 0x80000000
 
 config MTRACE_END_ADDR
-  depends on MTRACE
-  hex "Determine where to end recording memory trace"
+  hex
+  default 0xa1ffffff if SOC
   default 0x87ffffff
 
 config FTRACE
