@@ -27,11 +27,12 @@ int diff_wp(vaddr_t front_pc);
 void diaplay_wp();
 
 // iringbuf
-void iringbuf_load(MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr), uint32_t inst);
-void iringbuf_display();
+void itrace_write(vaddr_t addr, uint32_t inst);
+void itrace_display();
 
 void mtrace_load(vaddr_t addr, uint32_t len, word_t content);
 void mtrace_store(vaddr_t addr, uint32_t len, word_t content);
+void mtrace_display();
 
 void decode_elf();
 void record_ftrace(uint32_t pc_now, uint32_t action, uint32_t pc_target);

@@ -47,6 +47,33 @@ static char *rl_gets() {
 
 #define BUFFER_SIZE     16
 
+#if defined(CONFIG_ITRACE) || defined(CONFIG_MTRACE)
+
+void init_trace_file(FILE **trace_file_fp, const char *trace_file) {
+    if (*trace_file_fp) {
+        return;
+    }
+
+    *trace_file_fp = fopen(trace_file, "wb");
+    Assert(*trace_file_fp, "Open trace file '%s' failed.", trace_file);
+}
+
+void close_trace_file(FILE **trace_file_fp, const char *trace_file) {
+    if (!*trace_file_fp) {
+        return;
+    }
+
+    if (fclose(*trace_file_fp) == EOF) {
+        Assert(0, "Close trace file '%s' failed.", trace_file);
+    }
+
+    *trace_file_fp = NULL;
+}
+
+
+#endif
+
+
 #ifdef CONFIG_ITRACE
 #ifdef CONFIG_ITRACE2FILE
 
@@ -54,61 +81,43 @@ static FILE *itrace_output_file_fp = NULL;
 static char *itrace_file = "/home/hjw-arch/ysyx-workbench/ITRACE.bin";
 static uint64_t normal_mode_total_inst_num = 0;
 
-void open_itrace_file() {
-    if (itrace_output_file_fp) {
-        return;
+
+static void itrace2file(vaddr_t addr) {
+    if (!itrace_output_file_fp) {
+        init_trace_file(&itrace_output_file_fp, itrace_file);
     }
 
-    itrace_output_file_fp = fopen(itrace_file, "wb");
-    Assert(itrace_output_file_fp, "Open itrace file failed.");
-}
+	if (addr < 0xa0000000) return;
 
-void close_itrace_file() {
-    if (itrace_output_file_fp) {
-        if (fclose(itrace_output_file_fp) == EOF) {
-            Assert(0, "Close itrace output file failed.");
+	normal_mode_total_inst_num++;
+    size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
+    if (items_written != 1) {
+        fprintf(stderr, "Serious error: Failed to write the address to the trace file!\n");
+        if (ferror(itrace_output_file_fp)) {
+            perror("           文件写入错误详情");
         }
-		printf("Normal mode inst number = %ld\n", normal_mode_total_inst_num);
-        itrace_output_file_fp = NULL;
-    }
-}
-
-void write2itrace(vaddr_t addr) {
-    if (itrace_output_file_fp) {
-		if (addr < 0xa0000000) return;
-		normal_mode_total_inst_num++;
-        size_t items_written = fwrite(&addr, sizeof(vaddr_t), 1, itrace_output_file_fp);
-        if (items_written != 1) {
-            fprintf(stderr, "Serious error: Failed to write the address to the trace file!\n");
-            if (ferror(itrace_output_file_fp)) {
-                perror("           文件写入错误详情");
-            }
-            fclose(itrace_output_file_fp);
-            itrace_output_file_fp = NULL; // 避免后续尝试写入
-        }
+        close_trace_file(&itrace_output_file_fp, itrace_file);
     }
 }
 
 #endif
 
 // ringbuffer
-typedef struct _ringbuf
-{
-    MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr);
+typedef struct _itrace_entry_t {
+    vaddr_t addr;
     uint32_t inst;
-}ringbuf;
-static ringbuf iringbuf[BUFFER_SIZE];
+} itrace_entry_t;
+static itrace_entry_t iringbuf[BUFFER_SIZE];
 static uint32_t iringbuf_index = 0;
 
-void iringbuf_load(MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr), uint32_t inst) {
+void itrace_write(vaddr_t addr, uint32_t inst) {
     iringbuf[iringbuf_index].addr = addr;
-    iringbuf[iringbuf_index++].inst = inst;
-    if (iringbuf_index > BUFFER_SIZE - 1) iringbuf_index = 0;
-	IFDEF(CONFIG_ITRACE2FILE, open_itrace_file());
-	IFDEF(CONFIG_ITRACE2FILE, write2itrace(addr));
+    iringbuf[iringbuf_index].inst = inst;
+    iringbuf_index = (iringbuf_index + 1) % BUFFER_SIZE;
+	IFDEF(CONFIG_ITRACE2FILE, itrace2file(addr));
 }
 
-void iringbuf_display() {
+void itrace_display() {
     uint32_t start_index = iringbuf_index;
     uint32_t end_index = iringbuf_index == 0 ? BUFFER_SIZE - 1 : iringbuf_index - 1;
     uint32_t index = start_index;
@@ -142,7 +151,7 @@ void iringbuf_display() {
     }
     puts("\n");
 
-	IFDEF(CONFIG_ITRACE2FILE, close_itrace_file());
+	IFDEF(CONFIG_ITRACE2FILE, close_trace_file(&itrace_output_file_fp, itrace_file));
 }
 
 #endif
@@ -173,27 +182,6 @@ typedef struct {
 } mtrace_record_t;
 #pragma pack(pop)
 
-void init_trace_file(FILE **trace_file_fp, const char *trace_file) {
-    if (*trace_file_fp) {
-        return;
-    }
-
-    *trace_file_fp = fopen(trace_file, "wb");
-    Assert(*trace_file_fp, "Open trace file '%s' failed.", trace_file);
-}
-
-void close_trace_file(FILE **trace_file_fp, const char *trace_file) {
-    if (!*trace_file_fp) {
-        return;
-    }
-
-    if (fclose(*trace_file_fp) == EOF) {
-        Assert(0, "Close trace file '%s' failed.", trace_file);
-    }
-
-    *trace_file_fp = NULL;
-}
-
 void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
     // op: 
     //  1: load
@@ -211,7 +199,7 @@ void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
         .op   = (uint32_t)op
     };
 
-    size_t items_written = fwrite(&addr, sizeof(record), 1, mtrace_output_file_fp);
+    size_t items_written = fwrite(&record, sizeof(record), 1, mtrace_output_file_fp);
 
     if (items_written != 1) {
         fprintf(stderr, "Serious error: Failed to write to the mtrace file!\n");
@@ -227,13 +215,15 @@ void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
 
 void mtrace_load(vaddr_t addr, uint32_t len, word_t content) {
     if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    mringbuf[mringbuf_index++ % BUFFER_SIZE] = (mtrace_entry_t){cpu.pc, addr, len, content, 1};
+    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, 1};
+    mringbuf_index = (mringbuf_index + 1) % BUFFER_SIZE;
     IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 1));
 }
 
 void mtrace_store(vaddr_t addr, uint32_t len, word_t content) {
     if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    mringbuf[mringbuf_index++ % BUFFER_SIZE] = (mtrace_entry_t){cpu.pc, addr, len, content, 0};
+    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, 0};
+    mringbuf_index = (mringbuf_index + 1) % BUFFER_SIZE;
     IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 0));
 }
 

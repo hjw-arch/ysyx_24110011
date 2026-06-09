@@ -56,7 +56,7 @@ static void exec_once(Decode *s, vaddr_t pc) {
     isa_exec_once(s);
     cpu.pc = s->dnpc;
 #ifdef CONFIG_ITRACE
-    iringbuf_load(s->pc, s->isa.inst.val);      // iringbuf
+    itrace_write(s->pc, s->isa.inst.val);      // itrace
     char *p = s->logbuf;
     p += snprintf(p, sizeof(s->logbuf), FMT_WORD ":", s->pc);
     int ilen = s->snpc - s->pc;     // 4
@@ -98,7 +98,8 @@ static void execute(uint64_t n) {
 }
 
 static void statistic() {
-    IFDEF(CONFIG_ITRACE, iringbuf_display());      // iringbuf
+    IFDEF(CONFIG_ITRACE, itrace_display());      // iringbuf
+    IFDEF(CONFIG_MTRACE, mtrace_display());         // mtrace
     IFNDEF(CONFIG_TARGET_AM, setlocale(LC_NUMERIC, ""));
 #define NUMBERIC_FMT MUXDEF(CONFIG_TARGET_AM, "%", "%'") PRIu64
     Log("host time spent = " NUMBERIC_FMT " us", g_timer);
