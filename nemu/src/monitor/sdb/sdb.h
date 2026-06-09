@@ -30,8 +30,8 @@ void diaplay_wp();
 void iringbuf_load(MUXDEF(CONFIG_RV64, uint64_t addr, uint32_t addr), uint32_t inst);
 void iringbuf_display();
 
-void mtrace_read(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc);
-void mtrace_write(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc);
+void mtrace_load(vaddr_t addr, uint32_t len, word_t content);
+void mtrace_store(vaddr_t addr, uint32_t len, word_t content);
 
 void decode_elf();
 void record_ftrace(uint32_t pc_now, uint32_t action, uint32_t pc_target);

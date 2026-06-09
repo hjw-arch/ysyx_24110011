@@ -164,6 +164,14 @@ config MTRACE
   bool "Enable memory tracer"
   default y
 
+config MTRACE2FILE
+  depends on MTRACE
+  bool "Output memory trace to file"
+  default n
+  help
+    If enabled, memory tracing information will be written to a file
+    instead of being output to the console or other destinations.
+
 config MTRACE_START_ADDR
   depends on MTRACE
   hex "Determine where to start recording memory trace"

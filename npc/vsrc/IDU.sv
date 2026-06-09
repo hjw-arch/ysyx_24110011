@@ -2,10 +2,10 @@
 module IDU
 import pipeline_pkt_pkg::*;
 (
-    output	[4:0] 			rs1_addr,
-    output	[4:0] 			rs2_addr,
-    input 	[31:0] 			rs1_data,
-    input	[31:0] 			rs2_data,
+    output	[4:0] 			rf_rs1_addr_o,
+    output	[4:0] 			rf_rs2_addr_o,
+    input 	[31:0] 			rf_rs1_data_i,
+    input	[31:0] 			rf_rs2_data_i,
 
 	output	[4:0] 			id_rs1_addr,
 	output	[4:0]			id_rs2_addr,
@@ -13,7 +13,7 @@ import pipeline_pkt_pkg::*;
 	output					id_rs2_used,
 	input	fwd_sel_t		fwd_rs1_sel_i,
 	input	fwd_sel_t		fwd_rs2_sel_i,
-	input 					hazard,
+	input 					hazard_i,
 
     input					valid_i,
     input	if2id_pkt_t		data_i,
@@ -31,10 +31,10 @@ localparam logic [4:0] OPC_JALR     = 5'b11001;
 localparam logic [4:0] OPC_BRANCH   = 5'b11000;
 localparam logic [4:0] OPC_LOAD     = 5'b00000;
 localparam logic [4:0] OPC_STORE    = 5'b01000;
-localparam logic [4:0] OPC_MISC_MEM = 5'b00011;
+localparam logic [4:0] OPC_MISC_MEM = 5'b00011;         // fence、fence.i
 localparam logic [4:0] OPC_CAL_I    = 5'b00100;
 localparam logic [4:0] OPC_CAL_R    = 5'b01100;
-localparam logic [4:0] OPC_SYSTEM   = 5'b11100;
+localparam logic [4:0] OPC_SYSTEM   = 5'b11100;         // SYSTEM 类，包含ecall、ebreak、mret、csrrw、csrrs等
 
 wire [31:0] inst    = data_i.inst;
 wire [31:0] pc      = data_i.pc;
@@ -67,9 +67,9 @@ wire func3_is_csr = func3[1] | func3[0];
 wire func3_is_sys = func3 == 3'b000;
 
 wire is_csr      = is_system & func3_is_csr;
-wire is_csr_imm  = is_csr & func3[2];
-wire is_csr_reg  = is_csr & ~func3[2];
-wire is_sysop    = is_system & func3_is_sys;
+wire is_csr_imm  = is_csr & func3[2];               // csrrwi、cswwsi、csrrci
+wire is_csr_reg  = is_csr & ~func3[2];              // csrrw、csrrs、csrrc
+wire is_sysop    = is_system & func3_is_sys;        // ecall、mret
 
 // ecall/mret 在 ID 阶段先解出来，避免 WBU 提交重定向路径上再做宽指令比较。
 wire is_ecall    = is_sysop & (inst[31:20] == 12'h000);
@@ -80,13 +80,13 @@ wire is_fence_i  = is_misc_mem & (func3 == 3'b001);
 
 wire is_calc     = is_cal_i | is_cal_r;
 wire is_srai     = is_cal_i & (func3 == 3'b101) & func7b5;
-wire calc_op3    = is_srai | (is_cal_r & func7b5);
+wire calc_op3    = is_srai | (is_cal_r & func7b5);          // sub、sra、srai，对应设计中的aluop[3]
 
 // imm_sel 只在 ID 阶段用于生成 32 位立即数，真正进入 ID/EX 寄存器的是 imm。
 // 这样 EX 阶段不再承担 inst -> imm_gen -> ALU/redirect 的组合路径。
 //
 // 编码：
-//   IMM_I = 000, IMM_S = 001, IMM_Z = 011
+//   IMM_I = 000, IMM_S = 001, IMM_Z = 011          IMM_Z CSR使用，ysyx不要求实现，我这里顺手实现一下，imm_z把rs1对应的字段当作5位无符号立即数
 //   IMM_J = 100, IMM_B = 101, IMM_U = 110
 //
 // 下面三条按位 assign 是配合上述编码设计的：
@@ -113,11 +113,8 @@ wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
 // rd_wen 在 ID 阶段顺手屏蔽 x0。后级如需原始 rd 字段，直接从随流水携带的 inst 中切片。
 wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) & |rd_addr_raw;
 
-assign valid_o = valid_i & ~hazard;
-assign ready_o = ready_i & ~hazard;
-
-assign rs1_addr = rs1_addr_raw;
-assign rs2_addr = rs2_addr_raw;
+assign rf_rs1_addr_o = rs1_addr_raw;
+assign rf_rs2_addr_o = rs2_addr_raw;
 
 // hazard/forwarding 比较使用原始 rs 地址；used 在最后一级门控。
 // 这样地址比较器不需要等待 used 解码结果，ID 阶段阻塞路径更短。
@@ -135,7 +132,6 @@ assign data_o.ex.fwd_rs1_sel = fwd_rs1_sel_i;
 assign data_o.ex.fwd_rs2_sel = fwd_rs2_sel_i;
 
 // ALU 操作按 bit 直接生成，避免写成优先级 mux 链。
-// 这部分更像一个小 PLA：
 //   - LUI 使用 ALU_COPY2，即 ALU default data2 路径
 //   - EQ/NE 分支使用 SUB 产生 zero_flag
 //   - LT/GE 使用 SLT，LTU/GEU 使用 SLTU
@@ -177,26 +173,13 @@ assign data_o.sys.csr_cmd    = {2{is_csr}} & func3[1:0];
 assign data_o.sys.priv_redir = {is_mret, is_ecall};
 assign data_o.sys.fence_i    = is_fence_i;
 
-assign data_o.rs1_data = rs1_data;
-assign data_o.rs2_data = rs2_data;
+assign data_o.rs1_data = rf_rs1_data_i;
+assign data_o.rs2_data = rf_rs2_data_i;
 assign data_o.imm      = imm;
 
 
-
-/************************** 性能计数器 *****************************/
-
-// import "DPI-C" function void PerformanceCounter_idu_identify_inst(input int inst);
-
-// always_ff @(posedge clk) begin
-// 	if (idu_valid & (state != S_WAIT_READY)) PerformanceCounter_idu_identify_inst(inst);
-// end
-
-// always_ff @(posedge clk) begin
-// 	if (has_new_data) $display("IDU!\n");
-// end
-
-
-/******************************************************************/
+assign valid_o = valid_i & ~hazard_i;
+assign ready_o = ready_i & ~hazard_i;
 
 
 endmodule

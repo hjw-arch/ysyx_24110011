@@ -90,34 +90,38 @@ static bool difftest_addr_is_pmem(uint32_t addr) {
 }
 
 static uint32_t get_lsu_pc() {
-	return get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
+	return get_wide_bits(CORE_SIG(ex2ls_data).data(), 168, 137);
 }
 
 static uint32_t get_lsu_inst() {
-	return get_wide_bits(CORE_SIG(lsu_data_i).data(), 136, 105);
+	return get_wide_bits(CORE_SIG(ex2ls_data).data(), 136, 105);
 }
 
 static uint32_t get_wbu_pc() {
-	return get_wide_bits(CORE_SIG(wbu_data_i).data(), 101, 70);
+	return get_wide_bits(CORE_SIG(ls2wb_data).data(), 101, 70);
 }
 
 static uint32_t get_wbu_inst() {
-	return get_wide_bits(CORE_SIG(wbu_data_i).data(), 69, 38);
+	return get_wide_bits(CORE_SIG(ls2wb_data).data(), 69, 38);
 }
 
 static void record_lsu_redirect() {
-	if (CORE_SIG(lsu_flush)) {
+	if (CORE_SIG(ls2wb_valid) && get_wbu_inst() == ebreak) {
+		return;
+	}
+
+	if (CORE_SIG(lsu_redirect_valid)) {
 		pending_redirect.pc = get_lsu_pc();
-		pending_redirect.target = CORE_SIG(lsu_pc_target);
+		pending_redirect.target = CORE_SIG(lsu_redirect_pc);
 		pending_redirect.valid = true;
 #ifdef PERFORMANCE_COUNTER
 		pmc_lsu_redirect_sample_t sample = {};
 		sample.pc = pending_redirect.pc;
 		sample.target = pending_redirect.target;
 		sample.inst = get_lsu_inst();
-		sample.kill_if = CORE_SIG(ifu_valid_o);
-		sample.kill_id = CORE_SIG(idu_valid_i);
-		sample.kill_ex = CORE_SIG(exu_valid_i);
+		sample.kill_if = CORE_SIG(if2id_pre_valid);
+		sample.kill_id = CORE_SIG(if2id_valid);
+		sample.kill_ex = CORE_SIG(id2ex_valid);
 		sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
 		PerformanceCounter_record_lsu_redirect(&sample);
 #endif
@@ -125,16 +129,16 @@ static void record_lsu_redirect() {
 }
 
 static void record_wbu_redirect() {
-	if (CORE_SIG(wbu_flush)) {
+	if (CORE_SIG(wbu_redirect_valid)) {
 #ifdef PERFORMANCE_COUNTER
 		pmc_wbu_redirect_sample_t sample = {};
 		sample.pc = get_wbu_pc();
-		sample.target = CORE_SIG(wbu_pc_target);
+		sample.target = CORE_SIG(wbu_redirect_pc);
 		sample.inst = get_wbu_inst();
-		sample.kill_if = CORE_SIG(ifu_valid_o);
-		sample.kill_id = CORE_SIG(idu_valid_i);
-		sample.kill_ex = CORE_SIG(exu_valid_i);
-		sample.kill_ls = CORE_SIG(lsu_valid_i);
+		sample.kill_if = CORE_SIG(if2id_pre_valid);
+		sample.kill_id = CORE_SIG(if2id_valid);
+		sample.kill_ex = CORE_SIG(id2ex_valid);
+		sample.kill_ls = CORE_SIG(ex2ls_valid);
 		sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
 		PerformanceCounter_record_wbu_redirect(&sample);
 #endif
@@ -147,7 +151,7 @@ static void record_lsu_difftest_skip() {
 		(CORE_SIG(u_LSU__DOT__input_is_load) | CORE_SIG(u_LSU__DOT__input_is_store));
 
 	if (mem_output_fire && !difftest_addr_is_pmem(CORE_SIG(u_LSU__DOT__lsu_addr))) {
-		pending_difftest_skip.pc = get_wide_bits(CORE_SIG(lsu_data_i).data(), 168, 137);
+		pending_difftest_skip.pc = get_wide_bits(CORE_SIG(ex2ls_data).data(), 168, 137);
 		pending_difftest_skip.valid = true;
 	}
 #endif
@@ -159,8 +163,8 @@ static commit_info_t get_commit_info() {
 	info.pc = get_wbu_pc();
 	info.inst = get_wbu_inst();
 
-	if (CORE_SIG(wbu_flush)) {
-		info.next_pc = CORE_SIG(wbu_pc_target);
+	if (CORE_SIG(wbu_redirect_valid)) {
+		info.next_pc = CORE_SIG(wbu_redirect_pc);
 	} else if (pending_redirect.valid && pending_redirect.pc == info.pc) {
 		info.next_pc = pending_redirect.target;
 		pending_redirect.valid = false;
@@ -185,14 +189,15 @@ static void record_performance_cycle() {
 #ifdef PERFORMANCE_COUNTER
 	pmc_cycle_sample_t sample = {};
 	sample.pc = CORE_SIG(u_IFU__DOT__pc_r);
-	sample.wbu_valid = CORE_SIG(wbu_valid_i);
+	sample.wbu_valid = CORE_SIG(ls2wb_valid);
 	sample.wbu_pc = get_wbu_pc();
+	sample.host_trap_commit = sample.wbu_valid && get_wbu_inst() == ebreak;
 
 	sample.ifu_req_valid = CORE_SIG(u_IFU__DOT__ic_req_valid);
 	sample.ifu_req_ready = CORE_SIG(u_IFU__DOT__ic_req_ready);
 	sample.ifu_resp_valid = CORE_SIG(u_IFU__DOT__ic_resp_valid);
 	sample.ifu_resp_ready = CORE_SIG(u_IFU__DOT__ic_resp_ready);
-	sample.ifu_flush = CORE_SIG(u_IFU__DOT__flush_i);
+	sample.ifu_flush = CORE_SIG(u_IFU__DOT__redirect_valid_i);
 
 	sample.icache_req_hit = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_hit);
 	sample.icache_req_miss = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_miss);
@@ -200,12 +205,12 @@ static void record_performance_cycle() {
 	sample.icache_drop_refill =
 		CORE_SIG(u_IFU__DOT__u_icache__DOT__refill_resp_fire) &
 		CORE_SIG(u_IFU__DOT__u_icache__DOT__drop_refill);
-	sample.icache_invalidate = CORE_SIG(u_IFU__DOT__inval_icache_i);
+	sample.icache_invalidate = CORE_SIG(u_IFU__DOT__icache_inval_i);
 
 	sample.lsu_mem_req_fire = CORE_SIG(u_LSU__DOT__mem_req_fire);
 	sample.lsu_input_is_load = CORE_SIG(u_LSU__DOT__input_is_load);
 	sample.lsu_input_is_store = CORE_SIG(u_LSU__DOT__input_is_store);
-	sample.lsu_state_busy = CORE_SIG(u_LSU__DOT__state_busy);
+	sample.lsu_wait_resp = CORE_SIG(u_LSU__DOT__state_wait_resp);
 
 	sample.hazard_valid = CORE_SIG(hazard_valid);
 	sample.rs1_block_ex = CORE_SIG(u_hazard_unit__DOT__rs1_block_ex);
@@ -216,7 +221,7 @@ static void record_performance_cycle() {
 	sample.ex_is_csr = CORE_SIG(ex_is_csr);
 	sample.ls_is_csr = CORE_SIG(ls_is_csr);
 	sample.ls_can_wb = CORE_SIG(ls_can_wb);
-	sample.idu_valid = CORE_SIG(idu_valid_i);
+	sample.idu_valid = CORE_SIG(if2id_valid);
 	sample.fwd_rs1_sel = CORE_SIG(fwd_rs1_sel);
 	sample.fwd_rs2_sel = CORE_SIG(fwd_rs2_sel);
 	sample.rf_rs1_bypass = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs1_bypass);
@@ -263,7 +268,7 @@ void cpu_exec_one() {
 		record_wbu_redirect();
 		record_lsu_difftest_skip();
 
-		if (CORE_SIG(wbu_valid_i)) {
+		if (CORE_SIG(ls2wb_valid)) {
 			commit_info_t commit_info = get_commit_info();
 			current_difftest_skip = take_difftest_skip(commit_info.pc);
 

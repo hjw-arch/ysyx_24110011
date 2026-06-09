@@ -8,6 +8,7 @@ typedef struct {
 	uint32_t pc;
 	bool     wbu_valid;
 	uint32_t wbu_pc;
+	bool     host_trap_commit;
 
 	bool ifu_req_valid;
 	bool ifu_req_ready;
@@ -24,7 +25,7 @@ typedef struct {
 	bool lsu_mem_req_fire;
 	bool lsu_input_is_load;
 	bool lsu_input_is_store;
-	bool lsu_state_busy;
+	bool lsu_wait_resp;
 
 	bool hazard_valid;
 	bool rs1_block_ex;

@@ -17,6 +17,7 @@
 #include <cpu/cpu.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <stdint.h>
 #include "../include/memory/vaddr.h"
 #include "../include/memory/paddr.h"
 #include "sdb.h"
@@ -44,8 +45,9 @@ static char *rl_gets() {
     return line_read;
 }
 
-#ifdef CONFIG_ITRACE
+#define BUFFER_SIZE     16
 
+#ifdef CONFIG_ITRACE
 #ifdef CONFIG_ITRACE2FILE
 
 static FILE *itrace_output_file_fp = NULL;
@@ -89,7 +91,6 @@ void write2itrace(vaddr_t addr) {
 
 #endif
 
-#define BUFFER_SIZE     16
 // ringbuffer
 typedef struct _ringbuf
 {
@@ -147,17 +148,123 @@ void iringbuf_display() {
 #endif
 
 #ifdef CONFIG_MTRACE
-void mtrace_read(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc) {
-    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    if (!is_record_fetch_pc && cpu.pc == addr) return;
-    printf("Guest machine read memory at pc = 0x%08x, addr = 0x%08x, %d byte%s content = 0x%08x\n", cpu.pc, addr, len, len > 1 ? "s," : ", ", content);
+
+// ringbuffer
+typedef struct _mtrace_entry_t {
+    vaddr_t pc;
+    vaddr_t addr;
+    uint32_t len;
+    word_t content;
+    uint32_t is_load;
+} mtrace_entry_t;
+
+static mtrace_entry_t mringbuf[BUFFER_SIZE];
+static uint32_t mringbuf_index = 0;
+
+static FILE *mtrace_output_file_fp = NULL;
+static char *mtrace_file = "/home/hjw-arch/ysyx-workbench/MTRACE.bin";
+
+// 使用 1 字节对齐，确保二进制文件中没有 padding，方便 Python 按固定偏移解析
+#pragma pack(push, 1)
+typedef struct {
+    uint64_t addr;  // 访存物理/虚拟地址
+    uint32_t len;   // 访存长度
+    uint32_t op;    // 0: store, 1: load
+} mtrace_record_t;
+#pragma pack(pop)
+
+void init_trace_file(FILE **trace_file_fp, const char *trace_file) {
+    if (*trace_file_fp) {
+        return;
+    }
+
+    *trace_file_fp = fopen(trace_file, "wb");
+    Assert(*trace_file_fp, "Open trace file '%s' failed.", trace_file);
 }
 
-void mtrace_write(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc) {
-    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    printf("Guest machine write memory at pc = 0x%08x, addr = 0x%08x, %d byte%s content = 0x%08x\n", cpu.pc, addr, len, len > 1 ? "s," : ", ", content);
+void close_trace_file(FILE **trace_file_fp, const char *trace_file) {
+    if (!*trace_file_fp) {
+        return;
+    }
+
+    if (fclose(*trace_file_fp) == EOF) {
+        Assert(0, "Close trace file '%s' failed.", trace_file);
+    }
+
+    *trace_file_fp = NULL;
 }
+
+void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
+    // op: 
+    //  1: load
+    //  0: store
+
+    // 懒加载
+    if (!mtrace_output_file_fp) {
+        init_trace_file(&mtrace_output_file_fp, mtrace_file);
+    }
+
+    // 统一转换为固定宽度类型，消除 RV32/RV64 差异
+    mtrace_record_t record = {
+        .addr = (uint64_t)addr,
+        .len  = (uint32_t)len,
+        .op   = (uint32_t)op
+    };
+
+    size_t items_written = fwrite(&addr, sizeof(record), 1, mtrace_output_file_fp);
+
+    if (items_written != 1) {
+        fprintf(stderr, "Serious error: Failed to write to the mtrace file!\n");
+        if (ferror(mtrace_output_file_fp)) {
+            perror("           文件写入错误详情");
+        }
+        
+        close_trace_file(&mtrace_output_file_fp, mtrace_file);
+        mtrace_output_file_fp = NULL; // 避免后续尝试写入
+    }
+}
+
+
+void mtrace_load(vaddr_t addr, uint32_t len, word_t content) {
+    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
+    mringbuf[mringbuf_index++ % BUFFER_SIZE] = (mtrace_entry_t){cpu.pc, addr, len, content, 1};
+    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 1));
+}
+
+void mtrace_store(vaddr_t addr, uint32_t len, word_t content) {
+    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
+    mringbuf[mringbuf_index++ % BUFFER_SIZE] = (mtrace_entry_t){cpu.pc, addr, len, content, 0};
+    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 0));
+}
+
+void mtrace_display() {
+    uint32_t start_index = mringbuf_index;
+    uint32_t end_index = mringbuf_index == 0 ? BUFFER_SIZE - 1 : mringbuf_index - 1;
+    uint32_t index = start_index;
+    puts("\nMemory trace:\n");
+    while(1) {
+        if (index > BUFFER_SIZE - 1) index = 0;
+
+        if (mringbuf[index].pc == 0) {          // 空的或者没满
+            if(index == end_index) break;
+            index++;
+            continue;
+        }
+
+        printf("PC: 0x%08x | Addr: 0x%08x | Length: %02d | context: 0x%08x | type: %s\n", mringbuf[index].pc, mringbuf[index].addr, mringbuf[index].len, mringbuf[index].content, 
+        mringbuf[index].is_load ? "load" : "store");
+
+        if(index == end_index) break;
+        index++;
+    }
+    puts("\n");
+
+	IFDEF(CONFIG_MTRACE2FILE, close_trace_file(&mtrace_output_file_fp, mtrace_file));
+}
+
 #endif
+
+
 
 //  ftrace
 #ifdef CONFIG_FTRACE

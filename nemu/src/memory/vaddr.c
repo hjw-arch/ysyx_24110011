@@ -15,15 +15,19 @@
 
 #include <isa.h>
 #include <memory/paddr.h>
+#include "../monitor/sdb/sdb.h"
 
 word_t vaddr_ifetch(vaddr_t addr, int len) {
   return paddr_read(addr, len);
 }
 
 word_t vaddr_read(vaddr_t addr, int len) {
-  return paddr_read(addr, len);
+  word_t content = paddr_read(addr, len);
+  IFDEF(CONFIG_MTRACE, mtrace_load(addr, len, content));
+  return content;
 }
 
 void vaddr_write(vaddr_t addr, int len, word_t data) {
   paddr_write(addr, len, data);
+  IFDEF(CONFIG_MTRACE, mtrace_store(addr, len, data));
 }

@@ -9,16 +9,16 @@ import pipeline_pkt_pkg::*;
     input               clk,
     input               rst,
 
-    input   [4:0]       rs1_addr,
-    input   [4:0]       rs2_addr,
-    output  [31:0]      rs1_data,
-    output  [31:0]      rs2_data,
+    input   [4:0]       rf_rs1_addr_i,
+    input   [4:0]       rf_rs2_addr_i,
+    output  [31:0]      rf_rs1_data_o,
+    output  [31:0]      rf_rs2_data_o,
 
     output  [31:0]      rf_wdata_o,
 
-    output              flush_o,
-    output  [31:0]      flush_addr_o,
-    output              invalidate_ic_o,
+    output              redirect_valid_o,
+    output  [31:0]      redirect_pc_o,
+    output              icache_inval_o,
 
     input               valid_i,
     input   ls2wb_pkt_t data_i,
@@ -76,22 +76,22 @@ registerfile #(
     .wen       (rf_wen),
     .rd_addr   (rd_addr),
     .rd_data   (rf_wdata),
-    .rs1_addr  (rs1_addr),
-    .rs1_data  (rs1_data),
-    .rs2_addr  (rs2_addr),
-    .rs2_data  (rs2_data)
+    .rs1_addr  (rf_rs1_addr_i),
+    .rs1_data  (rf_rs1_data_o),
+    .rs2_addr  (rf_rs2_addr_i),
+    .rs2_data  (rf_rs2_data_o)
 );
 
 // ecall/mret/fence.i 都在提交点发起 flush，保证系统事件精确生效。
 wire priv_flush = ecall | mret;
 wire sys_flush  = priv_flush | fence_i;
 
-assign flush_o = valid_i & sys_flush;
-assign invalidate_ic_o = valid_i & fence_i;
+assign redirect_valid_o = valid_i & sys_flush;
+assign icache_inval_o   = valid_i & fence_i;
 
 // fence.i 的重定向地址是 EXU 已经算好的 pc+4；ecall/mret 来自 CSR。
-assign flush_addr_o = ecall ? csr_mtvec :
-                      mret  ? csr_mepc  :
-                              data_i.result;
+assign redirect_pc_o = ecall ? csr_mtvec :
+                       mret  ? csr_mepc  :
+                               data_i.result;
 
 endmodule
