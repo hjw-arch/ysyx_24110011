@@ -122,7 +122,6 @@ static void record_lsu_redirect() {
 		sample.kill_if = CORE_SIG(if2id_pre_valid);
 		sample.kill_id = CORE_SIG(if2id_valid);
 		sample.kill_ex = CORE_SIG(id2ex_valid);
-		sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
 		PerformanceCounter_record_lsu_redirect(&sample);
 #endif
 	}
@@ -139,7 +138,6 @@ static void record_wbu_redirect() {
 		sample.kill_id = CORE_SIG(if2id_valid);
 		sample.kill_ex = CORE_SIG(id2ex_valid);
 		sample.kill_ls = CORE_SIG(ex2ls_valid);
-		sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
 		PerformanceCounter_record_wbu_redirect(&sample);
 #endif
 	}
@@ -220,12 +218,6 @@ static void record_performance_cycle() {
 	sample.ex_is_load = CORE_SIG(ex_is_load);
 	sample.ex_is_csr = CORE_SIG(ex_is_csr);
 	sample.ls_is_csr = CORE_SIG(ls_is_csr);
-	sample.ls_can_wb = CORE_SIG(ls_can_wb);
-	sample.idu_valid = CORE_SIG(if2id_valid);
-	sample.fwd_rs1_sel = CORE_SIG(fwd_rs1_sel);
-	sample.fwd_rs2_sel = CORE_SIG(fwd_rs2_sel);
-	sample.rf_rs1_bypass = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs1_bypass);
-	sample.rf_rs2_bypass = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__rs2_bypass);
 
 	PerformanceCounter_record_cycle(&sample);
 #endif
@@ -244,6 +236,7 @@ void halt() {
 	
     printf(ANSI_FG_CYAN "\n\nTotal cycle times = %lu, Total dynamic_insts = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
 	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_display());
+	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_export_json());
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
         return;
