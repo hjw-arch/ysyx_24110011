@@ -47,7 +47,7 @@ static char *rl_gets() {
 
 #define BUFFER_SIZE     16
 
-#if defined(CONFIG_ITRACE) || defined(CONFIG_MTRACE)
+#if defined(CONFIG_ITRACE) || defined(CONFIG_MTRACE) || defined(CONFIG_BTRACE)
 
 void init_trace_file(FILE **trace_file_fp, const char *trace_file) {
     if (*trace_file_fp) {
@@ -596,6 +596,65 @@ void display_etrace() {
     }
 }
 
+
+#endif
+
+
+#ifdef CONFIG_BTRACE
+#pragma pack(push, 1)
+typedef struct _btrace_record_t {
+    uint64_t pc;
+    uint64_t snpc;
+    uint64_t dnpc;
+    uint32_t inst;
+} btrace_record_t;
+#pragma pack(pop)
+
+static FILE *btrace_output_file_fp = NULL;
+static char *btrace_file = "/home/hjw-arch/ysyx-workbench/BTRACE.bin";
+
+static void btrace_write(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst) {
+    // 懒加载
+    if (!btrace_output_file_fp) {
+        init_trace_file(&btrace_output_file_fp, btrace_file);
+    }
+
+    // 统一转换为固定宽度类型，消除 RV32/RV64 差异
+    btrace_record_t record = {
+        .pc = pc,
+        .snpc = snpc,
+        .dnpc = dnpc,
+        .inst = inst
+    };
+
+    size_t items_written = fwrite(&record, sizeof(record), 1, btrace_output_file_fp);
+
+    if (items_written != 1) {
+        fprintf(stderr, "Serious error: Failed to write to the mtrace file!\n");
+        if (ferror(btrace_output_file_fp)) {
+            perror("           文件写入错误详情");
+        }
+        
+        close_trace_file(&btrace_output_file_fp, btrace_file);
+        btrace_output_file_fp = NULL; // 避免后续尝试写入
+    }
+}
+
+// 简单判断
+static bool is_branch_inst(uint32_t inst) {
+    uint32_t opcode = inst & 0x7f;
+    return opcode == 0x63 || opcode == 0x6f || opcode == 0x67;
+}
+
+void btrace_record(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst) {
+    if (pc < CONFIG_ITRACE_START_ADDR || pc > CONFIG_ITRACE_END_ADDR) return;
+    if (!is_branch_inst(inst)) return;
+    btrace_write(pc, snpc, dnpc, inst);
+}
+
+void btrace_finish() {
+    close_trace_file(&btrace_output_file_fp, btrace_file);
+}
 
 #endif
 

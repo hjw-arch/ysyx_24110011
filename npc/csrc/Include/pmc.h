@@ -35,12 +35,6 @@ typedef struct {
 	bool ex_is_load;
 	bool ex_is_csr;
 	bool ls_is_csr;
-	bool ls_can_wb;
-	bool idu_valid;
-	uint8_t fwd_rs1_sel;
-	uint8_t fwd_rs2_sel;
-	bool rf_rs1_bypass;
-	bool rf_rs2_bypass;
 } pmc_cycle_sample_t;
 
 typedef struct {
@@ -50,7 +44,6 @@ typedef struct {
 	bool kill_if;
 	bool kill_id;
 	bool kill_ex;
-	bool icache_miss_busy;
 } pmc_lsu_redirect_sample_t;
 
 typedef struct {
@@ -61,10 +54,10 @@ typedef struct {
 	bool kill_id;
 	bool kill_ex;
 	bool kill_ls;
-	bool icache_miss_busy;
 } pmc_wbu_redirect_sample_t;
 
 void PerformanceCounter_display();
+void PerformanceCounter_export_json();
 void PerformanceCounter_record_cycle(const pmc_cycle_sample_t *sample);
 void PerformanceCounter_record_lsu_redirect(const pmc_lsu_redirect_sample_t *sample);
 void PerformanceCounter_record_wbu_redirect(const pmc_wbu_redirect_sample_t *sample);

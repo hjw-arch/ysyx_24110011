@@ -207,6 +207,11 @@ config ETRACE
   bool "Enable expection tracer"
   default y
 
+config BTRACE
+  depends on TRACE
+  bool "Enable branch tracer"
+  default n
+
 config WATCHPOINT
   bool "Enable Watchpoint"
   default y

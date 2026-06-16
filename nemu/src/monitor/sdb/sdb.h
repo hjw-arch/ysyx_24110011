@@ -46,4 +46,8 @@ void display_dtrace();
 // etrace
 void record_etrace(vaddr_t pc, uint32_t cause, uint32_t tvec);
 
+// btrace
+void btrace_record(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst);
+void btrace_finish();
+
 #endif
