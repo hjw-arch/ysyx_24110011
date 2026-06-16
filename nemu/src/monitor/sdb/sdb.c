@@ -72,7 +72,7 @@ void close_trace_file(FILE **trace_file_fp, const char *trace_file) {
 
 #endif
 
-#if defined(CONFIG_FTRACE) || defined(CONFIG_MTRACE2FILE)
+#if defined(CONFIG_FTRACE) || defined(CONFIG_MTRACE2FILE) || defined(CONFIG_BTRACE)
 
 /*
  * ELF32 文件和 ftrace 需要的部分：
@@ -601,6 +601,8 @@ void display_etrace() {
 
 
 #ifdef CONFIG_BTRACE
+static uint64_t btrace_record_count = 0;
+
 #pragma pack(push, 1)
 typedef struct _btrace_record_t {
     uint64_t pc;
@@ -630,7 +632,7 @@ static void btrace_write(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst) 
     size_t items_written = fwrite(&record, sizeof(record), 1, btrace_output_file_fp);
 
     if (items_written != 1) {
-        fprintf(stderr, "Serious error: Failed to write to the mtrace file!\n");
+        fprintf(stderr, "Serious error: Failed to write to the btrace file!\n");
         if (ferror(btrace_output_file_fp)) {
             perror("           文件写入错误详情");
         }
@@ -647,9 +649,14 @@ static bool is_branch_inst(uint32_t inst) {
 }
 
 void btrace_record(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst) {
-    if (pc < CONFIG_ITRACE_START_ADDR || pc > CONFIG_ITRACE_END_ADDR) return;
+    if (!entry_main_flag) return;
+
     if (!is_branch_inst(inst)) return;
+
+    if (btrace_record_count >= CONFIG_BTRACE_MAX_RECORDS) return;
+
     btrace_write(pc, snpc, dnpc, inst);
+    btrace_record_count++;
 }
 
 void btrace_finish() {
@@ -1026,8 +1033,12 @@ void init_sdb()
     init_wp_pool();
 
     /* decode elf file. */
-#if defined(CONFIG_FTRACE) || defined(CONFIG_MTRACE2FILE)
+#if defined(CONFIG_FTRACE) || defined(CONFIG_MTRACE2FILE) || defined(CONFIG_BTRACE)
     decode_elf();
-    IFDEF(CONFIG_MTRACE2FILE, get_main_addr());
+
+#if defined(CONFIG_MTRACE2FILE) || defined(CONFIG_BTRACE)
+      get_main_addr();
+#endif
+
 #endif
 }

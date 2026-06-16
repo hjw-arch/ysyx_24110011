@@ -212,6 +212,11 @@ config BTRACE
   bool "Enable branch tracer"
   default n
 
+config BTRACE_MAX_RECORDS
+  depends on BTRACE
+  int "Max records of btrace"
+  default 50000000
+
 config WATCHPOINT
   bool "Enable Watchpoint"
   default y
