@@ -81,6 +81,7 @@ static void exec_once(Decode *s, vaddr_t pc) {
     p[0] = '\0'; // the upstream llvm does not support loongarch32r
 #endif
 #endif
+    IFDEF(CONFIG_MTRACE2FILE, set_entry_main_flag());            // mtrace 记录 main
 }
 
 static void execute(uint64_t n) {

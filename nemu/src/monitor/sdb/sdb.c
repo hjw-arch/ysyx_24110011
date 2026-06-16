@@ -70,8 +70,164 @@ void close_trace_file(FILE **trace_file_fp, const char *trace_file) {
     *trace_file_fp = NULL;
 }
 
+#endif
+
+#if defined(CONFIG_FTRACE) || defined(CONFIG_MTRACE2FILE)
+
+/*
+ * ELF32 文件和 ftrace 需要的部分：
+ *
+ *   +-------------------------------+
+ *   | Elf32_Ehdr                    |  ELF 文件头
+ *   |   e_ident                     |    魔数、32/64 位、小端/大端等
+ *   |   e_type                      |    文件类型，AM 程序通常是 ET_EXEC
+ *   |   e_shoff                     |    section header table 在文件内的偏移
+ *   |   e_shnum                     |    section header 数量
+ *   |   e_shstrndx                  |    section 名字字符串表(.shstrtab)下标
+ *   +-------------------------------+
+ *   | ...                           |
+ *   +-------------------------------+
+ *   | Elf32_Shdr[e_shnum]           |  section header table
+ *   |   .text/.data/.symtab/.strtab |    每个 section 一个 Elf32_Shdr
+ *   +-------------------------------+
+ *
+ * ftrace 只需要两类 section：
+ *
+ *   .symtab：符号表，由多个 Elf32_Sym 组成。每个符号记录地址、大小、类型等。
+ *   .strtab：符号名字符串表。Elf32_Sym.st_name 不是字符串，而是 .strtab 内偏移。
+ *
+ * 重要关系：
+ *   .symtab section header 的 sh_link 字段，指向它配套的 .strtab。
+ *
+ * 因此正确流程是：
+ *   1. 读取并检查 ELF header；
+ *   2. 扫描 section header table，找到 SHT_SYMTAB；
+ *   3. 根据 symtab.sh_link 找到对应的 SHT_STRTAB；
+ *   4. 读取 .strtab，再遍历 .symtab；
+ *   5. 只保存 STT_FUNC 函数符号，供 ftrace 根据 PC 查函数名。
+ */
+
+#include <elf.h>
+extern char *elf_file;
+
+typedef struct _symtab{
+    char name[64];
+    uint32_t start_addr;
+    uint32_t end_addr;
+} symtab;
+
+static symtab symtabs[1024];
+static uint32_t symtab_count = 0;
+
+void decode_elf() {
+    if (elf_file == NULL) {
+        Log("No elf file is given, ftrace function is not allowed to use.");
+        return;
+    }
+
+    FILE *fp = fopen(elf_file, "rb");
+    Assert(fp, "Can not open '%s'", elf_file);
+
+    Elf32_Ehdr ehdr;
+    int ret = fread(&ehdr, sizeof(Elf32_Ehdr), 1, fp);
+    assert(ret == 1);
+
+    if (ehdr.e_ident[EI_MAG0] != ELFMAG0 || ehdr.e_ident[EI_MAG1] != ELFMAG1 ||
+        ehdr.e_ident[EI_MAG2] != ELFMAG2 || ehdr.e_ident[EI_MAG3] != ELFMAG3) {
+        Assert(0, "Invalid ELF file.");
+    }
+
+    if (ehdr.e_ident[EI_CLASS] != ELFCLASS32) {
+        Assert(0, "Invalid ELF class, only 'ELF32' is supported now.");
+    }
+
+    if (ehdr.e_type != ET_EXEC) {
+        Assert(0, "Invalid ELF type, only 'ET_EXEC' is supported now.");
+    }
+
+    Elf32_Shdr shdr;
+    Elf32_Shdr symtab_shdr = {};
+    Elf32_Shdr strtab_shdr = {};
+    bool found_symtab = false;
+
+    // 第一遍只找 .symtab。不要直接拿“第一个字符串表”，ELF 中可能同时存在
+    // .shstrtab(section 名字表)和 .strtab(符号名字表)。
+    fseek(fp, (long)ehdr.e_shoff, SEEK_SET);
+    for (int i = 0; i < ehdr.e_shnum; i++) {
+        ret = fread(&shdr, sizeof(Elf32_Shdr), 1, fp);
+        assert(ret == 1);
+
+        if (shdr.sh_type == SHT_SYMTAB) {
+            symtab_shdr = shdr;
+            found_symtab = true;
+            break;
+        }
+    }
+
+    Assert(found_symtab, "Can not find ELF symbol table.");
+    Assert(symtab_shdr.sh_link < ehdr.e_shnum, "Invalid ELF symbol string table index.");
+
+    // .symtab.sh_link 指向对应的字符串表 section，里面保存函数名等符号名。
+    fseek(fp, (long)(ehdr.e_shoff + symtab_shdr.sh_link * sizeof(Elf32_Shdr)), SEEK_SET);
+    ret = fread(&strtab_shdr, sizeof(Elf32_Shdr), 1, fp);
+    assert(ret == 1);
+    Assert(strtab_shdr.sh_type == SHT_STRTAB, "Invalid ELF symbol string table.");
+
+    char *str_buffer = (char *)malloc(strtab_shdr.sh_size);
+    Assert(str_buffer, "Malloc failed, can not decode ELF string table.");
+
+    fseek(fp, (long)strtab_shdr.sh_offset, SEEK_SET);
+    ret = fread(str_buffer, strtab_shdr.sh_size, 1, fp);
+    assert(ret == 1);
+
+    // 遍历符号表。只把函数符号存入 symtabs[]，其它变量/section/file 符号都跳过。
+    fseek(fp, (long)symtab_shdr.sh_offset, SEEK_SET);
+    uint32_t sym_num = symtab_shdr.sh_size / sizeof(Elf32_Sym);
+
+    for (uint32_t i = 0; i < sym_num; i++) {
+        Elf32_Sym sym;
+        ret = fread(&sym, sizeof(Elf32_Sym), 1, fp);
+        assert(ret == 1);
+
+        if (ELF32_ST_TYPE(sym.st_info) != STT_FUNC) continue;
+        if (sym.st_name >= strtab_shdr.sh_size) continue;
+        if (symtab_count >= sizeof(symtabs) / sizeof(symtabs[0])) break;
+
+        symtabs[symtab_count].start_addr = sym.st_value;
+        symtabs[symtab_count].end_addr = sym.st_value + sym.st_size;
+        snprintf(symtabs[symtab_count].name, sizeof(symtabs[symtab_count].name), "%s", str_buffer + sym.st_name);
+        symtab_count++;
+    }
+
+    free(str_buffer);
+    fclose(fp);
+}
+
+static uint32_t entry_main_flag = 0;
+static vaddr_t main_addr;
+
+static void get_main_addr() {
+    for (uint32_t i = 0; i < symtab_count; i++) {
+        if (strcmp(symtabs[i].name, "main") == 0) {
+            main_addr = symtabs[i].start_addr;
+            return;
+        }
+    }
+    Assert(0, "Error, Failed to find symbol 'main'.");
+}
+
+void set_entry_main_flag() {
+    if (entry_main_flag) return;
+
+    if (cpu.pc == main_addr) {
+        entry_main_flag = 1;
+    }
+
+}
+
 
 #endif
+
 
 
 #ifdef CONFIG_ITRACE
@@ -170,6 +326,7 @@ typedef struct _mtrace_entry_t {
 static mtrace_entry_t mringbuf[BUFFER_SIZE];
 static uint32_t mringbuf_index = 0;
 
+#ifdef CONFIG_MTRACE2FILE
 static FILE *mtrace_output_file_fp = NULL;
 static char *mtrace_file = "/home/hjw-arch/ysyx-workbench/MTRACE.bin";
 
@@ -192,6 +349,24 @@ void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
         init_trace_file(&mtrace_output_file_fp, mtrace_file);
     }
 
+    static uint32_t last_main_flag = 0;
+    if (last_main_flag == 0 && entry_main_flag == 1) {
+        last_main_flag = 1;
+        mtrace_record_t magic_main_record = {
+            .addr = (uint64_t)0x4d41494eu,
+            .len  = (uint32_t)0x4d41494eu,
+            .op   = (uint32_t)0x4d41494eu
+        };
+
+        size_t items_written = fwrite(&magic_main_record, sizeof(magic_main_record), 1, mtrace_output_file_fp);
+        if (items_written != 1) {
+            fprintf(stderr, "Serious error: Failed to write to the mtrace file!\n");
+            if (ferror(mtrace_output_file_fp)) {
+                perror("           文件写入错误详情");
+            }
+        }
+    }
+
     // 统一转换为固定宽度类型，消除 RV32/RV64 差异
     mtrace_record_t record = {
         .addr = (uint64_t)addr,
@@ -211,6 +386,8 @@ void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
         mtrace_output_file_fp = NULL; // 避免后续尝试写入
     }
 }
+
+#endif
 
 
 void mtrace_load(vaddr_t addr, uint32_t len, word_t content) {
@@ -255,97 +432,8 @@ void mtrace_display() {
 #endif
 
 
-
 //  ftrace
 #ifdef CONFIG_FTRACE
-#include <elf.h>
-extern char *elf_file;
-
-typedef struct _symtab{
-    char name[64];
-    uint32_t start_addr;
-    uint32_t end_addr;
-}symtab;
-
-static symtab symtabs[1024];
-static uint32_t symtab_count = 0;
-
-void decode_elf() {
-    if (elf_file == NULL) {
-        Log("No elf file is given, ftrace function is not allowed to use.");
-        return;
-    }
-
-    FILE *fp = fopen(elf_file, "rb");
-    Assert(fp, "Can not open '%s'", elf_file);
-
-    rewind(fp);
-
-    Elf32_Ehdr ehdr;
-
-    int ret = fread(&ehdr, sizeof(Elf32_Ehdr), 1, fp);
-    assert(ret == 1);
-
-    if (ehdr.e_ident[EI_MAG0] != ELFMAG0 || ehdr.e_ident[EI_MAG1] != ELFMAG1 || ehdr.e_ident[EI_MAG2] != ELFMAG2 || ehdr.e_ident[EI_MAG3] != ELFMAG3) {
-        Assert(0, "Invalid ELF file.");
-    }
-
-    if (ehdr.e_ident[EI_CLASS] != ELFCLASS32) {
-        Assert(0, "Invalid ELF class, only 'ELF32' is supported now.");
-    }
-
-    if (ehdr.e_ident[ET_NUM] != ET_REL) {
-        Assert(0, "Invalid ELF type, only 'ET_REL' is supported now.");
-    }
-
-    Elf32_Sym sym;
-    Elf32_Shdr shdr;
-    char *str_buffer = NULL;
-
-    fseek(fp, (long)ehdr.e_shoff, SEEK_SET);
-
-    for (int i = 0; i < ehdr.e_shnum; i++) {
-        if (i == ehdr.e_shstrndx) continue;
-        ret = fread(&shdr, sizeof(Elf32_Shdr), 1, fp);
-        assert(ret == 1);
-        if (shdr.sh_type == SHT_STRTAB) {
-            str_buffer = (char *)malloc(shdr.sh_size);
-            if (str_buffer == NULL) {
-                Assert(0, "Malloc failed, can not use 'mtrace' function.\n");
-                return;
-            }
-            fseek(fp, (long)shdr.sh_offset, SEEK_SET);
-            ret = fread(str_buffer, shdr.sh_size, 1, fp);
-            assert(ret == 1);
-            break;
-        }
-    }
-
-    fseek(fp, (long)ehdr.e_shoff, SEEK_SET);
-
-    for (int i = 0; i < ehdr.e_shnum; i++) {
-        if (i == ehdr.e_shstrndx) continue;
-        ret = fread(&shdr, sizeof (Elf32_Shdr), 1, fp);
-        assert(ret == 1);
-        if (shdr.sh_type == SHT_SYMTAB) {
-            fseek(fp, (long)shdr.sh_offset, SEEK_SET);
-            for (int j = 0; j < shdr.sh_size / sizeof (Elf32_Sym); j++) {
-                ret = fread(&sym, sizeof (Elf32_Sym), 1, fp);
-                assert(ret == 1);
-                if(ELF32_ST_TYPE(sym.st_info) == STT_FUNC) {
-                    symtabs[symtab_count].start_addr = sym.st_value;
-                    symtabs[symtab_count].end_addr = sym.st_value + sym.st_size;
-                    strcpy(symtabs[symtab_count].name, (char *)(str_buffer + sym.st_name));
-                    symtab_count++;
-                }
-            }
-            break;
-        }
-    }
-
-    free(str_buffer);
-    fclose(fp);
-}
 
 typedef struct _ftrace{
     uint32_t pc_now;
@@ -879,5 +967,8 @@ void init_sdb()
     init_wp_pool();
 
     /* decode elf file. */
-    IFDEF(CONFIG_FTRACE, decode_elf());
+#if defined(CONFIG_FTRACE) || defined(CONFIG_MTRACE2FILE)
+    decode_elf();
+    IFDEF(CONFIG_MTRACE2FILE, get_main_addr());
+#endif
 }
