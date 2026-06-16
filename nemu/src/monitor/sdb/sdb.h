@@ -30,6 +30,7 @@ void diaplay_wp();
 void itrace_write(vaddr_t addr, uint32_t inst);
 void itrace_display();
 
+void set_entry_main_flag();
 void mtrace_load(vaddr_t addr, uint32_t len, word_t content);
 void mtrace_store(vaddr_t addr, uint32_t len, word_t content);
 void mtrace_display();
