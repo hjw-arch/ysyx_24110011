@@ -1,0 +1,82 @@
+mainmenu "NPC Configuration Menu"
+
+choice
+  prompt "Base ISA"
+  default RVE
+
+config RVE
+  bool "RV32E"
+
+config RVI
+  bool "RV32I"
+endchoice
+
+menu "Simulation Options"
+
+config DEVICE
+  bool "Enable device model"
+  default n
+
+config DIFFTEST
+  bool "Enable difftest"
+  default n
+
+config PERFORMANCE_COUNTER
+  bool "Enable performance counter"
+  default n
+
+config WAVE
+  bool "Enable waveform dump"
+  select VERILATOR_TRACE
+  default n
+
+endmenu
+
+menu "ysyxSoC Options"
+
+config FAST_FLASH
+  bool "Enable fast flash model"
+  default y
+
+endmenu
+
+menu "Trace and Debug Options"
+
+config TRACE
+  bool
+  default y if ITRACE || MTRACE || FTRACE || DTRACE
+
+config ITRACE
+  bool "Enable instruction ring trace"
+  default n
+
+config MTRACE
+  bool "Enable memory trace"
+  default n
+
+config FTRACE
+  bool "Enable function trace"
+  default n
+
+config DTRACE
+  bool "Enable device trace"
+  depends on DEVICE
+  default n
+
+config WATCHPOINT
+  bool "Enable watchpoint"
+  default n
+
+endmenu
+
+menu "Verilator Options"
+
+config VERILATOR_TRACE
+  bool "Build Verilator trace support"
+  default WAVE
+
+endmenu
+
+config PC_RST_OFFSET
+  hex "PC reset offset"
+  default 0x0

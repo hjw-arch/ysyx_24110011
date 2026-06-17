@@ -17,7 +17,7 @@ module registerfile #(
 localparam int REG_NUM   = RV32E ? 16 : 32;
 localparam int REG_IDX_W = RV32E ? 4  : 5;
 
-logic [31:0] register_file [0:REG_NUM-1];
+logic [31:0] register_file [0:REG_NUM-1] /* verilator public_flat_rd */;
 
 wire [REG_IDX_W-1:0] rd_idx  = rd_addr[REG_IDX_W-1:0];
 wire [REG_IDX_W-1:0] rs1_idx = rs1_addr[REG_IDX_W-1:0];

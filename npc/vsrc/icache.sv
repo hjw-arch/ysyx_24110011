@@ -49,7 +49,8 @@ typedef enum logic {
     S_MISS
 } state_t;
 
-state_t state, nstate;
+state_t state /* verilator public_flat_rd */;
+state_t nstate;
 
 
 /*============================================================
@@ -110,8 +111,11 @@ wire can_accept_req = (state == S_IDLE) & ~kill_any;
 /*============================================================
  *  6. 握手信号
  *============================================================*/
-wire req_hit          = req_valid_i & can_accept_req & array_hit & resp_ready_i;
-wire req_miss         = req_valid_i & can_accept_req & ~array_hit;
+wire req_hit /* verilator public_flat_rd */;
+wire req_miss /* verilator public_flat_rd */;
+
+assign req_hit  = req_valid_i & can_accept_req & array_hit & resp_ready_i;
+assign req_miss = req_valid_i & can_accept_req & ~array_hit;
 
 /*============================================================
  *  7. FSM

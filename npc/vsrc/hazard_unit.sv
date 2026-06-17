@@ -35,10 +35,15 @@ wire rs2_hit_ls = id_rs2_used & (id_rs2_addr == ls_rd_addr);
 
 // EX 阶段的 load/CSR 还拿不到真正写回值，必须阻塞。
 // LS 阶段如果还不能在本拍进入 WB，或者是 CSR 指令，也必须阻塞。
-wire rs1_block_ex = rs1_hit_ex & ~ex_can_forward;
-wire rs2_block_ex = rs2_hit_ex & ~ex_can_forward;
-wire rs1_block_ls = ~rs1_hit_ex & rs1_hit_ls & ~ls_can_forward;
-wire rs2_block_ls = ~rs2_hit_ex & rs2_hit_ls & ~ls_can_forward;
+wire rs1_block_ex /* verilator public_flat_rd */;
+wire rs2_block_ex /* verilator public_flat_rd */;
+wire rs1_block_ls /* verilator public_flat_rd */;
+wire rs2_block_ls /* verilator public_flat_rd */;
+
+assign rs1_block_ex = rs1_hit_ex & ~ex_can_forward;
+assign rs2_block_ex = rs2_hit_ex & ~ex_can_forward;
+assign rs1_block_ls = ~rs1_hit_ex & rs1_hit_ls & ~ls_can_forward;
+assign rs2_block_ls = ~rs2_hit_ex & rs2_hit_ls & ~ls_can_forward;
 
 assign hazard_valid = rs1_block_ex | rs2_block_ex | rs1_block_ls | rs2_block_ls;
 

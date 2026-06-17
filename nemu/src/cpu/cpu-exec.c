@@ -53,9 +53,12 @@ static void trace_and_difftest(Decode *_this, vaddr_t dnpc) {
 static void exec_once(Decode *s, vaddr_t pc) {
     s->pc = pc;
     s->snpc = pc;
+#if defined(CONFIG_MTRACE2FILE) || defined(CONFIG_BTRACE)
+    set_entry_main_flag();            // mtrace | btrace 记录 main
+#endif
     isa_exec_once(s);
-    cpu.pc = s->dnpc;
     IFDEF(CONFIG_BTRACE, btrace_record(s->pc, s->snpc, s->dnpc, s->isa.inst.val));
+    cpu.pc = s->dnpc;
 #ifdef CONFIG_ITRACE
     itrace_write(s->pc, s->isa.inst.val);      // itrace
     char *p = s->logbuf;
@@ -82,7 +85,6 @@ static void exec_once(Decode *s, vaddr_t pc) {
     p[0] = '\0'; // the upstream llvm does not support loongarch32r
 #endif
 #endif
-    IFDEF(CONFIG_MTRACE2FILE, set_entry_main_flag());            // mtrace 记录 main
 }
 
 static void execute(uint64_t n) {

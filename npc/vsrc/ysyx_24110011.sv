@@ -105,10 +105,10 @@ localparam bit USE_RV32E = 1'b1;
 
 
 	// IF/ID
-	logic 			if2id_pre_valid;
+	logic 			if2id_pre_valid /* verilator public_flat_rd */;
 	if2id_pkt_t		if2id_pre_data;
 	logic			if2id_pre_ready;
-	logic 			if2id_valid;
+	logic 			if2id_valid /* verilator public_flat_rd */;
 	if2id_pkt_t		if2id_data;
 	logic 			if2id_ready;
 
@@ -116,7 +116,7 @@ localparam bit USE_RV32E = 1'b1;
 	logic 			id2ex_pre_valid;
 	id2ex_pkt_t		id2ex_pre_data;
 	logic			id2ex_pre_ready;
-	logic			id2ex_valid;
+	logic			id2ex_valid /* verilator public_flat_rd */;
 	id2ex_pkt_t		id2ex_data;
 	logic			id2ex_ready;
 
@@ -124,16 +124,16 @@ localparam bit USE_RV32E = 1'b1;
 	logic			ex2ls_pre_valid;
 	ex2ls_pkt_t		ex2ls_pre_data;
 	logic			ex2ls_pre_ready;
-	logic			ex2ls_valid;
-	ex2ls_pkt_t		ex2ls_data;
+	logic			ex2ls_valid /* verilator public_flat_rd */;
+	ex2ls_pkt_t		ex2ls_data /* verilator public_flat_rd */;
 	logic			ex2ls_ready;
 
 	// LS/WB
 	logic			ls2wb_pre_valid;
 	ls2wb_pkt_t		ls2wb_pre_data;
 	logic			ls2wb_pre_ready;
-	logic			ls2wb_valid;
-	ls2wb_pkt_t		ls2wb_data;
+	logic			ls2wb_valid /* verilator public_flat_rd */;
+	ls2wb_pkt_t		ls2wb_data /* verilator public_flat_rd */;
 	logic			ls2wb_ready;
 	logic [31:0]	rf_wdata;
 
@@ -147,10 +147,10 @@ localparam bit USE_RV32E = 1'b1;
 	// redirect/flush
 	logic 			pipeline_flush;
 	logic [31:0]	redirect_pc;
-	logic			lsu_redirect_valid;
-	logic [31:0]	lsu_redirect_pc;
-	logic			wbu_redirect_valid;
-	logic [31:0]	wbu_redirect_pc;
+	logic			lsu_redirect_valid /* verilator public_flat_rd */;
+	logic [31:0]	lsu_redirect_pc /* verilator public_flat_rd */;
+	logic			wbu_redirect_valid /* verilator public_flat_rd */;
+	logic [31:0]	wbu_redirect_pc /* verilator public_flat_rd */;
 	logic			icache_inval;
 
 	assign pipeline_flush = wbu_redirect_valid | lsu_redirect_valid;
@@ -163,13 +163,13 @@ logic [4:0]		id_rs2_addr;
 	logic			id_rs2_used;
 	logic [4:0]		ex_rd_addr;
 logic [4:0]		ls_rd_addr;
-logic			ex_is_load;
-logic			ex_is_csr;
-logic			ls_is_csr;
+logic			ex_is_load /* verilator public_flat_rd */;
+logic			ex_is_csr /* verilator public_flat_rd */;
+logic			ls_is_csr /* verilator public_flat_rd */;
 logic			ls_can_wb;
 fwd_sel_t		fwd_rs1_sel;
 fwd_sel_t		fwd_rs2_sel;
-logic			hazard_valid;
+logic			hazard_valid /* verilator public_flat_rd */;
 
 
 IFU u_IFU(

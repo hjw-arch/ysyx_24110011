@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <getopt.h>
+#include <stdlib.h>
 
 #ifdef SOC
 
@@ -112,11 +113,48 @@ void nvboard_bind_all_pins(VysyxSoCFull* dut);
 
 #endif
 
-#ifdef WAVE
+#ifdef CONFIG_WAVE
 
 #include "verilated_vcd_c.h"
 
-VerilatedVcdC tfp = VerilatedVcdC();
+static VerilatedVcdC tfp;
+
+static bool wave_dump_enabled() {
+#ifdef SOC
+    return cpu.pc >= 0xa0000000u;
+#else
+    return true;
+#endif
+}
+
+static void init_wave() {
+    const char *wave_file = getenv("NPC_WAVE");
+
+    if (wave_file == NULL || wave_file[0] == '\0') {
+        wave_file = "waveform.vcd";
+    }
+
+    Verilated::traceEverOn(true);
+    dut.trace(&tfp, 99);
+    tfp.open(wave_file);
+}
+
+void wave_dump() {
+    if (!wave_dump_enabled()) {
+        return;
+    }
+
+    Verilated::timeInc(1);
+    tfp.dump(Verilated::time());
+}
+
+static void close_wave() {
+    tfp.close();
+}
+
+#else
+
+void wave_dump() {}
 
 #endif
 
@@ -129,35 +167,23 @@ int main(int argc, char *argv[]) {
 
 #endif
 
-#ifdef WAVE
-
-    Verilated::traceEverOn(true); // 激活追踪
-    dut.trace(&tfp, 99);         // 将追踪对象与模块关联, 99 是追踪深度
-    tfp.open("waveform.vcd");   // 打开 VCD 文件
-
-#endif
-
     parse_args(argc, argv);
     init_disasm("riscv32" "-pc-linux-gnu");
     img_size = load_img();
     init_sdb();
+    IFDEF(CONFIG_WAVE, init_wave());
     cpu_rst;
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));
     IFDEF(CONFIG_DEVICE, init_device());
     if (batch_mode_flag) {
         cpu_exec(-1);
+        IFDEF(CONFIG_WAVE, close_wave());
         return 0;
     }
     welcome();
     sdb_cli_loop();
 
-#ifdef WAVE
-
-	tfp.close();
-
-#endif
+    IFDEF(CONFIG_WAVE, close_wave());
     exit(0);
 }
-
-
