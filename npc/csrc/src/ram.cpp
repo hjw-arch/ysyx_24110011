@@ -81,7 +81,7 @@ int pmem_read(int addr, int len) {
                 return 0;
         }
 
-        IFDEF(CONFIG_MTRACE, mtrace_read(dut.rootp->ysyx__DOT__pc, len == 0 ? 1 : (len == 1 ? 2 : 4), ret, 0));
+        IFDEF(CONFIG_MTRACE, mtrace_read(addr, len == 0 ? 1 : (len == 1 ? 2 : 4), ret, 0));
 
         return ret;
     } else {

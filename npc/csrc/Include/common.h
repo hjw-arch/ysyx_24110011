@@ -6,18 +6,18 @@
 #include <stdint.h>
 
 #define		RF_NUM			MUXDEF(CONFIG_RVE, 16, 32)
-#define     CPU_RESET_VECTOR   (MUXDEF(SOC, 0x30000000u, 0x80000000u) + PC_RST_OFFSET)
+#define     CPU_RESET_VECTOR   (MUXDEF(SOC, 0x30000000u, 0x80000000u) + CONFIG_PC_RST_OFFSET)
+
+void wave_dump();
 
 #define cycle  \
 do { \
     dut.clock = 0;    \
     dut.eval();     \
-	if (cpu.pc >= 0xa0000000) {IFDEF(WAVE, Verilated::timeInc(1));		\
-	IFDEF(WAVE, tfp.dump(Verilated::time()));}	\
+	IFDEF(CONFIG_WAVE, wave_dump()); \
     dut.clock = 1;    \
     dut.eval();     \
-	if (cpu.pc >= 0xa0000000) {IFDEF(WAVE, Verilated::timeInc(1));		\
-	IFDEF(WAVE, tfp.dump(Verilated::time()));}	\
+	IFDEF(CONFIG_WAVE, wave_dump()); \
 } while(0) \
 
 

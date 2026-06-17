@@ -73,19 +73,24 @@ import pipeline_pkt_pkg::*;
 	logic [31:0] axi_rdata;
 	logic        axi_done;
 
-	wire input_is_load   = data_i.mem.cmd == MEM_LOAD;
-	wire input_is_store  = data_i.mem.cmd == MEM_STORE;
+	wire input_is_load /* verilator public_flat_rd */;
+	wire input_is_store /* verilator public_flat_rd */;
 	wire input_is_mem    = input_is_load | input_is_store;
 	wire input_mem_valid = valid_i & input_is_mem;
 
 	wire state_idle      = state == S_IDLE;
-	wire state_wait_resp = state == S_WAIT_RESP;
+	wire state_wait_resp /* verilator public_flat_rd */;
 
 	// AXI 请求一旦发出就不可取消，因此 kill_i 只用于在请求发出前杀掉错误路径访存。
 	wire killed_before_issue = kill_i & state_idle;
-	wire mem_req_fire        = state_idle & input_mem_valid & ~killed_before_issue;
+	wire mem_req_fire /* verilator public_flat_rd */;
 	wire mem_resp_fire       = state_wait_resp & axi_done;
 	wire non_mem_pass        = state_idle & valid_i & ~input_is_mem & ~killed_before_issue;
+
+	assign input_is_load   = data_i.mem.cmd == MEM_LOAD;
+	assign input_is_store  = data_i.mem.cmd == MEM_STORE;
+	assign state_wait_resp = state == S_WAIT_RESP;
+	assign mem_req_fire    = state_idle & input_mem_valid & ~killed_before_issue;
 
 	// 当前 WBU 固定 ready，LSU 不处理下游反压。
 	// 非访存指令在空闲时直接透传；访存指令发出请求后反压 EX/LS，
@@ -108,9 +113,11 @@ import pipeline_pkt_pkg::*;
 		state <= rst ? S_IDLE : nstate;
 	end
 
-	wire [31:0] lsu_addr  = data_i.result;
+	wire [31:0] lsu_addr /* verilator public_flat_rd */;
 	wire [31:0] lsu_wdata = data_i.store_data;
 	wire [2:0]  lsu_type  = data_i.meta.inst[14:12];
+
+	assign lsu_addr = data_i.result;
 
 	always_comb begin
 		unique case (load_type_e'(lsu_type))
@@ -136,7 +143,9 @@ import pipeline_pkt_pkg::*;
 	// LSU 只负责普通控制流重定向；fence.i/ecall/mret 统一在 WBU 提交点处理。
 	wire        out_redirect_valid = data_i.redirect.valid;
 	wire [31:0] out_redirect_addr  = data_i.redirect.addr;
-	wire        output_fire        = valid_o;
+	wire        output_fire /* verilator public_flat_rd */;
+
+	assign output_fire = valid_o;
 
 	assign redirect_valid_o = output_fire & out_redirect_valid;
 	assign redirect_pc_o    = out_redirect_addr;

@@ -20,9 +20,9 @@ import pipeline_pkt_pkg::*;
     input	[31:0] 	        RDATA,
     input	[1:0] 	        RRESP,
 
-	input 			        icache_inval_i,        // icache 内容失效
+	input 			        icache_inval_i /* verilator public_flat_rd */, // icache 内容失效
 	input	[31:0] 	        redirect_pc_i,          // 重定向后的 PC
-	input			        redirect_valid_i,       // 确认推测错误，需要刷新流水线
+	input			        redirect_valid_i /* verilator public_flat_rd */, // 确认推测错误，需要刷新流水线
 
     output 			        valid_o,
     output	if2id_pkt_t     data_o,
@@ -39,15 +39,15 @@ localparam  RST_PC   =   32'h80000000;
 // 内部信号 —— IFU ↔ ICache
 // ==========================================
 
-logic				ic_req_valid;
+logic				ic_req_valid /* verilator public_flat_rd */;
 logic	[31:0]		ic_req_addr;
-logic				ic_req_ready;
+logic				ic_req_ready /* verilator public_flat_rd */;
 
-logic				ic_resp_valid;
+logic				ic_resp_valid /* verilator public_flat_rd */;
 logic	[31:0]		ic_resp_data;
 logic	[31:0]		ic_resp_addr;/* verilator lint_off UNUSEDSIGNAL */
 logic               ic_resp_err;
-logic				ic_resp_ready;
+logic				ic_resp_ready /* verilator public_flat_rd */;
 
 
 
@@ -56,7 +56,8 @@ logic				ic_resp_ready;
 // ==========================================
 wire	ic_req_fire	= ic_req_valid & ic_req_ready;
 
-logic   [31:0]  pc_r, pc_n;
+logic   [31:0]  pc_r /* verilator public_flat_rd */;
+logic   [31:0]  pc_n;
 
 assign pc_n	=	redirect_valid_i ? redirect_pc_i :   // 这里当前设置为重定向当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
 				ic_req_fire ? pc_r + 4 :

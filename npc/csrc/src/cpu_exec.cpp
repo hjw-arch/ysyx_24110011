@@ -16,14 +16,6 @@
 
 #endif
 
-#ifdef WAVE
-
-#include "verilated_vcd_c.h"
-extern VerilatedVcdC tfp;
-
-#endif
-
-
 #define ebreak      0x00100073
 
 #define min_num_to_disasm   10
@@ -93,10 +85,6 @@ static uint32_t get_lsu_pc() {
 	return get_wide_bits(CORE_SIG(ex2ls_data).data(), 168, 137);
 }
 
-static uint32_t get_lsu_inst() {
-	return get_wide_bits(CORE_SIG(ex2ls_data).data(), 136, 105);
-}
-
 static uint32_t get_wbu_pc() {
 	return get_wide_bits(CORE_SIG(ls2wb_data).data(), 101, 70);
 }
@@ -114,37 +102,18 @@ static void record_lsu_redirect() {
 		pending_redirect.pc = get_lsu_pc();
 		pending_redirect.target = CORE_SIG(lsu_redirect_pc);
 		pending_redirect.valid = true;
-#ifdef PERFORMANCE_COUNTER
-		pmc_lsu_redirect_sample_t sample = {};
-		sample.pc = pending_redirect.pc;
-		sample.target = pending_redirect.target;
-		sample.inst = get_lsu_inst();
-		sample.kill_if = CORE_SIG(if2id_pre_valid);
-		sample.kill_id = CORE_SIG(if2id_valid);
-		sample.kill_ex = CORE_SIG(id2ex_valid);
-		PerformanceCounter_record_lsu_redirect(&sample);
-#endif
+		IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_lsu_redirect());
 	}
 }
 
 static void record_wbu_redirect() {
 	if (CORE_SIG(wbu_redirect_valid)) {
-#ifdef PERFORMANCE_COUNTER
-		pmc_wbu_redirect_sample_t sample = {};
-		sample.pc = get_wbu_pc();
-		sample.target = CORE_SIG(wbu_redirect_pc);
-		sample.inst = get_wbu_inst();
-		sample.kill_if = CORE_SIG(if2id_pre_valid);
-		sample.kill_id = CORE_SIG(if2id_valid);
-		sample.kill_ex = CORE_SIG(id2ex_valid);
-		sample.kill_ls = CORE_SIG(ex2ls_valid);
-		PerformanceCounter_record_wbu_redirect(&sample);
-#endif
+		IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_wbu_redirect());
 	}
 }
 
 static void record_lsu_difftest_skip() {
-#ifdef SOC
+#if defined(SOC) && defined(CONFIG_DIFFTEST)
 	bool mem_output_fire = CORE_SIG(u_LSU__DOT__output_fire) &
 		(CORE_SIG(u_LSU__DOT__input_is_load) | CORE_SIG(u_LSU__DOT__input_is_store));
 
@@ -183,48 +152,8 @@ static bool take_difftest_skip(uint32_t pc) {
 	return skip;
 }
 
-static void record_performance_cycle() {
-#ifdef PERFORMANCE_COUNTER
-	pmc_cycle_sample_t sample = {};
-	sample.pc = CORE_SIG(u_IFU__DOT__pc_r);
-	sample.wbu_valid = CORE_SIG(ls2wb_valid);
-	sample.wbu_pc = get_wbu_pc();
-	sample.host_trap_commit = sample.wbu_valid && get_wbu_inst() == ebreak;
-
-	sample.ifu_req_valid = CORE_SIG(u_IFU__DOT__ic_req_valid);
-	sample.ifu_req_ready = CORE_SIG(u_IFU__DOT__ic_req_ready);
-	sample.ifu_resp_valid = CORE_SIG(u_IFU__DOT__ic_resp_valid);
-	sample.ifu_resp_ready = CORE_SIG(u_IFU__DOT__ic_resp_ready);
-	sample.ifu_flush = CORE_SIG(u_IFU__DOT__redirect_valid_i);
-
-	sample.icache_req_hit = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_hit);
-	sample.icache_req_miss = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_miss);
-	sample.icache_miss_busy = CORE_SIG(u_IFU__DOT__u_icache__DOT__state);
-	sample.icache_drop_refill =
-		CORE_SIG(u_IFU__DOT__u_icache__DOT__refill_resp_fire) &
-		CORE_SIG(u_IFU__DOT__u_icache__DOT__drop_refill);
-	sample.icache_invalidate = CORE_SIG(u_IFU__DOT__icache_inval_i);
-
-	sample.lsu_mem_req_fire = CORE_SIG(u_LSU__DOT__mem_req_fire);
-	sample.lsu_input_is_load = CORE_SIG(u_LSU__DOT__input_is_load);
-	sample.lsu_input_is_store = CORE_SIG(u_LSU__DOT__input_is_store);
-	sample.lsu_wait_resp = CORE_SIG(u_LSU__DOT__state_wait_resp);
-
-	sample.hazard_valid = CORE_SIG(hazard_valid);
-	sample.rs1_block_ex = CORE_SIG(u_hazard_unit__DOT__rs1_block_ex);
-	sample.rs2_block_ex = CORE_SIG(u_hazard_unit__DOT__rs2_block_ex);
-	sample.rs1_block_ls = CORE_SIG(u_hazard_unit__DOT__rs1_block_ls);
-	sample.rs2_block_ls = CORE_SIG(u_hazard_unit__DOT__rs2_block_ls);
-	sample.ex_is_load = CORE_SIG(ex_is_load);
-	sample.ex_is_csr = CORE_SIG(ex_is_csr);
-	sample.ls_is_csr = CORE_SIG(ls_is_csr);
-
-	PerformanceCounter_record_cycle(&sample);
-#endif
-}
-
 static void exec_one_cycle() {
-	record_performance_cycle();
+	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_cycle());
 	cycle;
 	cycle_times++;
 }
@@ -235,8 +164,8 @@ void halt() {
 	Log("Get 'ebreak' instruction, program over.");
 	
     printf(ANSI_FG_CYAN "\n\nTotal cycle times = %lu, Total dynamic_insts = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
-	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_display());
-	IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_export_json());
+	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_display());
+	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_export_json());
     if (cpu.registerFile[10] != 0) {
         printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
         return;
@@ -275,7 +204,7 @@ void cpu_exec_one() {
 			current_inst = commit_info.inst;
 			current_pc = commit_info.pc;
 			dynamic_insts++;
-			IFDEF(PERFORMANCE_COUNTER, PerformanceCounter_record_commit(current_pc, current_inst, retire_cycles));
+			IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_commit(current_pc, current_inst, retire_cycles));
 			if (current_inst == ebreak) {
 				halt();
 			}
