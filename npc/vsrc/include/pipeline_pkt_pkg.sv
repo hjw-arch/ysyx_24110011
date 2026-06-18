@@ -103,23 +103,6 @@ localparam br_cond_t BR_GE = 2'b11;
 
 
 //============================================================
-// Forwarding select
-//============================================================
-//
-// ID 阶段产生前递选择，EX 阶段只保留一个很薄的数据 mux。
-// 选择值表示“本条指令到达 EX 阶段时”应该从哪里取操作数：
-//   RF: ID/EX 寄存器中已经带过来的寄存器堆读数
-//   LS: 当前 EX 阶段生产者下一拍会位于 LS，使用 EX/LS packet 的 result
-//   WB: 当前 LS 阶段生产者下一拍会位于 WB，使用 LS/WB packet 的 result
-// 编码保持 one-hot：bit0=LS，bit1=WB，00=RF。
-typedef logic [1:0] fwd_sel_t;
-
-localparam fwd_sel_t FWD_SEL_RF = 2'b00;
-localparam fwd_sel_t FWD_SEL_LS = 2'b01;
-localparam fwd_sel_t FWD_SEL_WB = 2'b10;
-
-
-//============================================================
 // Memory control
 //============================================================
 //
@@ -158,8 +141,6 @@ localparam priv_redir_t PRIV_REDIR_MRET  = 2'b10;
 typedef struct packed {
     logic       rs1_used;
     logic       rs2_used;
-    fwd_sel_t   fwd_rs1_sel;
-    fwd_sel_t   fwd_rs2_sel;
     alu_op_t    alu_op;
     alu_src_t   alu_src;
     cfi_type_t  cfi_type;

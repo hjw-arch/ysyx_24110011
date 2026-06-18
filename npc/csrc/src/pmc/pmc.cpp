@@ -84,7 +84,11 @@ typedef struct {
 
     uint64_t raw_stall_cycles;
     uint64_t load_use_stall_cycles;
+    uint64_t load_use_unready_stall_cycles;
     uint64_t csr_use_stall_cycles;
+    uint64_t raw_after_forwarding_cycles;
+    uint64_t forwardable_raw_cycles;
+    uint64_t forwardable_raw_effective_cycles;
     uint64_t other_raw_stall_cycles;
 
     uint64_t cpi_stack[PMC_STACK_NR];
@@ -111,7 +115,10 @@ typedef struct {
 
     bool raw_stall;
     bool load_use_stall;
+    bool load_use_unready_stall;
     bool csr_use_stall;
+    bool raw_after_forwarding_stall;
+    bool forwardable_raw_stall;
     bool other_raw_stall;
     bool count_younger_side;
 } pmc_cycle_sample_t;
@@ -233,6 +240,10 @@ static uint64_t lsu_busy_cycles() {
     return pmc.load_wait_cycles + pmc.store_wait_cycles;
 }
 
+static uint64_t subtract_u64(uint64_t lhs, uint64_t rhs) {
+    return lhs > rhs ? lhs - rhs : 0;
+}
+
 static pmc_stack_t choose_stack(bool lsu_busy, bool icache_wait,
                                 bool recovery_active, bool raw_stall) {
     if (lsu_busy) return PMC_STACK_LSU;
@@ -263,6 +274,7 @@ static pmc_cycle_sample_t sample_cycle() {
     bool rs2_block_ls = CORE_SIG(u_hazard_unit__DOT__rs2_block_ls);
     bool ex_wait = rs1_block_ex || rs2_block_ex;
     bool ls_wait = rs1_block_ls || rs2_block_ls;
+    bool ls_can_wb = CORE_SIG(ls_can_wb);
     bool ls_is_load = CORE_SIG(ex2ls_valid) &&
                       get_wide_bits(CORE_SIG(ex2ls_data).data(),
                                     EX2LS_MEM_CMD_HI, EX2LS_MEM_CMD_LO) == MEM_CMD_LOAD;
@@ -288,8 +300,16 @@ static pmc_cycle_sample_t sample_cycle() {
     sample.raw_stall = CORE_SIG(hazard_valid);
     sample.load_use_stall = (ex_wait && CORE_SIG(ex_is_load)) ||
                              (ls_wait && ls_is_load);
+    sample.load_use_unready_stall = (ex_wait && CORE_SIG(ex_is_load)) ||
+                                     (ls_wait && ls_is_load && !ls_can_wb);
     sample.csr_use_stall = (ex_wait && CORE_SIG(ex_is_csr)) ||
                             (ls_wait && CORE_SIG(ls_is_csr));
+    sample.raw_after_forwarding_stall =
+        sample.raw_stall &&
+        ((ex_wait && (CORE_SIG(ex_is_load) || CORE_SIG(ex_is_csr))) ||
+         (ls_wait && (!ls_can_wb || CORE_SIG(ls_is_csr))));
+    sample.forwardable_raw_stall = sample.raw_stall &&
+                                   !sample.raw_after_forwarding_stall;
     sample.other_raw_stall = sample.raw_stall &&
                               !sample.load_use_stall &&
                               !sample.csr_use_stall;
@@ -380,14 +400,36 @@ void PerformanceCounter_record_cycle() {
         if (sample.store_busy) pmc.store_wait_cycles++;
     }
 
-    if (sample.raw_stall) pmc.raw_stall_cycles++;
-    if (sample.load_use_stall) pmc.load_use_stall_cycles++;
-    if (sample.csr_use_stall) pmc.csr_use_stall_cycles++;
-    if (sample.other_raw_stall) pmc.other_raw_stall_cycles++;
+    if (sample.raw_stall) {
+        pmc.raw_stall_cycles++;
+    }
+    if (sample.load_use_stall) {
+        pmc.load_use_stall_cycles++;
+    }
+    if (sample.load_use_unready_stall) {
+        pmc.load_use_unready_stall_cycles++;
+    }
+    if (sample.csr_use_stall) {
+        pmc.csr_use_stall_cycles++;
+    }
+    if (sample.raw_after_forwarding_stall) {
+        pmc.raw_after_forwarding_cycles++;
+    }
+    if (sample.forwardable_raw_stall) {
+        pmc.forwardable_raw_cycles++;
+    }
+    if (sample.other_raw_stall) {
+        pmc.other_raw_stall_cycles++;
+    }
 
     if (empty_retire) {
-        pmc.cpi_stack[choose_stack(sample.load_busy || sample.store_busy, sample.icache_wait,
-                                   recovery.active, sample.raw_stall)]++;
+        pmc_stack_t stack = choose_stack(sample.load_busy || sample.store_busy,
+                                         sample.icache_wait, recovery.active,
+                                         sample.raw_stall);
+        pmc.cpi_stack[stack]++;
+        if (stack == PMC_STACK_RAW && sample.forwardable_raw_stall) {
+            pmc.forwardable_raw_effective_cycles++;
+        }
     }
 
     record_recovery_cycle(&sample);
@@ -437,7 +479,7 @@ void PerformanceCounter_export_json() {
 
     llvm::json::OStream json(os, 2);
     json.object([&] {
-        json.attribute("schema", "npc-pmc-v5");
+        json.attribute("schema", "npc-pmc-v6");
 #ifdef SOC
         json.attribute("target", "soc");
 #else
@@ -489,8 +531,22 @@ void PerformanceCounter_export_json() {
         json.attributeObject("stall", [&] {
             json_count(json, "raw", pmc.raw_stall_cycles);
             json_count(json, "load_use", pmc.load_use_stall_cycles);
+            json_count(json, "load_use_unready", pmc.load_use_unready_stall_cycles);
             json_count(json, "csr_use", pmc.csr_use_stall_cycles);
+            json_count(json, "raw_after_forwarding", pmc.raw_after_forwarding_cycles);
+            json_count(json, "forwardable_raw", pmc.forwardable_raw_cycles);
+            json_count(json, "forwardable_raw_effective", pmc.forwardable_raw_effective_cycles);
             json_count(json, "other_raw", pmc.other_raw_stall_cycles);
+        });
+
+        json.attributeObject("forwarding_estimate", [&] {
+            uint64_t estimated_cycles = subtract_u64(pmc.cycles, pmc.forwardable_raw_effective_cycles);
+            json_count(json, "saved_cycles", pmc.forwardable_raw_effective_cycles);
+            json_count(json, "estimated_cycles", estimated_cycles);
+            json.attribute("estimated_cpi", pmc.retired == 0 ? 0.0 :
+                           (double)estimated_cycles / (double)pmc.retired);
+            json.attribute("estimated_ipc", estimated_cycles == 0 ? 0.0 :
+                           (double)pmc.retired / (double)estimated_cycles);
         });
 
         json.attributeObject("cpi_stack", [&] {
@@ -558,8 +614,19 @@ void PerformanceCounter_display() {
     printf("\n  RAW Stalls\n");
     print_u64("RAW stall cycles:", pmc.raw_stall_cycles);
     print_u64("Load-use stall cycles:", pmc.load_use_stall_cycles);
+    print_u64("Load-use unready cycles:", pmc.load_use_unready_stall_cycles);
     print_u64("CSR-use stall cycles:", pmc.csr_use_stall_cycles);
+    print_u64("RAW after forwarding:", pmc.raw_after_forwarding_cycles);
+    print_u64("Forwardable RAW cycles:", pmc.forwardable_raw_cycles);
+    print_u64("Effective fwd RAW cycles:", pmc.forwardable_raw_effective_cycles);
     print_u64("Other RAW stall cycles:", pmc.other_raw_stall_cycles);
+
+    printf("\n  Forwarding Estimate\n");
+    uint64_t estimated_cycles = subtract_u64(pmc.cycles, pmc.forwardable_raw_effective_cycles);
+    print_u64("Saved cycles:", pmc.forwardable_raw_effective_cycles);
+    print_u64("Estimated cycles:", estimated_cycles);
+    print_avg("Estimated CPI:", estimated_cycles, pmc.retired);
+    print_avg("Estimated IPC:", pmc.retired, estimated_cycles);
 
     printf("\n  CPI Stack (empty cycles)\n");
     for (int i = 0; i < PMC_STACK_NR; i++) {
