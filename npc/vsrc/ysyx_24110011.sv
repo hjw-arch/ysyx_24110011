@@ -156,7 +156,7 @@ localparam bit USE_RV32E = 1'b1;
 	assign pipeline_flush = wbu_redirect_valid | lsu_redirect_valid;
 	assign redirect_pc    = wbu_redirect_valid ? wbu_redirect_pc : lsu_redirect_pc;
 
-// RAW hazard detection
+// forward
 logic [4:0]		id_rs1_addr;
 logic [4:0]		id_rs2_addr;
 	logic			id_rs1_used;
@@ -166,7 +166,9 @@ logic [4:0]		ls_rd_addr;
 logic			ex_is_load /* verilator public_flat_rd */;
 logic			ex_is_csr /* verilator public_flat_rd */;
 logic			ls_is_csr /* verilator public_flat_rd */;
-logic			ls_can_wb /* verilator public_flat_rd */;
+logic			ls_can_wb;
+fwd_sel_t		fwd_rs1_sel;
+fwd_sel_t		fwd_rs2_sel;
 logic			hazard_valid /* verilator public_flat_rd */;
 
 
@@ -222,6 +224,8 @@ IDU u_IDU(
 		.id_rs2_addr(id_rs2_addr   ),
 		.id_rs1_used(id_rs1_used   ),
 		.id_rs2_used(id_rs2_used   ),
+		.fwd_rs1_sel_i(fwd_rs1_sel ),
+		.fwd_rs2_sel_i(fwd_rs2_sel ),
 		.hazard_i 	(hazard_valid  ),
 		.valid_i  	(if2id_valid   ),
 		.data_i   	(if2id_data    ),
@@ -252,6 +256,8 @@ u_id2ex_pip(
 		.clk     	(clock	 ),
 		.rst     	(reset	 ),
 		.rd_addr_o  (ex_rd_addr      ),
+		.fwd_ls_data_i(ex2ls_data.result),
+		.fwd_wb_data_i(ls2wb_data.result),
 		.valid_i 	(id2ex_valid	),
 		.data_i  	(id2ex_data 	),
 		.ready_o 	(id2ex_ready	),
@@ -361,7 +367,7 @@ WBU #(
 	assign ex_is_load	=	id2ex_valid & (id2ex_data.mem.cmd == MEM_LOAD);
 	assign ex_is_csr	=	id2ex_valid & (id2ex_data.sys.csr_cmd != CSR_CMD_NONE);
 	assign ls_is_csr	=	ex2ls_valid & (ex2ls_data.sys.csr_cmd != CSR_CMD_NONE);
-	// 仅给性能计数器观察：原前递设计中，LS 结果本拍可进入 WB 时可作为 WB 前递源。
+	// WBU 固定 ready，LSU valid 即表示 LS 结果本拍可进入 WB/作为转发源。
 	assign ls_can_wb	=	ls2wb_pre_valid;
 
 hazard_unit u_hazard_unit(
@@ -370,7 +376,13 @@ hazard_unit u_hazard_unit(
 	.id_rs1_used  	(id_rs1_used   ),
 	.id_rs2_used  	(id_rs2_used   ),
 	.ex_rd_addr   	(ex_rd_addr    ),
+	.ex_is_load   	(ex_is_load    ),
+	.ex_is_csr    	(ex_is_csr     ),
 	.ls_rd_addr   	(ls_rd_addr    ),
+	.ls_is_csr    	(ls_is_csr     ),
+	.ls_can_wb    	(ls_can_wb     ),
+	.fwd_rs1_sel  	(fwd_rs1_sel   ),
+	.fwd_rs2_sel  	(fwd_rs2_sel   ),
 	.hazard_valid 	(hazard_valid  )
 );
 

@@ -7,6 +7,8 @@ import pipeline_pkt_pkg::*;
     input               rst,
 
     output  [4:0]       rd_addr_o,
+    input   [31:0]      fwd_ls_data_i,
+    input   [31:0]      fwd_wb_data_i,
 
     input               valid_i,
     input   id2ex_pkt_t data_i,
@@ -28,10 +30,20 @@ wire [4:0] rd_addr = inst[11:7];
 assign valid_o = valid_i;
 assign ready_o = ready_i;
 
-// 无前递实验基线：EX 阶段只使用 ID/EX 寄存器里保存的寄存器堆读数。
-// RAW 冒险全部由 hazard_unit 阻塞到 WB 阶段，再由寄存器堆同拍写读 bypass 解决。
-wire [31:0] rs1_data = rs1_raw;
-wire [31:0] rs2_data = rs2_raw;
+// 前递选择已经在 ID 阶段算好，EX 阶段只做一个小 mux。
+// LS 数据来自当前 EX/LS packet 的 result；WB 数据来自 LS/WB packet 的 result。
+// CSR 写回旧 CSR 值不走 EX 前递，相关性由 hazard 阻塞到 WB 后交给寄存器堆 bypass。
+// fwd_sel 是 one-hot 编码：bit0 选 LS，bit1 选 WB，00 表示使用 RF 原值。
+// 写成 AND/OR 结构，避免综合器按优先级 mux 处理，前递选择位到数据输出的逻辑更薄。
+wire rs1_fwd_rf = ~(|data_i.ex.fwd_rs1_sel);
+wire rs2_fwd_rf = ~(|data_i.ex.fwd_rs2_sel);
+
+wire [31:0] rs1_data = ({32{data_i.ex.fwd_rs1_sel[0]}} & fwd_ls_data_i) |
+                       ({32{data_i.ex.fwd_rs1_sel[1]}} & fwd_wb_data_i) |
+                       ({32{rs1_fwd_rf}}                 & rs1_raw);
+wire [31:0] rs2_data = ({32{data_i.ex.fwd_rs2_sel[0]}} & fwd_ls_data_i) |
+                       ({32{data_i.ex.fwd_rs2_sel[1]}} & fwd_wb_data_i) |
+                       ({32{rs2_fwd_rf}}                 & rs2_raw);
 
 // ALU 输入选择：
 //   00: rs1, rs2

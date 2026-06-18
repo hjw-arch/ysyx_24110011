@@ -11,6 +11,8 @@ import pipeline_pkt_pkg::*;
 	output	[4:0]			id_rs2_addr,
 	output					id_rs1_used,
 	output					id_rs2_used,
+	input	fwd_sel_t		fwd_rs1_sel_i,
+	input	fwd_sel_t		fwd_rs2_sel_i,
 	input 					hazard_i,
 
     input					valid_i,
@@ -103,7 +105,7 @@ imm_gen u_imm_gen (
     .imm_o     (imm)
 );
 
-// 这里是 RAW hazard 用的语义依赖，而不是简单判断 rs 字段是否存在。
+// 这里是 hazard/forwarding 用的语义依赖，而不是简单判断 rs 字段是否存在。
 // CSR 立即数形式使用 zimm，不读取 rs1。
 wire rs1_used = (is_jalr | is_branch | is_load | is_store | is_cal_i | is_cal_r | is_csr_reg) & |rs1_addr_raw;
 wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
@@ -114,7 +116,7 @@ wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_ca
 assign rf_rs1_addr_o = rs1_addr_raw;
 assign rf_rs2_addr_o = rs2_addr_raw;
 
-// hazard 比较使用原始 rs 地址；used 在最后一级门控。
+// hazard/forwarding 比较使用原始 rs 地址；used 在最后一级门控。
 // 这样地址比较器不需要等待 used 解码结果，ID 阶段阻塞路径更短。
 assign id_rs1_addr = rs1_addr_raw;
 assign id_rs2_addr = rs2_addr_raw;
@@ -126,6 +128,8 @@ assign data_o.meta.inst = inst;
 
 assign data_o.ex.rs1_used = rs1_used;
 assign data_o.ex.rs2_used = rs2_used;
+assign data_o.ex.fwd_rs1_sel = fwd_rs1_sel_i;
+assign data_o.ex.fwd_rs2_sel = fwd_rs2_sel_i;
 
 // ALU 操作按 bit 直接生成，避免写成优先级 mux 链。
 //   - LUI 使用 ALU_COPY2，即 ALU default data2 路径
