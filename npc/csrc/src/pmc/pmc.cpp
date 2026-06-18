@@ -26,6 +26,12 @@ extern Vysyx dut;
 #endif
 
 #define EBREAK_INST 0x00100073u
+#define MEM_CMD_LOAD 0x1u
+
+enum ex2ls_pkt_bit_t {
+    EX2LS_MEM_CMD_LO = 103,
+    EX2LS_MEM_CMD_HI = 104,
+};
 
 enum pmc_inst_t {
     PMC_INST_CAL = 0,
@@ -79,6 +85,7 @@ typedef struct {
     uint64_t raw_stall_cycles;
     uint64_t load_use_stall_cycles;
     uint64_t csr_use_stall_cycles;
+    uint64_t other_raw_stall_cycles;
 
     uint64_t cpi_stack[PMC_STACK_NR];
 } pmc_counter_t;
@@ -105,6 +112,7 @@ typedef struct {
     bool raw_stall;
     bool load_use_stall;
     bool csr_use_stall;
+    bool other_raw_stall;
     bool count_younger_side;
 } pmc_cycle_sample_t;
 
@@ -255,6 +263,9 @@ static pmc_cycle_sample_t sample_cycle() {
     bool rs2_block_ls = CORE_SIG(u_hazard_unit__DOT__rs2_block_ls);
     bool ex_wait = rs1_block_ex || rs2_block_ex;
     bool ls_wait = rs1_block_ls || rs2_block_ls;
+    bool ls_is_load = CORE_SIG(ex2ls_valid) &&
+                      get_wide_bits(CORE_SIG(ex2ls_data).data(),
+                                    EX2LS_MEM_CMD_HI, EX2LS_MEM_CMD_LO) == MEM_CMD_LOAD;
 
     sample.pc = CORE_SIG(u_IFU__DOT__pc_r);
     sample.wbu_valid = wbu.valid;
@@ -275,9 +286,13 @@ static pmc_cycle_sample_t sample_cycle() {
     sample.store_busy = sample.store_req || (lsu_wait_resp && lsu_input_is_store);
 
     sample.raw_stall = CORE_SIG(hazard_valid);
-    sample.load_use_stall = ex_wait && CORE_SIG(ex_is_load);
+    sample.load_use_stall = (ex_wait && CORE_SIG(ex_is_load)) ||
+                             (ls_wait && ls_is_load);
     sample.csr_use_stall = (ex_wait && CORE_SIG(ex_is_csr)) ||
                             (ls_wait && CORE_SIG(ls_is_csr));
+    sample.other_raw_stall = sample.raw_stall &&
+                              !sample.load_use_stall &&
+                              !sample.csr_use_stall;
     sample.count_younger_side = !(wbu.valid && wbu.inst == EBREAK_INST);
 
     return sample;
@@ -368,6 +383,7 @@ void PerformanceCounter_record_cycle() {
     if (sample.raw_stall) pmc.raw_stall_cycles++;
     if (sample.load_use_stall) pmc.load_use_stall_cycles++;
     if (sample.csr_use_stall) pmc.csr_use_stall_cycles++;
+    if (sample.other_raw_stall) pmc.other_raw_stall_cycles++;
 
     if (empty_retire) {
         pmc.cpi_stack[choose_stack(sample.load_busy || sample.store_busy, sample.icache_wait,
@@ -421,7 +437,7 @@ void PerformanceCounter_export_json() {
 
     llvm::json::OStream json(os, 2);
     json.object([&] {
-        json.attribute("schema", "npc-pmc-v3");
+        json.attribute("schema", "npc-pmc-v5");
 #ifdef SOC
         json.attribute("target", "soc");
 #else
@@ -474,6 +490,7 @@ void PerformanceCounter_export_json() {
             json_count(json, "raw", pmc.raw_stall_cycles);
             json_count(json, "load_use", pmc.load_use_stall_cycles);
             json_count(json, "csr_use", pmc.csr_use_stall_cycles);
+            json_count(json, "other_raw", pmc.other_raw_stall_cycles);
         });
 
         json.attributeObject("cpi_stack", [&] {
@@ -542,6 +559,7 @@ void PerformanceCounter_display() {
     print_u64("RAW stall cycles:", pmc.raw_stall_cycles);
     print_u64("Load-use stall cycles:", pmc.load_use_stall_cycles);
     print_u64("CSR-use stall cycles:", pmc.csr_use_stall_cycles);
+    print_u64("Other RAW stall cycles:", pmc.other_raw_stall_cycles);
 
     printf("\n  CPI Stack (empty cycles)\n");
     for (int i = 0; i < PMC_STACK_NR; i++) {
