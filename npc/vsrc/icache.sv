@@ -161,20 +161,9 @@ icache_array #(
 /*============================================================
  *  5. S1: Lookup / Array Access
  *============================================================*/
-// S1 只负责读 array 并把快照送入 S1/S2 pipeline reg。
-// req_ready 只看“下一级是否愿意接收一个新的 lookup”，不直接理解 miss/refill 细节。
-//
-// 这里刻意区分两种 S2 事件：
-//   s2_pop          : S2 当前 lookup 被消费，hit/miss/kill 都算；
-//   s2_accept_ready : S2 本拍能接收 S1 的下一条 lookup。
-//
-// miss 会 pop 掉当前 lookup 并启动 refill，但 blocking cache 在 miss 同拍不接收下一条
-// lookup，否则会把 refill 前的旧 array 快照带到 refill 之后，造成同一 cacheline 的重复 miss。
-assign s2_accept_ready = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
-assign can_accept_req  = ~kill_any & s2_accept_ready;
-assign req_ready_o    = can_accept_req;
-
-// 第一级只锁存 array 输出，不做 tag compare。这样后续前端预测不会和 array 读串在一拍。
+// S1 没有自己的状态：只按 req_addr_i 读 array，并把地址切片和 array 快照组成
+// lookup packet。S1 是否真的接收该 packet，由后面的 S1/S2 pipeline reg 决定。
+// 这里不做 tag compare，也不理解 miss/refill/kill 的后级策略。
 assign s1_pre_data.tag         = req_tag;
 assign s1_pre_data.index       = req_index;
 assign s1_pre_data.offset      = req_offset;
@@ -182,36 +171,29 @@ assign s1_pre_data.entry_valid = entry_valid;
 assign s1_pre_data.entry_tag   = entry_tag;
 assign s1_pre_data.entry_data  = entry_data;
 
-pip_reg #(
-    .WIDTH($bits(lookup_pkt_t))
-) u_lookup_reg (
-    .clk        (clk),
-    .rst        (rst),
-    .flush      (kill_any),
-    .pre_valid  (req_valid_i & can_accept_req),
-    .pre_data   (s1_pre_data),
-    .pre_ready  (),
-    .next_valid (s1_valid),
-    .next_data  (s1_data),
-    .next_ready (s2_pop)
-);
-
 
 /*============================================================
- *  6. S2: Hit/Miss / Response
+ *  6. S2: Hit/Miss / Flow Control / Response
  *============================================================*/
-// S2 只解释 lookup 结果：tag compare 后要么形成 hit response，要么形成 miss event。
-// hit/miss/kill 都是“消费 S2 当前项”的方式，但只有 kill 才是真的 flush。
+// S2 是 lookup packet 的唯一解释者：tag compare 后要么形成 hit response，
+// 要么形成 miss event 交给 refill engine。
 assign s2_hit       = s1_valid & s1_data.entry_valid & (s1_data.entry_tag == s1_data.tag);
 assign s2_miss      = s1_valid & ~s2_hit;
 
 assign req_hit      = (state == S_IDLE) & ~kill_any & s2_hit;
 assign req_miss     = (state == S_IDLE) & ~kill_any & s2_miss;
 
+// 这里刻意区分两种 S2 事件：
+//   s2_pop          : S2 当前 lookup 被消费，hit/miss/kill 都算；
+//   s2_accept_ready : S2 本拍能接收 S1 的下一条 lookup。
+//
+// miss 会 pop 掉当前 lookup 并启动 refill，但 blocking cache 在 miss 同拍不接收下一条
+// lookup，否则会把 refill 前的旧 array 快照带到 refill 之后，造成同一 cacheline 的重复 miss。
 assign s2_hit_fire  = req_hit & resp_ready_i;
 assign s2_miss_fire = req_miss;
 assign s2_kill_fire = s1_valid & kill_any;
 assign s2_pop       = s2_hit_fire | s2_miss_fire | s2_kill_fire;
+assign s2_accept_ready = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
 
 assign hit_word_sel  = s1_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
 assign miss_word_sel = miss_offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
@@ -229,7 +211,29 @@ assign resp_err_o    = refill_resp_valid & refill_resp_err_i;
 
 
 /*============================================================
- *  7. Miss / Refill Control
+ *  7. S1/S2 Pipeline Register
+ *============================================================*/
+// req_ready 只看“下一级是否愿意接收一个新的 lookup”，不直接理解 miss/refill 细节。
+assign can_accept_req = ~kill_any & s2_accept_ready;
+assign req_ready_o    = can_accept_req;
+
+pip_reg #(
+    .WIDTH($bits(lookup_pkt_t))
+) u_lookup_reg (
+    .clk        (clk),
+    .rst        (rst),
+    .flush      (kill_any),
+    .pre_valid  (req_valid_i & can_accept_req),
+    .pre_data   (s1_pre_data),
+    .pre_ready  (),
+    .next_valid (s1_valid),
+    .next_data  (s1_data),
+    .next_ready (s2_pop)
+);
+
+
+/*============================================================
+ *  8. Miss / Refill Control
  *============================================================*/
 always_comb begin
     unique case (state)
