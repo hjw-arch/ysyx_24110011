@@ -85,13 +85,13 @@ wire        [LINE_WIDTH-1:0]        entry_data;
 lookup_pkt_t                        s1_pre_data;
 lookup_pkt_t                        s1_data;
 logic                               s1_valid;
-logic                               s1_ready;
 wire [ADDR_WIDTH-1:0]               s1_addr;
 
 // S2 hit/miss
 wire                                s2_hit;
 wire                                s2_miss;
-wire                                s2_ready;
+wire                                s2_pop;
+wire                                s2_accept_ready;
 wire                                s2_hit_fire;
 wire                                s2_miss_fire;
 wire                                s2_kill_fire;
@@ -162,11 +162,16 @@ icache_array #(
  *  5. S1: Lookup / Array Access
  *============================================================*/
 // S1 只负责读 array 并把快照送入 S1/S2 pipeline reg。
-// S1 是否能接新请求由两个条件共同决定：
-//   1. S1/S2 pipeline reg 有空位，或者 S2 当前项本拍会被消费；
-//   2. cache 没有进入/即将进入 miss。miss 会清空 lookup slot，但 blocking cache
-//      不在同拍继续接收新请求，避免在 refill 期间保留一个旧 array 快照。
-assign can_accept_req = (state == S_IDLE) & ~kill_any & ~s2_miss_fire & s1_ready;
+// req_ready 只看“下一级是否愿意接收一个新的 lookup”，不直接理解 miss/refill 细节。
+//
+// 这里刻意区分两种 S2 事件：
+//   s2_pop          : S2 当前 lookup 被消费，hit/miss/kill 都算；
+//   s2_accept_ready : S2 本拍能接收 S1 的下一条 lookup。
+//
+// miss 会 pop 掉当前 lookup 并启动 refill，但 blocking cache 在 miss 同拍不接收下一条
+// lookup，否则会把 refill 前的旧 array 快照带到 refill 之后，造成同一 cacheline 的重复 miss。
+assign s2_accept_ready = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
+assign can_accept_req  = ~kill_any & s2_accept_ready;
 assign req_ready_o    = can_accept_req;
 
 // 第一级只锁存 array 输出，不做 tag compare。这样后续前端预测不会和 array 读串在一拍。
@@ -185,10 +190,10 @@ pip_reg #(
     .flush      (kill_any),
     .pre_valid  (req_valid_i & can_accept_req),
     .pre_data   (s1_pre_data),
-    .pre_ready  (s1_ready),
+    .pre_ready  (),
     .next_valid (s1_valid),
     .next_data  (s1_data),
-    .next_ready (s2_ready)
+    .next_ready (s2_pop)
 );
 
 
@@ -206,7 +211,7 @@ assign req_miss     = (state == S_IDLE) & ~kill_any & s2_miss;
 assign s2_hit_fire  = req_hit & resp_ready_i;
 assign s2_miss_fire = req_miss;
 assign s2_kill_fire = s1_valid & kill_any;
-assign s2_ready     = s2_hit_fire | s2_miss_fire | s2_kill_fire;
+assign s2_pop       = s2_hit_fire | s2_miss_fire | s2_kill_fire;
 
 assign hit_word_sel  = s1_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
 assign miss_word_sel = miss_offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
