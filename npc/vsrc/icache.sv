@@ -82,6 +82,7 @@ wire        [TAG_WIDTH-1:0]         entry_tag;
 wire        [LINE_WIDTH-1:0]        entry_data;
 
 lookup_pkt_t                        s1_pre_data;
+wire                                s1_ready;
 lookup_pkt_t                        s2_data;
 logic                               s2_valid;
 wire    [ADDR_WIDTH-1:0]            s2_addr;
@@ -183,9 +184,9 @@ assign s2_miss_fire  = req_miss;
 assign s2_kill_ready = (state == S_IDLE) & s2_valid & kill_any;
 assign s2_ready      = s2_hit_fire | refill_resp_fire | s2_kill_ready;
 
-// IFU 侧 req_ready 只表示 icache 本拍是否会接收新的 lookup。
+// IFU 侧 req_ready 由 S1/S2 流水寄存器的 pre_ready 给出。
 // refill 返回当拍不接新请求：array 写回发生在时钟沿，新请求若同拍锁存会看到旧 array 快照。
-assign req_ready_o = (state == S_IDLE) & ~kill_any & (~s2_valid | s2_hit_fire);
+assign req_ready_o = (state == S_IDLE) & ~kill_any & s1_ready;
 
 assign hit_word_sel  = s2_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
 assign hit_resp_valid    = req_hit;
@@ -212,9 +213,9 @@ pip_reg #(
     .clk        (clk),
     .rst        (rst),
     .flush      (1'b0),
-    .pre_valid  (req_valid_i & req_ready_o),
+    .pre_valid  (req_valid_i & (state == S_IDLE) & ~kill_any),
     .pre_data   (s1_pre_data),
-    .pre_ready  (),
+    .pre_ready  (s1_ready),
     .next_valid (s2_valid),
     .next_data  (s2_data),
     .next_ready (s2_ready)
