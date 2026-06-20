@@ -69,7 +69,6 @@ state_t nstate;
  *============================================================*/
 // common
 wire kill_any;
-wire can_accept_req;
 wire req_hit  /* verilator public_flat_rd */;
 wire req_miss /* verilator public_flat_rd */;
 
@@ -91,7 +90,7 @@ wire [ADDR_WIDTH-1:0]               s1_addr;
 wire                                s2_hit;
 wire                                s2_miss;
 wire                                s2_pop;
-wire                                s2_accept_ready;
+wire                                s2_ready_for_s1;
 wire                                s2_hit_fire;
 wire                                s2_miss_fire;
 wire                                s2_kill_fire;
@@ -185,7 +184,7 @@ assign req_miss     = (state == S_IDLE) & ~kill_any & s2_miss;
 
 // 这里刻意区分两种 S2 事件：
 //   s2_pop          : S2 当前 lookup 被消费，hit/miss/kill 都算；
-//   s2_accept_ready : S2 本拍能接收 S1 的下一条 lookup。
+//   s2_ready_for_s1 : S2 本拍能接收 S1 的下一条 lookup。
 //
 // miss 会 pop 掉当前 lookup 并启动 refill，但 blocking cache 在 miss 同拍不接收下一条
 // lookup，否则会把 refill 前的旧 array 快照带到 refill 之后，造成同一 cacheline 的重复 miss。
@@ -193,7 +192,10 @@ assign s2_hit_fire  = req_hit & resp_ready_i;
 assign s2_miss_fire = req_miss;
 assign s2_kill_fire = s1_valid & kill_any;
 assign s2_pop       = s2_hit_fire | s2_miss_fire | s2_kill_fire;
-assign s2_accept_ready = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
+assign s2_ready_for_s1 = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
+
+// S1 没有 ready 状态，IFU 看到的 ready 只来自 S2 的接收能力和全局 kill。
+assign req_ready_o = ~kill_any & s2_ready_for_s1;
 
 assign hit_word_sel  = s1_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
 assign miss_word_sel = miss_offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
@@ -213,17 +215,15 @@ assign resp_err_o    = refill_resp_valid & refill_resp_err_i;
 /*============================================================
  *  7. S1/S2 Pipeline Register
  *============================================================*/
-// req_ready 只看“下一级是否愿意接收一个新的 lookup”，不直接理解 miss/refill 细节。
-assign can_accept_req = ~kill_any & s2_accept_ready;
-assign req_ready_o    = can_accept_req;
-
+// 这个寄存器只负责把 S1 的 array 快照送到 S2；是否接收新 lookup 由 S2 段给出的
+// req_ready_o 决定，避免在边界寄存器附近重新散落 miss/refill 策略。
 pip_reg #(
     .WIDTH($bits(lookup_pkt_t))
 ) u_lookup_reg (
     .clk        (clk),
     .rst        (rst),
     .flush      (kill_any),
-    .pre_valid  (req_valid_i & can_accept_req),
+    .pre_valid  (req_valid_i & req_ready_o),
     .pre_data   (s1_pre_data),
     .pre_ready  (),
     .next_valid (s1_valid),
