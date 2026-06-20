@@ -1,7 +1,10 @@
 `include "./include/pipeline_pkt_pkg.sv"
 module IFU
 import pipeline_pkt_pkg::*;
-(
+#(
+    parameter int BTB_ENTRIES = 4,
+    parameter int BHT_ENTRIES = 32
+)(
     input			        clk,
     input			        rst,
 
@@ -23,6 +26,7 @@ import pipeline_pkt_pkg::*;
 	input 			        icache_inval_i /* verilator public_flat_rd */, // icache 内容失效
 	input	[31:0] 	        redirect_pc_i,          // 重定向后的 PC
 	input			        redirect_valid_i /* verilator public_flat_rd */, // 确认推测错误，需要刷新流水线
+    input   bp_update_t     bp_update_i,
 
     output 			        valid_o,
     output	if2id_pkt_t     data_o,
@@ -41,13 +45,18 @@ localparam  RST_PC   =   32'h80000000;
 
 logic				ic_req_valid /* verilator public_flat_rd */;
 logic	[31:0]		ic_req_addr;
+logic               ic_req_pred_taken;
 logic				ic_req_ready /* verilator public_flat_rd */;
 
 logic				ic_resp_valid /* verilator public_flat_rd */;
 logic	[31:0]		ic_resp_data;
 logic	[31:0]		ic_resp_addr;/* verilator lint_off UNUSEDSIGNAL */
+logic               ic_resp_pred_taken;
 logic               ic_resp_err;
 logic				ic_resp_ready /* verilator public_flat_rd */;
+
+logic               bp_pred_taken;
+logic   [31:0]      bp_pred_pc;
 
 
 
@@ -60,7 +69,7 @@ logic   [31:0]  pc_r /* verilator public_flat_rd */;
 logic   [31:0]  pc_n;
 
 assign pc_n	=	redirect_valid_i ? redirect_pc_i :   // 这里当前设置为重定向当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
-				ic_req_fire ? pc_r + 4 :
+				ic_req_fire ? bp_pred_pc :
 				pc_r;
 
 always_ff @(posedge clk) begin
@@ -76,6 +85,20 @@ end
 // ==========================================
 assign	ic_req_valid	=	~redirect_valid_i;
 assign	ic_req_addr		=	pc_r;
+assign  ic_req_pred_taken = bp_pred_taken;
+
+branch_predictor #(
+    .BTB_ENTRIES    (BTB_ENTRIES),
+    .BHT_ENTRIES    (BHT_ENTRIES)
+) u_branch_predictor (
+    .clk            (clk),
+    .rst            (rst),
+    .pc_i           (pc_r),
+    .pred_taken_o   (bp_pred_taken),
+    .pred_pc_o      (bp_pred_pc),
+    .update_i       (bp_update_i),
+    .inval_i        (icache_inval_i)
+);
 
 
 // ==========================================
@@ -85,6 +108,7 @@ assign	ic_req_addr		=	pc_r;
 assign	valid_o		= ic_resp_valid & ~redirect_valid_i; // 实际上不要 ~redirect_valid_i 也行，由 icache 自己处理
 assign	data_o.inst = ic_resp_data;
 assign	data_o.pc	= ic_resp_addr;
+assign  data_o.pred_taken = ic_resp_pred_taken;
 
 // ready 信号
 assign	ic_resp_ready = redirect_valid_i | ready_i;
@@ -115,10 +139,12 @@ icache #(
     // IFU ↔ ICache
     .req_valid_i        (ic_req_valid),
     .req_addr_i         (ic_req_addr),
+    .req_pred_taken_i   (ic_req_pred_taken),
     .req_ready_o        (ic_req_ready),
     .resp_valid_o       (ic_resp_valid),
     .resp_data_o        (ic_resp_data),
     .resp_addr_o        (ic_resp_addr),
+    .resp_pred_taken_o  (ic_resp_pred_taken),
     .resp_err_o         (ic_resp_err),
     .resp_ready_i       (ic_resp_ready),
     .kill_i             (redirect_valid_i),

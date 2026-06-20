@@ -113,8 +113,12 @@ wire [31:0] redirect_sum     = redirect_base + imm;
 wire [31:0] redirect_target  = redirect_is_jalr ? {redirect_sum[31:1], 1'b0} : redirect_sum;
 
 wire redirect_is_branch = ~data_i.ex.cfi_type[1] & data_i.ex.cfi_type[0];
+wire redirect_is_jal    = data_i.ex.cfi_type == CFI_JAL;
 wire redirect_is_jump   = data_i.ex.cfi_type[1];
-wire redirect_valid     = redirect_is_jump | (redirect_is_branch & branch_taken);
+wire redirect_is_cfi    = redirect_is_branch | redirect_is_jump;
+wire actual_taken       = redirect_is_jump | (redirect_is_branch & branch_taken);
+wire redirect_valid     = redirect_is_cfi & (actual_taken ^ data_i.meta.pred_taken);
+wire [31:0] redirect_addr = actual_taken ? redirect_target : pc + 32'd4;
 
 // CSR 指令的写入源在 EXU 准备好，后续 WBU 用 result 作为 csr_src。
 // CSR immediate 形式使用 ID 阶段生成的 zimm immediate；寄存器形式使用 rs1_data。
@@ -133,7 +137,15 @@ assign data_o.store_data = rs2_data;
 
 // addr 在 valid=0 时无语义，直接接 target，避免额外综合出清零 mux。
 assign data_o.redirect.valid = redirect_valid;
-assign data_o.redirect.addr  = redirect_target;
+assign data_o.redirect.addr  = redirect_addr;
+
+// 预测器只学习条件分支和 JAL。JALR 目标依赖寄存器值，先留给后续 RAS/间接预测器。
+assign data_o.bp_update.valid     = redirect_is_branch | redirect_is_jal;
+assign data_o.bp_update.is_branch = redirect_is_branch;
+assign data_o.bp_update.is_jal    = redirect_is_jal;
+assign data_o.bp_update.taken     = actual_taken;
+assign data_o.bp_update.pc        = pc;
+assign data_o.bp_update.target    = redirect_target;
 
 // hazard 只关心真实会写回的指令，并且 rd=x0 已经在 IDU 的 rd_wen 中被屏蔽。
 assign rd_addr_o = rd_addr & {5{valid_i & data_i.wb.rd_wen}};

@@ -43,6 +43,7 @@ import pipeline_pkt_pkg::*;
 	output	[4:0]		rd_addr_o,
     output  [31:0]      redirect_pc_o,
     output              redirect_valid_o,
+    output  bp_update_t bp_update_o,
 	input				kill_i,
 
 	input 				valid_i,
@@ -149,6 +150,13 @@ import pipeline_pkt_pkg::*;
 
 	assign redirect_valid_o = output_fire & out_redirect_valid;
 	assign redirect_pc_o    = out_redirect_addr;
+
+	assign bp_update_o.valid     = output_fire & data_i.bp_update.valid;
+	assign bp_update_o.is_branch = data_i.bp_update.is_branch;
+	assign bp_update_o.is_jal    = data_i.bp_update.is_jal;
+	assign bp_update_o.taken     = data_i.bp_update.taken;
+	assign bp_update_o.pc        = data_i.bp_update.pc;
+	assign bp_update_o.target    = data_i.bp_update.target;
 
 	// AXI
 	// wen/ren 是给 AXI master 的启动脉冲；AR/AW/WVALID 的保持由 AXI master 内部完成。

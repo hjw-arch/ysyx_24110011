@@ -152,6 +152,7 @@ localparam bit USE_RV32E = 1'b1;
 	logic			wbu_redirect_valid /* verilator public_flat_rd */;
 	logic [31:0]	wbu_redirect_pc /* verilator public_flat_rd */;
 	logic			icache_inval;
+	bp_update_t		bp_update;
 
 	assign pipeline_flush = wbu_redirect_valid | lsu_redirect_valid;
 	assign redirect_pc    = wbu_redirect_valid ? wbu_redirect_pc : lsu_redirect_pc;
@@ -172,7 +173,10 @@ fwd_sel_t		fwd_rs2_sel;
 logic			hazard_valid /* verilator public_flat_rd */;
 
 
-IFU u_IFU(
+IFU #(
+	.BTB_ENTRIES(4),
+	.BHT_ENTRIES(32)
+) u_IFU(
 	.clk     	(clock        ),
 	.rst     	(reset        ),
 	.ARADDR  	(IFU_ARADDR   ),
@@ -191,6 +195,7 @@ IFU u_IFU(
 		.icache_inval_i(icache_inval),
 		.redirect_pc_i 	(redirect_pc  ),
 		.redirect_valid_i(pipeline_flush),
+		.bp_update_i    (bp_update    ),
 		.valid_o 	(if2id_pre_valid),
 		.data_o  	(if2id_pre_data ),
 		.ready_i 	(if2id_pre_ready)
@@ -319,6 +324,7 @@ LSU u_LSU(
 		.rd_addr_o(ls_rd_addr),
 		.redirect_pc_o(lsu_redirect_pc),
 		.redirect_valid_o(lsu_redirect_valid),
+		.bp_update_o(bp_update),
 		.kill_i		(wbu_redirect_valid),
 		.valid_i 	(ex2ls_valid  ),
 		.data_i  	(ex2ls_data   ),

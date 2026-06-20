@@ -19,11 +19,13 @@ module icache #(
     // ifu    <---->    icache
     input                       req_valid_i,
     input   [ADDR_WIDTH-1:0]    req_addr_i,
+    input                       req_pred_taken_i,
     output                      req_ready_o,
 
     output                      resp_valid_o,
     output  [DATA_WIDTH-1:0]    resp_data_o,
     output  [ADDR_WIDTH-1:0]    resp_addr_o,
+    output                      resp_pred_taken_o,
     output                      resp_err_o,
     input                       resp_ready_i,
 
@@ -52,6 +54,7 @@ typedef struct packed {
     logic                       entry_valid;
     logic [TAG_WIDTH-1:0]       entry_tag;
     logic [LINE_WIDTH-1:0]      entry_data;
+    logic                       pred_taken;
 } lookup_pkt_t;
 
 
@@ -161,6 +164,7 @@ assign s1_pre_data.offset      = req_offset;
 assign s1_pre_data.entry_valid = entry_valid;
 assign s1_pre_data.entry_tag   = entry_tag;
 assign s1_pre_data.entry_data  = entry_data;
+assign s1_pre_data.pred_taken  = req_pred_taken_i;
 
 
 /*============================================================
@@ -196,6 +200,7 @@ assign resp_line     = resp_from_refill ? refill_resp_data_i  : s2_data.entry_da
 assign resp_valid_o  = hit_resp_valid | refill_resp_valid;
 assign resp_data_o   = resp_line[{resp_word_sel, {DATA_WIDTH_LOG2{1'b0}}} +: DATA_WIDTH];
 assign resp_addr_o   = s2_addr;
+assign resp_pred_taken_o = s2_data.pred_taken;
 assign resp_err_o    = refill_resp_valid & refill_resp_err_i;
 
 

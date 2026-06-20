@@ -123,8 +123,7 @@ assign id_rs2_addr = rs2_addr_raw;
 assign id_rs1_used = valid_i & rs1_used;
 assign id_rs2_used = valid_i & rs2_used;
 
-assign data_o.meta.pc   = pc;
-assign data_o.meta.inst = inst;
+assign data_o.meta = data_i;
 
 assign data_o.ex.rs1_used = rs1_used;
 assign data_o.ex.rs2_used = rs2_used;
