@@ -91,9 +91,9 @@ wire    [ADDR_WIDTH-1:0]            s2_addr;
 wire                                s2_hit;
 wire                                s2_miss;
 wire                                s2_ready;
+wire                                s2_flush;
 wire                                s2_hit_fire;
 wire                                s2_miss_fire;
-wire                                s2_kill_ready;
 wire    [WORD_SEL_WIDTH-1:0]        hit_word_sel;
 wire    [WORD_SEL_WIDTH-1:0]        resp_word_sel;
 wire    [LINE_WIDTH-1:0]            resp_line;
@@ -174,15 +174,12 @@ assign s2_miss      = s2_valid & ~s2_hit;
 assign req_hit      = (state == S_IDLE) & ~kill_any & s2_hit;
 assign req_miss     = (state == S_IDLE) & ~kill_any & s2_miss;
 
-// s2_ready 就是 S2 对前一级流水寄存器的 ready：
-//   1. hit 响应被 IFU 接收，当前 S2 lookup 生命周期结束；
-//   2. miss refill 返回，并被 IFU 接收或因 kill 被丢弃，当前 S2 lookup 生命周期结束；
-//   3. S_IDLE 下收到 kill/inval，尚未发出 refill 的 lookup 可以直接清掉。
-// miss 只启动 refill，不代表 S2 这条 lookup 已经被消费，因此 miss 当拍不 ready。
+// s2_ready 只表达正常 ready/valid 消费：hit 响应被 IFU 接收后，S2 可以接收下一条。
+// kill/refill 完成这类“清掉当前 S2 内容”的控制动作走 s2_flush，不混入 ready。
 assign s2_hit_fire   = req_hit & resp_ready_i;
 assign s2_miss_fire  = req_miss;
-assign s2_kill_ready = (state == S_IDLE) & s2_valid & kill_any;
-assign s2_ready      = s2_hit_fire | refill_resp_fire | s2_kill_ready;
+assign s2_ready      = s2_hit_fire;
+assign s2_flush      = ((state == S_IDLE) & kill_any) | refill_resp_fire;
 
 // IFU 侧 req_ready 由 S1/S2 流水寄存器的 pre_ready 给出。
 // refill 返回当拍不接新请求：array 写回发生在时钟沿，新请求若同拍锁存会看到旧 array 快照。
@@ -212,8 +209,8 @@ pip_reg #(
 ) u_lookup_reg (
     .clk        (clk),
     .rst        (rst),
-    .flush      (1'b0),
-    .pre_valid  (req_valid_i & (state == S_IDLE) & ~kill_any),
+    .flush      (s2_flush),
+    .pre_valid  (req_valid_i),
     .pre_data   (s1_pre_data),
     .pre_ready  (s1_ready),
     .next_valid (s2_valid),
@@ -237,7 +234,7 @@ always_ff @(posedge clk) begin
 end
 
 // kill 有两层语义：
-//   1. S_IDLE 下的 lookup kill：尚未发出 refill，直接通过 s2_ready 清掉 S2；
+//   1. S_IDLE 下的 lookup kill：尚未发出 refill，直接通过 s2_flush 清掉 S2；
 //   2. S_MISS 下的 miss kill：refill 已经在路上，保留 S2 地址信息，等返回时丢弃。
 assign kill_set = (state == S_MISS) & kill_any & ~refill_resp_fire;
 
