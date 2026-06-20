@@ -69,8 +69,6 @@ state_t nstate;
  *============================================================*/
 // common
 wire kill_any;
-wire can_accept_req;
-wire resp_hit_fire;
 wire req_hit  /* verilator public_flat_rd */;
 wire req_miss /* verilator public_flat_rd */;
 
@@ -86,16 +84,23 @@ wire        [LINE_WIDTH-1:0]        entry_data;
 lookup_pkt_t                        s1_pre_data;
 lookup_pkt_t                        s1_data;
 logic                               s1_valid;
-logic                               s1_ready;
 wire [ADDR_WIDTH-1:0]               s1_addr;
 
 // S2 hit/miss
 wire                                s2_hit;
 wire                                s2_miss;
+wire                                s2_pop;
+wire                                s2_ready_for_s1;
+wire                                s2_hit_fire;
+wire                                s2_miss_fire;
+wire                                s2_kill_fire;
 wire    [WORD_SEL_WIDTH-1:0]        hit_word_sel;
 wire    [WORD_SEL_WIDTH-1:0]        miss_word_sel;
 wire    [WORD_SEL_WIDTH-1:0]        resp_word_sel;
 wire    [LINE_WIDTH-1:0]            resp_line;
+wire                                hit_resp_valid;
+wire                                refill_resp_valid;
+wire                                resp_from_refill;
 
 // miss/refill
 logic   [ADDR_WIDTH-1:0]            miss_addr_r;
@@ -114,9 +119,11 @@ wire                                kill_set;
  *  3. 公共派生信号
  *============================================================*/
 assign  kill_any            =      kill_i | inval_i;
+
 assign  req_tag             =      req_addr_i[ADDR_WIDTH-1 -: TAG_WIDTH];
 assign  req_index           =      req_addr_i[OFFSET_WIDTH +: INDEX_WIDTH];
 assign  req_offset          =      req_addr_i[OFFSET_WIDTH-1:0];
+
 assign  s1_addr             =      {s1_data.tag, s1_data.index, s1_data.offset};
 assign  miss_tag            =      miss_addr_r[ADDR_WIDTH-1 -: TAG_WIDTH];
 assign  miss_index          =      miss_addr_r[OFFSET_WIDTH +: INDEX_WIDTH];
@@ -153,12 +160,9 @@ icache_array #(
 /*============================================================
  *  5. S1: Lookup / Array Access
  *============================================================*/
-// S1 为空，或者 S2 命中响应本拍被消费时，才能接收新的 lookup。
-// S2 miss 会接管请求进入 refill FSM，本拍不再接收新请求。
-assign can_accept_req = (state == S_IDLE) & ~kill_any & s1_ready;
-assign req_ready_o    = can_accept_req;
-
-// 第一级只锁存 array 输出，不做 tag compare。这样后续前端预测不会和 array 读串在一拍。
+// S1 没有自己的状态：只按 req_addr_i 读 array，并把地址切片和 array 快照组成
+// lookup packet。S1 是否真的接收该 packet，由后面的 S1/S2 pipeline reg 决定。
+// 这里不做 tag compare，也不理解 miss/refill/kill 的后级策略。
 assign s1_pre_data.tag         = req_tag;
 assign s1_pre_data.index       = req_index;
 assign s1_pre_data.offset      = req_offset;
@@ -166,47 +170,74 @@ assign s1_pre_data.entry_valid = entry_valid;
 assign s1_pre_data.entry_tag   = entry_tag;
 assign s1_pre_data.entry_data  = entry_data;
 
+
+/*============================================================
+ *  6. S2: Hit/Miss / Flow Control / Response
+ *============================================================*/
+// S2 是 lookup packet 的唯一解释者：tag compare 后要么形成 hit response，
+// 要么形成 miss event 交给 refill engine。
+assign s2_hit       = s1_valid & s1_data.entry_valid & (s1_data.entry_tag == s1_data.tag);
+assign s2_miss      = s1_valid & ~s2_hit;
+
+assign req_hit      = (state == S_IDLE) & ~kill_any & s2_hit;
+assign req_miss     = (state == S_IDLE) & ~kill_any & s2_miss;
+
+// 这里刻意区分两种 S2 事件：
+//   s2_pop          : S2 当前 lookup 被消费，hit/miss/kill 都算；
+//   s2_ready_for_s1 : S2 本拍能接收 S1 的下一条 lookup。
+//
+// miss 会 pop 掉当前 lookup 并启动 refill，但 blocking cache 在 miss 同拍不接收下一条
+// lookup，否则会把 refill 前的旧 array 快照带到 refill 之后，造成同一 cacheline 的重复 miss。
+assign s2_hit_fire  = req_hit & resp_ready_i;
+assign s2_miss_fire = req_miss;
+assign s2_kill_fire = s1_valid & kill_any;
+assign s2_pop       = s2_hit_fire | s2_miss_fire | s2_kill_fire;
+assign s2_ready_for_s1 = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
+
+// S1 没有 ready 状态，IFU 看到的 ready 只来自 S2 的接收能力和全局 kill。
+assign req_ready_o = ~kill_any & s2_ready_for_s1;
+
+assign hit_word_sel  = s1_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
+assign miss_word_sel = miss_offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
+assign hit_resp_valid    = req_hit;
+assign refill_resp_valid = (state == S_MISS) & refill_resp_valid_i & ~drop_refill;
+assign resp_from_refill  = (state == S_MISS);
+
+assign resp_word_sel = resp_from_refill ? miss_word_sel       : hit_word_sel;
+assign resp_line     = resp_from_refill ? refill_resp_data_i  : s1_data.entry_data;
+
+assign resp_valid_o  = hit_resp_valid | refill_resp_valid;
+assign resp_data_o   = resp_line[{resp_word_sel, {DATA_WIDTH_LOG2{1'b0}}} +: DATA_WIDTH];
+assign resp_addr_o   = resp_from_refill ? miss_addr_r : s1_addr;
+assign resp_err_o    = refill_resp_valid & refill_resp_err_i;
+
+
+/*============================================================
+ *  7. S1/S2 Pipeline Register
+ *============================================================*/
+// 这个寄存器只负责把 S1 的 array 快照送到 S2；是否接收新 lookup 由 S2 段给出的
+// req_ready_o 决定，避免在边界寄存器附近重新散落 miss/refill 策略。
 pip_reg #(
     .WIDTH($bits(lookup_pkt_t))
 ) u_lookup_reg (
     .clk        (clk),
     .rst        (rst),
-    .flush      (kill_any | req_miss),
-    .pre_valid  (req_valid_i & can_accept_req),
+    .flush      (kill_any),
+    .pre_valid  (req_valid_i & req_ready_o),
     .pre_data   (s1_pre_data),
-    .pre_ready  (s1_ready),
+    .pre_ready  (),
     .next_valid (s1_valid),
     .next_data  (s1_data),
-    .next_ready (resp_hit_fire)
+    .next_ready (s2_pop)
 );
 
 
 /*============================================================
- *  6. S2: Hit/Miss / Response
- *============================================================*/
-assign s2_hit        = s1_data.entry_valid & (s1_data.entry_tag == s1_data.tag);
-assign s2_miss       = (state == S_IDLE) & s1_valid & ~s2_hit & ~kill_any;
-assign req_hit       = (state == S_IDLE) & s1_valid & s2_hit & ~kill_any;
-assign req_miss      = s2_miss;
-assign resp_hit_fire = req_hit & resp_ready_i;
-
-assign hit_word_sel  = s1_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
-assign miss_word_sel = miss_offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
-assign resp_word_sel = (state == S_IDLE) ? hit_word_sel : miss_word_sel;
-assign resp_line     = (state == S_IDLE) ? s1_data.entry_data : refill_resp_data_i;
-
-assign resp_valid_o  = (state == S_IDLE) ? req_hit : refill_resp_valid_i & ~drop_refill;
-assign resp_data_o   = resp_line[{resp_word_sel, {DATA_WIDTH_LOG2{1'b0}}} +: DATA_WIDTH];
-assign resp_addr_o   = (state == S_IDLE) ? s1_addr : miss_addr_r;
-assign resp_err_o    = (state == S_MISS) & refill_resp_err_i;
-
-
-/*============================================================
- *  7. Miss / Refill Control
+ *  8. Miss / Refill Control
  *============================================================*/
 always_comb begin
     unique case (state)
-        S_IDLE: nstate = req_miss         ? S_MISS : S_IDLE;
+        S_IDLE: nstate = s2_miss_fire     ? S_MISS : S_IDLE;
         S_MISS: nstate = refill_resp_fire ? S_IDLE : S_MISS;
     endcase
 end
@@ -216,7 +247,7 @@ always_ff @(posedge clk) begin
 end
 
 always_ff @(posedge clk) begin
-    miss_addr_r <= req_miss ? s1_addr : miss_addr_r;
+    miss_addr_r <= s2_miss_fire ? s1_addr : miss_addr_r;
 end
 
 // kill 有两层语义：
@@ -236,7 +267,7 @@ always_ff @(posedge clk) begin
     if (rst) begin
         refill_req_valid <= 1'b0;
     end else begin
-        refill_req_valid <= req_miss | refill_req_valid & ~refill_req_ready_i;
+        refill_req_valid <= s2_miss_fire | refill_req_valid & ~refill_req_ready_i;
     end
 end
 
