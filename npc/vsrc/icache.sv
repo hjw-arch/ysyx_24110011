@@ -82,20 +82,19 @@ wire        [TAG_WIDTH-1:0]         entry_tag;
 wire        [LINE_WIDTH-1:0]        entry_data;
 
 lookup_pkt_t                        s1_pre_data;
-lookup_pkt_t                        s1_data;
-logic                               s1_valid;
-wire [ADDR_WIDTH-1:0]               s1_addr;
+wire                                s1_ready;
+lookup_pkt_t                        s2_data;
+logic                               s2_valid;
+wire    [ADDR_WIDTH-1:0]            s2_addr;
 
 // S2 hit/miss
 wire                                s2_hit;
 wire                                s2_miss;
-wire                                s2_pop;
-wire                                s2_ready_for_s1;
+wire                                s2_ready;
+wire                                s2_flush;
 wire                                s2_hit_fire;
 wire                                s2_miss_fire;
-wire                                s2_kill_fire;
 wire    [WORD_SEL_WIDTH-1:0]        hit_word_sel;
-wire    [WORD_SEL_WIDTH-1:0]        miss_word_sel;
 wire    [WORD_SEL_WIDTH-1:0]        resp_word_sel;
 wire    [LINE_WIDTH-1:0]            resp_line;
 wire                                hit_resp_valid;
@@ -103,12 +102,8 @@ wire                                refill_resp_valid;
 wire                                resp_from_refill;
 
 // miss/refill
-logic   [ADDR_WIDTH-1:0]            miss_addr_r;
 logic                               miss_kill_r;       // 已进入 refill 的请求被 kill 后，返回时丢弃。
 logic                               refill_req_valid;
-wire    [TAG_WIDTH-1:0]             miss_tag;
-wire    [INDEX_WIDTH-1:0]           miss_index;
-wire    [OFFSET_WIDTH-1:0]          miss_offset;
 wire                                refill_resp_fire;
 wire                                drop_refill;
 wire                                refill_valid;
@@ -124,10 +119,7 @@ assign  req_tag             =      req_addr_i[ADDR_WIDTH-1 -: TAG_WIDTH];
 assign  req_index           =      req_addr_i[OFFSET_WIDTH +: INDEX_WIDTH];
 assign  req_offset          =      req_addr_i[OFFSET_WIDTH-1:0];
 
-assign  s1_addr             =      {s1_data.tag, s1_data.index, s1_data.offset};
-assign  miss_tag            =      miss_addr_r[ADDR_WIDTH-1 -: TAG_WIDTH];
-assign  miss_index          =      miss_addr_r[OFFSET_WIDTH +: INDEX_WIDTH];
-assign  miss_offset         =      miss_addr_r[OFFSET_WIDTH-1:0];
+assign  s2_addr             =      {s2_data.tag, s2_data.index, s2_data.offset};
 assign  refill_resp_fire    =      refill_resp_valid_i & refill_resp_ready_o;
 
 // 对这个小 icache，flush 掉的 refill 不写回 cache，避免污染刚被重定向/失效后的取指流。
@@ -150,8 +142,8 @@ icache_array #(
     .entry_tag_o       (entry_tag),
     .entry_data_o      (entry_data),
     .fill_valid_i      (refill_valid),
-    .fill_idx_i        (miss_index),
-    .fill_tag_i        (miss_tag),
+    .fill_idx_i        (s2_data.index),
+    .fill_tag_i        (s2_data.tag),
     .fill_data_i       (refill_resp_data_i),
     .invalidate_all_i  (inval_i)                 // inval 当拍不接收新请求；在途 lookup 由 kill_any 清掉。
 );
@@ -174,61 +166,56 @@ assign s1_pre_data.entry_data  = entry_data;
 /*============================================================
  *  6. S2: Hit/Miss / Flow Control / Response
  *============================================================*/
-// S2 是 lookup packet 的唯一解释者：tag compare 后要么形成 hit response，
-// 要么形成 miss event 交给 refill engine。
-assign s2_hit       = s1_valid & s1_data.entry_valid & (s1_data.entry_tag == s1_data.tag);
-assign s2_miss      = s1_valid & ~s2_hit;
+// S2 是 lookup packet 的唯一解释者。miss 期间，S2 本身就是 outstanding
+// miss entry，因此 refill 地址、返回 offset、fill tag/index 都直接从 s2_data 取。
+assign s2_hit       = s2_valid & s2_data.entry_valid & (s2_data.entry_tag == s2_data.tag);
+assign s2_miss      = s2_valid & ~s2_hit;
 
 assign req_hit      = (state == S_IDLE) & ~kill_any & s2_hit;
 assign req_miss     = (state == S_IDLE) & ~kill_any & s2_miss;
 
-// 这里刻意区分两种 S2 事件：
-//   s2_pop          : S2 当前 lookup 被消费，hit/miss/kill 都算；
-//   s2_ready_for_s1 : S2 本拍能接收 S1 的下一条 lookup。
-//
-// miss 会 pop 掉当前 lookup 并启动 refill，但 blocking cache 在 miss 同拍不接收下一条
-// lookup，否则会把 refill 前的旧 array 快照带到 refill 之后，造成同一 cacheline 的重复 miss。
-assign s2_hit_fire  = req_hit & resp_ready_i;
-assign s2_miss_fire = req_miss;
-assign s2_kill_fire = s1_valid & kill_any;
-assign s2_pop       = s2_hit_fire | s2_miss_fire | s2_kill_fire;
-assign s2_ready_for_s1 = (state == S_IDLE) & (~s1_valid | s2_hit_fire);
+// s2_ready 只表达正常 ready/valid 消费：hit 响应被 IFU 接收后，S2 可以接收下一条。
+// kill/refill 完成这类“清掉当前 S2 内容”的控制动作走 s2_flush，不混入 ready。
+assign s2_hit_fire   = req_hit & resp_ready_i;
+assign s2_miss_fire  = req_miss;
+assign s2_ready      = s2_hit_fire;
+assign s2_flush      = ((state == S_IDLE) & kill_any) | refill_resp_fire;
 
-// S1 没有 ready 状态，IFU 看到的 ready 只来自 S2 的接收能力和全局 kill。
-assign req_ready_o = ~kill_any & s2_ready_for_s1;
+// IFU 侧 req_ready 由 S1/S2 流水寄存器的 pre_ready 给出。
+// refill 返回当拍不接新请求：array 写回发生在时钟沿，新请求若同拍锁存会看到旧 array 快照。
+assign req_ready_o = (state == S_IDLE) & ~kill_any & s1_ready;
 
-assign hit_word_sel  = s1_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
-assign miss_word_sel = miss_offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
+assign hit_word_sel  = s2_data.offset[OFFSET_WIDTH-1:WORD_OFFSET_WIDTH];
 assign hit_resp_valid    = req_hit;
 assign refill_resp_valid = (state == S_MISS) & refill_resp_valid_i & ~drop_refill;
 assign resp_from_refill  = (state == S_MISS);
 
-assign resp_word_sel = resp_from_refill ? miss_word_sel       : hit_word_sel;
-assign resp_line     = resp_from_refill ? refill_resp_data_i  : s1_data.entry_data;
+assign resp_word_sel = hit_word_sel;
+assign resp_line     = resp_from_refill ? refill_resp_data_i  : s2_data.entry_data;
 
 assign resp_valid_o  = hit_resp_valid | refill_resp_valid;
 assign resp_data_o   = resp_line[{resp_word_sel, {DATA_WIDTH_LOG2{1'b0}}} +: DATA_WIDTH];
-assign resp_addr_o   = resp_from_refill ? miss_addr_r : s1_addr;
+assign resp_addr_o   = s2_addr;
 assign resp_err_o    = refill_resp_valid & refill_resp_err_i;
 
 
 /*============================================================
  *  7. S1/S2 Pipeline Register
  *============================================================*/
-// 这个寄存器只负责把 S1 的 array 快照送到 S2；是否接收新 lookup 由 S2 段给出的
-// req_ready_o 决定，避免在边界寄存器附近重新散落 miss/refill 策略。
+// 这个寄存器只负责把 S1 的 array 快照送到 S2。
+// S2 miss 时保持寄存器内容不变，让它直接作为 outstanding miss entry。
 pip_reg #(
     .WIDTH($bits(lookup_pkt_t))
 ) u_lookup_reg (
     .clk        (clk),
     .rst        (rst),
-    .flush      (kill_any),
-    .pre_valid  (req_valid_i & req_ready_o),
+    .flush      (s2_flush),
+    .pre_valid  (req_valid_i),
     .pre_data   (s1_pre_data),
-    .pre_ready  (),
-    .next_valid (s1_valid),
-    .next_data  (s1_data),
-    .next_ready (s2_pop)
+    .pre_ready  (s1_ready),
+    .next_valid (s2_valid),
+    .next_data  (s2_data),
+    .next_ready (s2_ready)
 );
 
 
@@ -246,13 +233,9 @@ always_ff @(posedge clk) begin
     state <= rst ? S_IDLE : nstate;
 end
 
-always_ff @(posedge clk) begin
-    miss_addr_r <= s2_miss_fire ? s1_addr : miss_addr_r;
-end
-
 // kill 有两层语义：
-//   1. lookup kill：直接清掉 S1；
-//   2. miss kill：已经进入 refill 的请求无法取消，记住 miss_kill_r，等返回时丢弃。
+//   1. S_IDLE 下的 lookup kill：尚未发出 refill，直接通过 s2_flush 清掉 S2；
+//   2. S_MISS 下的 miss kill：refill 已经在路上，保留 S2 地址信息，等返回时丢弃。
 assign kill_set = (state == S_MISS) & kill_any & ~refill_resp_fire;
 
 always_ff @(posedge clk) begin
@@ -272,7 +255,7 @@ always_ff @(posedge clk) begin
 end
 
 assign refill_req_valid_o  = refill_req_valid;
-assign refill_req_addr_o   = {miss_addr_r[ADDR_WIDTH-1:OFFSET_WIDTH], {OFFSET_WIDTH{1'b0}}};
+assign refill_req_addr_o   = {s2_addr[ADDR_WIDTH-1:OFFSET_WIDTH], {OFFSET_WIDTH{1'b0}}};
 assign refill_resp_ready_o = (state == S_MISS) & (drop_refill | resp_ready_i);
 
 endmodule
