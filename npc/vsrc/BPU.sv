@@ -1,6 +1,6 @@
 module BPU #(
     parameter   ADDR_WIDTH  =   32,
-    parameter   BTB_ENTRIES =   4,
+    parameter   BTB_ENTRIES =   2,
     parameter   BHT_ENTRIES =   32,
 
     localparam  BTB_INDEX_WIDTH     =   $clog2(BTB_ENTRIES),

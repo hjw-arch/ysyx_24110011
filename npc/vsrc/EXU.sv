@@ -21,6 +21,7 @@ import pipeline_pkt_pkg::*;
 
 wire [31:0] inst     = data_i.meta.inst;
 wire [31:0] pc       = data_i.meta.pc;
+wire [31:0] seq_pc   = data_i.seq_pc;
 wire [31:0] rs1_raw  = data_i.rs1_data;
 wire [31:0] rs2_raw  = data_i.rs2_data;
 wire [31:0] imm      = data_i.imm;
@@ -50,7 +51,8 @@ wire [31:0] rs2_data = ({32{data_i.ex.fwd_rs2_sel[0]}} & fwd_ls_data_i) |
 //   01: rs1, imm
 //   10: pc,  4
 //   11: pc,  imm
-// IDU 已经把 fence.i 配成 pc+4，因此 EXU 不需要额外识别 fence.i。
+// jal/jalr/fence.i 的结果直接使用 ID 阶段带来的 seq_pc；
+// 主 ALU 仍服务于普通计算、访存地址、auipc 和 branch 比较。
 logic [31:0] alu_src1;
 logic [31:0] alu_src2;
 
@@ -100,14 +102,14 @@ always_comb begin
     endcase
 end
 
-// 控制流恢复地址只保留一个加法器：
-//   taken branch/jal 使用 pc  + imm
-//   jalr             使用 rs1 + imm，并清掉 bit0
-//   predicted-taken 但实际 not-taken 的 branch 使用 pc + 4 恢复顺序流
+// 控制流目标地址：
+//   branch/jal 使用 pc  + imm
+//   jalr       使用 rs1 + imm，并清掉 bit0
 //
-// jal/jalr 的写回值 pc+4 仍由主 ALU 产生。对于 branch，主 ALU 同拍还要做比较，
-// 因此若希望 EX 阶段单拍给出 redirect，额外保留一个“目标地址加法器”是必要的。
-// 这里把 pc+imm、rs1+imm 和 pc+4 复用到同一个加法器，避免再引入额外 pc+4 adder。
+// 注意这里不能把 branch not-taken 的恢复地址 pc+4 也塞进这个加法器。
+// 否则路径会变成 branch_taken -> addend mux -> 32位加法器 -> EX/LS，
+// 分支比较结果直接控制加法器输入，时序非常差。
+// 因此 pc+4 在 ID 阶段提前算成 seq_pc；EXU这里只计算真实 CFI target。
 wire redirect_is_branch = ~data_i.ex.cfi_type[1] & data_i.ex.cfi_type[0];
 wire redirect_is_jal    =  data_i.ex.cfi_type[1] & ~data_i.ex.cfi_type[0];
 wire redirect_is_jalr   = &data_i.ex.cfi_type;
@@ -115,11 +117,10 @@ wire redirect_is_jump   = data_i.ex.cfi_type[1];
 wire redirect_is_cfi    = |data_i.ex.cfi_type;
 wire actual_taken       = redirect_is_jump | (redirect_is_branch & branch_taken);
 
-wire        recover_to_seq  = redirect_is_branch & ~branch_taken;
 wire [31:0] redirect_base   = redirect_is_jalr ? rs1_data : pc;
-wire [31:0] redirect_addend = recover_to_seq ? 32'd4 : imm;
-wire [31:0] redirect_sum    = redirect_base + redirect_addend;
-wire [31:0] redirect_target = redirect_is_jalr ? {redirect_sum[31:1], 1'b0} : redirect_sum;
+wire [31:0] cfi_target_sum  = redirect_base + imm;
+wire [31:0] cfi_target      = redirect_is_jalr ? {cfi_target_sum[31:1], 1'b0} : cfi_target_sum;
+wire [31:0] redirect_target = actual_taken ? cfi_target : seq_pc;
 
 wire redirect_valid = redirect_is_cfi & (actual_taken ^ data_i.meta.pred_taken);
 
@@ -128,8 +129,11 @@ wire redirect_valid = redirect_is_cfi & (actual_taken ^ data_i.meta.pred_taken);
 wire        csr_valid = data_i.sys.csr_cmd != CSR_CMD_NONE;
 wire        csr_imm   = inst[14];
 wire [31:0] csr_src   = csr_imm ? imm : rs1_data;
+wire        seq_result = redirect_is_jump | data_i.sys.fence_i;
 
-wire [31:0] ex_result = csr_valid ? csr_src : alu_result;
+wire [31:0] ex_result = csr_valid  ? csr_src :
+                        seq_result ? seq_pc  :
+                                     alu_result;
 
 assign data_o.meta       = data_i.meta;
 assign data_o.mem        = data_i.mem;
@@ -146,7 +150,7 @@ assign data_o.redirect.addr  = redirect_target;
 assign data_o.bpu_update.valid  = redirect_is_branch | redirect_is_jal;
 assign data_o.bpu_update.btb_type = redirect_is_jal;
 assign data_o.bpu_update.taken  = actual_taken;
-assign data_o.bpu_update.target = redirect_target;
+assign data_o.bpu_update.target = cfi_target;
 
 // hazard 只关心真实会写回的指令，并且 rd=x0 已经在 IDU 的 rd_wen 中被屏蔽。
 assign rd_addr_o = rd_addr & {5{valid_i & data_i.wb.rd_wen}};

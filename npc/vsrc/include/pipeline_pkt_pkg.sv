@@ -207,6 +207,10 @@ typedef pipe_meta_t if2id_pkt_t;
 typedef struct packed {
     pipe_meta_t     meta;
 
+    // 顺序下一条 PC。分支预测失败且实际 not-taken 时，EXU 可以直接用它恢复，
+    // 避免把 branch_taken 串到 redirect 加法器输入选择上。
+    logic   [31:0]  seq_pc;
+
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     wb_ctrl_t       wb;
