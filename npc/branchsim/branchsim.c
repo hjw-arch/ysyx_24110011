@@ -25,7 +25,7 @@
  *   - 方向命中只看 taken/not-taken 是否判断正确；
  *   - 下一 PC 命中直接比较预测 next_pc 和 dnpc，更接近 IFU 是否会被冲刷。
  *
- * 例如 JALR 一定是 taken，但如果没有 BTB 给出正确 target，仅方向正确仍然
+ * 例如 JALR 一定是 taken，但如果暂时不预测 JALR target，仅方向正确仍然
  * 不足以避免取错指令。因此性能建模应主要看“下一 PC 命中”。
  */
 #define DEFAULT_TRACE_FILE "/home/hjw-arch/ysyx-workbench/BTRACE.bin"
@@ -96,10 +96,15 @@ typedef struct {
 } pred_result_t;
 
 /*
- * 极简 direct-mapped BTB。
+ * 小容量 set-associative BTB。
  *
- * tag 保存完整 PC，target 保存上一次看到的真实 dnpc。条件分支方向仍由 BHT
- * 决定；BTB 主要解决“预测 taken 时目标地址从哪里来”的问题，尤其是 JALR。
+ * tag 保存完整 PC，target 保存上一次看到的真实 dnpc。条件分支方向由 BHT
+ * 决定，BTB 只负责回答“这个 PC 是不是已知控制流指令，以及 taken 后去哪”。
+ *
+ * 当前准备实现的硬件不预测 JALR，因此 BTB 只接收条件分支和 JAL：
+ *   - 条件分支 taken 时写入 BTB，not-taken 只训练 BHT；
+ *   - JAL 总是写入 BTB；
+ *   - JALR 交给未来 RAS/间接跳转预测器，这里直接忽略。
  */
 typedef struct {
     bool valid;
@@ -114,15 +119,21 @@ typedef struct {
 
 typedef struct {
     predictor_kind_t kind;
-    uint32_t entries;
+    uint32_t bht_entries;
+    uint32_t btb_entries;
+    uint32_t btb_ways;
+    uint32_t btb_sets;
     bht_entry_t *bht;
     btb_entry_t *btb;
+    uint32_t *btb_replace_way;
 } predictor_t;
 
 typedef struct {
     const char *trace_file;
     predictor_kind_t predictor;
-    uint32_t entries;
+    uint32_t bht_entries;
+    uint32_t btb_entries;
+    uint32_t btb_ways;
     double penalty;
     uint64_t insts;
 } config_t;
@@ -279,28 +290,73 @@ static branch_info_t make_branch_info(const btrace_entry_t *entry) {
         br.direct_target = add_signed(br.pc, br.imm);
     } else if (br.type == BR_JALR) {
         br.imm = decode_i_imm(inst);
-        // JALR 目标依赖寄存器值，纯离线指令解码不能提前知道目标，只能靠 BTB 学习。
+        // JALR 目标依赖寄存器值，纯离线指令解码不能提前知道目标。
     }
 
     return br;
 }
 
 static uint32_t pc_index(uint64_t pc, uint32_t entries) {
-    // 模拟硬件里最便宜的 direct-mapped 索引：忽略低两位字节偏移。
+    // 模拟硬件里最便宜的表索引：忽略低两位字节偏移。
     return (uint32_t)((pc >> 2) & (entries - 1));
 }
 
 static bool bht_taken(const predictor_t *pred, uint64_t pc) {
-    return pred->bht[pc_index(pc, pred->entries)].counter >= 2;
+    return pred->bht[pc_index(pc, pred->bht_entries)].counter >= 2;
 }
 
 static void update_bht(predictor_t *pred, uint64_t pc, bool taken) {
-    uint8_t *counter = &pred->bht[pc_index(pc, pred->entries)].counter;
+    uint8_t *counter = &pred->bht[pc_index(pc, pred->bht_entries)].counter;
     if (taken) {
         if (*counter < 3) (*counter)++;
     } else {
         if (*counter > 0) (*counter)--;
     }
+}
+
+static uint32_t btb_set_index(const predictor_t *pred, uint64_t pc) {
+    return pc_index(pc, pred->btb_sets);
+}
+
+static btb_entry_t *btb_way(predictor_t *pred, uint32_t set, uint32_t way) {
+    return &pred->btb[set * pred->btb_ways + way];
+}
+
+static btb_entry_t *btb_lookup(predictor_t *pred, uint64_t pc) {
+    uint32_t set = btb_set_index(pred, pc);
+    for (uint32_t way = 0; way < pred->btb_ways; way++) {
+        btb_entry_t *entry = btb_way(pred, set, way);
+        if (entry->valid && entry->tag == pc) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static btb_entry_t *btb_select_update_entry(predictor_t *pred, uint64_t pc) {
+    uint32_t set = btb_set_index(pred, pc);
+
+    for (uint32_t way = 0; way < pred->btb_ways; way++) {
+        btb_entry_t *entry = btb_way(pred, set, way);
+        if (entry->valid && entry->tag == pc) {
+            return entry;
+        }
+    }
+
+    for (uint32_t way = 0; way < pred->btb_ways; way++) {
+        btb_entry_t *entry = btb_way(pred, set, way);
+        if (!entry->valid) {
+            return entry;
+        }
+    }
+
+    /*
+     * 小 BTB 用 round-robin 足够观察容量/冲突趋势，也更接近我们可能实现的
+     * 低面积硬件；精确 LRU 需要额外比较和状态，在 2/4/8 项规模下不划算。
+     */
+    uint32_t way = pred->btb_replace_way[set];
+    pred->btb_replace_way[set] = (way + 1) % pred->btb_ways;
+    return btb_way(pred, set, way);
 }
 
 static pred_result_t direct_target_result(const branch_info_t *br, bool taken) {
@@ -311,7 +367,7 @@ static pred_result_t direct_target_result(const branch_info_t *br, bool taken) {
     };
 
     /*
-     * 没有 BTB 时，只有 direct target 可以在 IFU 中由 PC+imm 得到。
+     * 没有 target 预测时，只有 direct target 可以在 IFU 中由 PC+imm 得到。
      * JAL/JALR 都是 taken，但 JALR 的 target 不在指令立即数里，所以这里
      * direct_target_valid 为 false 时仍然只能给 snpc。
      */
@@ -328,7 +384,7 @@ static pred_result_t predictor_predict(predictor_t *pred, const branch_info_t *b
             return direct_target_result(br, false);
 
         case PRED_ALWAYS_TAKEN:
-            // 静态总是跳转：direct branch 可立即给 target，JALR 仍需要 BTB 才能给 target。
+            // 静态总是跳转：direct branch 可立即给 target，JALR 仍拿不到 target。
             return direct_target_result(br, true);
 
         case PRED_BTFNT:
@@ -339,7 +395,7 @@ static pred_result_t predictor_predict(predictor_t *pred, const branch_info_t *b
             return direct_target_result(br, true);
 
         case PRED_BIMODAL:
-            // 2-bit BHT 只学习条件分支方向；JAL/JALR 按无条件跳转处理。
+            // 2-bit BHT 只学习条件分支方向；JAL 可直接算 target，JALR 仍拿不到 target。
             if (br->type == BR_COND) {
                 return direct_target_result(br, bht_taken(pred, br->pc));
             }
@@ -349,12 +405,11 @@ static pred_result_t predictor_predict(predictor_t *pred, const branch_info_t *b
             /*
              * BTB 未命中时保守预测 snpc；命中后：
              *   - 条件分支方向由 BHT 决定，target 来自 BTB；
-             *   - JAL/JALR 是无条件跳转，直接使用 BTB target。
+             *   - JAL 是无条件跳转，直接使用 BTB target。
              */
             pred_result_t result = direct_target_result(br, false);
-            uint32_t index = pc_index(br->pc, pred->entries);
-            btb_entry_t *entry = &pred->btb[index];
-            if (!entry->valid || entry->tag != br->pc) {
+            btb_entry_t *entry = btb_lookup(pred, br->pc);
+            if (entry == NULL) {
                 return result;
             }
 
@@ -387,14 +442,15 @@ static void predictor_update(predictor_t *pred, const branch_info_t *br) {
     }
 
     /*
-     * BTB 只记录实际跳转过的控制流目标：
+     * BTB 只记录实际跳转过的 direct 控制流目标：
      *   - taken 条件分支需要记 target；
-     *   - JAL/JALR 永远改变 PC，也需要记 target；
+     *   - JAL 永远改变 PC，需要记 target；
+     *   - JALR 暂时不预测，避免把间接跳转问题混进当前小 BTB 评估；
      *   - not-taken 条件分支不写 BTB，默认 snpc 就是正确路径。
      */
-    if (br->actual_taken || br->type == BR_JAL || br->type == BR_JALR) {
-        uint32_t index = pc_index(br->pc, pred->entries);
-        pred->btb[index] = (btb_entry_t) {
+    if ((br->type == BR_COND && br->actual_taken) || br->type == BR_JAL) {
+        btb_entry_t *entry = btb_select_update_entry(pred, br->pc);
+        *entry = (btb_entry_t) {
             .valid = true,
             .tag = br->pc,
             .target = br->dnpc,
@@ -403,32 +459,46 @@ static void predictor_update(predictor_t *pred, const branch_info_t *br) {
     }
 }
 
-static void predictor_init(predictor_t *pred, predictor_kind_t kind, uint32_t entries) {
+static void predictor_init(
+    predictor_t *pred,
+    predictor_kind_t kind,
+    uint32_t bht_entries,
+    uint32_t btb_entries,
+    uint32_t btb_ways
+) {
     pred->kind = kind;
-    pred->entries = entries;
+    pred->bht_entries = bht_entries;
+    pred->btb_entries = btb_entries;
+    pred->btb_ways = btb_ways;
+    pred->btb_sets = btb_entries / btb_ways;
     pred->bht = NULL;
     pred->btb = NULL;
+    pred->btb_replace_way = NULL;
 
     if (kind == PRED_BIMODAL || kind == PRED_BTB) {
-        pred->bht = calloc(entries, sizeof(bht_entry_t));
+        pred->bht = calloc(bht_entries, sizeof(bht_entry_t));
         Assert(pred->bht != NULL, "无法分配 BHT");
-        for (uint32_t i = 0; i < entries; i++) {
+        for (uint32_t i = 0; i < bht_entries; i++) {
             // 初始为弱不跳：第一次 taken 会错，但一次更新后就能转向弱跳。
             pred->bht[i].counter = 1;
         }
     }
 
     if (kind == PRED_BTB) {
-        pred->btb = calloc(entries, sizeof(btb_entry_t));
+        pred->btb = calloc(btb_entries, sizeof(btb_entry_t));
         Assert(pred->btb != NULL, "无法分配 BTB");
+        pred->btb_replace_way = calloc(pred->btb_sets, sizeof(uint32_t));
+        Assert(pred->btb_replace_way != NULL, "无法分配 BTB 替换状态");
     }
 }
 
 static void predictor_free(predictor_t *pred) {
     free(pred->bht);
     free(pred->btb);
+    free(pred->btb_replace_way);
     pred->bht = NULL;
     pred->btb = NULL;
+    pred->btb_replace_way = NULL;
 }
 
 static void update_stats(stats_t *stats, const branch_info_t *br, const pred_result_t *pred, predictor_kind_t kind) {
@@ -466,15 +536,18 @@ static void display_usage(const char *prog) {
         "  always-taken  条件/直接跳转默认预测跳转，JALR 无 BTB 时无法知道目标\n"
         "  btfnt         backward taken, forward not taken\n"
         "  bimodal       2-bit BHT，仅学习条件分支方向\n"
-        "  btb           direct-mapped BTB + 2-bit BHT\n"
+        "  btb           可配置相联 BTB + 2-bit BHT，默认不预测 JALR\n"
         "\n"
         "选项:\n"
-        "  -f, --file <path>       BTRACE 文件，默认 %s\n"
-        "  -p, --predictor <name>  预测器，默认 none\n"
-        "  -e, --entries <num>     BHT/BTB 表项数，默认 16，必须是 2 的幂\n"
-        "      --penalty <cycles>  单次误预测损失周期，默认 3\n"
-        "      --insts <num>       总指令数，可选，用于计算 MPKI/分支间隔\n"
-        "  -h, --help             显示帮助\n",
+        "  -f, --file <path>          BTRACE 文件，默认 %s\n"
+        "  -p, --predictor <name>     预测器，默认 none\n"
+        "  -e, --entries <num>        快捷设置 BHT/BTB 表项数，必须是 2 的幂\n"
+        "      --bht-entries <num>    BHT 表项数，默认 32，必须是 2 的幂\n"
+        "      --btb-entries <num>    BTB 总项数，默认 8，必须是 2 的幂\n"
+        "      --btb-ways <num>       BTB 相联度，默认 1；1=直接映射，entries=全相联\n"
+        "      --penalty <cycles>     单次误预测损失周期，默认 3\n"
+        "      --insts <num>          总指令数，可选，用于计算 MPKI/分支间隔\n"
+        "  -h, --help                显示帮助\n",
         prog, DEFAULT_TRACE_FILE);
 }
 
@@ -482,22 +555,30 @@ static config_t parse_args(int argc, char **argv) {
     enum {
         OPT_PENALTY = 1000,
         OPT_INSTS,
+        OPT_BHT_ENTRIES,
+        OPT_BTB_ENTRIES,
+        OPT_BTB_WAYS,
     };
 
     static const struct option long_options[] = {
-        {"file",      required_argument, NULL, 'f'},
-        {"predictor", required_argument, NULL, 'p'},
-        {"entries",   required_argument, NULL, 'e'},
-        {"penalty",   required_argument, NULL, OPT_PENALTY},
-        {"insts",     required_argument, NULL, OPT_INSTS},
-        {"help",      no_argument,       NULL, 'h'},
+        {"file",        required_argument, NULL, 'f'},
+        {"predictor",   required_argument, NULL, 'p'},
+        {"entries",     required_argument, NULL, 'e'},
+        {"bht-entries", required_argument, NULL, OPT_BHT_ENTRIES},
+        {"btb-entries", required_argument, NULL, OPT_BTB_ENTRIES},
+        {"btb-ways",    required_argument, NULL, OPT_BTB_WAYS},
+        {"penalty",     required_argument, NULL, OPT_PENALTY},
+        {"insts",       required_argument, NULL, OPT_INSTS},
+        {"help",        no_argument,       NULL, 'h'},
         {0, 0, 0, 0},
     };
 
     config_t config = {
         .trace_file = DEFAULT_TRACE_FILE,
         .predictor = PRED_NONE,
-        .entries = 16,
+        .bht_entries = 32,
+        .btb_entries = 8,
+        .btb_ways = 1,
         .penalty = 3.0,
         .insts = 0,
     };
@@ -507,7 +588,19 @@ static config_t parse_args(int argc, char **argv) {
         switch (opt) {
             case 'f': config.trace_file = optarg; break;
             case 'p': config.predictor = parse_predictor(optarg); break;
-            case 'e': config.entries = parse_u32(optarg, "entries"); break;
+            case 'e':
+                config.bht_entries = parse_u32(optarg, "entries");
+                config.btb_entries = config.bht_entries;
+                break;
+            case OPT_BHT_ENTRIES:
+                config.bht_entries = parse_u32(optarg, "bht-entries");
+                break;
+            case OPT_BTB_ENTRIES:
+                config.btb_entries = parse_u32(optarg, "btb-entries");
+                break;
+            case OPT_BTB_WAYS:
+                config.btb_ways = parse_u32(optarg, "btb-ways");
+                break;
             case OPT_PENALTY: config.penalty = parse_double(optarg, "penalty"); break;
             case OPT_INSTS: config.insts = parse_u64(optarg, "insts"); break;
             case 'h': display_usage(argv[0]); exit(0);
@@ -515,7 +608,13 @@ static config_t parse_args(int argc, char **argv) {
         }
     }
 
-    Assert(is_pow2(config.entries), "entries 必须是 2 的幂: %u", config.entries);
+    Assert(is_pow2(config.bht_entries), "bht-entries 必须是 2 的幂: %u", config.bht_entries);
+    Assert(is_pow2(config.btb_entries), "btb-entries 必须是 2 的幂: %u", config.btb_entries);
+    Assert(is_pow2(config.btb_ways), "btb-ways 必须是 2 的幂: %u", config.btb_ways);
+    Assert(config.btb_ways <= config.btb_entries,
+        "btb-ways(%u) 不能大于 btb-entries(%u)", config.btb_ways, config.btb_entries);
+    Assert((config.btb_entries % config.btb_ways) == 0,
+        "btb-entries(%u) 必须能被 btb-ways(%u) 整除", config.btb_entries, config.btb_ways);
     Assert(config.penalty >= 0.0, "penalty 不能为负数");
     return config;
 }
@@ -525,7 +624,13 @@ static stats_t run_trace(const config_t *config) {
     Assert(fp != NULL, "无法打开 BTRACE 文件: %s", config->trace_file);
 
     predictor_t predictor;
-    predictor_init(&predictor, config->predictor, config->entries);
+    predictor_init(
+        &predictor,
+        config->predictor,
+        config->bht_entries,
+        config->btb_entries,
+        config->btb_ways
+    );
 
     stats_t stats = {0};
     btrace_entry_t entry;
@@ -562,7 +667,12 @@ static void print_stats(const config_t *config, const stats_t *stats) {
      */
     printf("BranchSim result\n");
     printf("  预测器: %s\n", predictor_name(config->predictor));
-    printf("  表项数: %u\n", config->entries);
+    printf("  BHT 表项数: %u\n", config->bht_entries);
+    if (config->predictor == PRED_BTB) {
+        printf("  BTB 表项数: %u\n", config->btb_entries);
+        printf("  BTB 相联度: %u-way\n", config->btb_ways);
+        printf("  BTB set 数: %u\n", config->btb_entries / config->btb_ways);
+    }
     printf("  BTRACE: %s\n", config->trace_file);
     printf("\n");
 
@@ -592,12 +702,15 @@ static void print_stats(const config_t *config, const stats_t *stats) {
     }
 
     printf(
-        "RESULT predictor=%s entries=%u branches=%" PRIu64
+        "RESULT predictor=%s entries=%u bht_entries=%u btb_entries=%u btb_ways=%u branches=%" PRIu64
         " pc_hit=%" PRIu64 " pc_miss=%" PRIu64 " pc_accuracy=%.6f"
         " dir_accuracy=%.6f btb_hit_rate=%.6f lost_cycles=%.2f"
         " cond=%" PRIu64 " jal=%" PRIu64 " jalr=%" PRIu64 "\n",
         predictor_name(config->predictor),
-        config->entries,
+        config->predictor == PRED_BTB ? config->btb_entries : config->bht_entries,
+        config->bht_entries,
+        config->btb_entries,
+        config->btb_ways,
         stats->total,
         stats->pc_hit,
         pc_miss,
