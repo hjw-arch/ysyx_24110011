@@ -38,6 +38,7 @@ localparam logic [4:0] OPC_SYSTEM   = 5'b11100;         // SYSTEM 类，包含ec
 
 wire [31:0] inst    = data_i.inst;
 wire [31:0] pc      = data_i.pc;
+wire [31:0] seq_pc  = pc + 32'd4;
 wire [4:0]  opcode  = inst[6:2];
 wire [2:0]  func3   = inst[14:12];
 wire        func7b5 = inst[30];
@@ -123,7 +124,10 @@ assign id_rs2_addr = rs2_addr_raw;
 assign id_rs1_used = valid_i & rs1_used;
 assign id_rs2_used = valid_i & rs2_used;
 
-assign data_o.meta = data_i;
+assign data_o.meta.pc   = pc;
+assign data_o.meta.inst = inst;
+assign data_o.meta.pred_taken = data_i.pred_taken;
+assign data_o.seq_pc = seq_pc;
 
 assign data_o.ex.rs1_used = rs1_used;
 assign data_o.ex.rs2_used = rs2_used;

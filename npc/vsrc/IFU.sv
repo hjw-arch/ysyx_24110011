@@ -1,10 +1,7 @@
 `include "./include/pipeline_pkt_pkg.sv"
 module IFU
 import pipeline_pkt_pkg::*;
-#(
-    parameter int BTB_ENTRIES = 4,
-    parameter int BHT_ENTRIES = 32
-)(
+(
     input			        clk,
     input			        rst,
 
@@ -26,7 +23,12 @@ import pipeline_pkt_pkg::*;
 	input 			        icache_inval_i /* verilator public_flat_rd */, // icache 内容失效
 	input	[31:0] 	        redirect_pc_i,          // 重定向后的 PC
 	input			        redirect_valid_i /* verilator public_flat_rd */, // 确认推测错误，需要刷新流水线
-    input   bp_update_t     bp_update_i,
+
+    input                   bpu_update_valid_i,
+    input                   bpu_update_type_i,
+    input                   bpu_update_taken_i,
+    input   [31:0]          bpu_update_pc_i,
+    input   [31:0]          bpu_update_target_i,
 
     output 			        valid_o,
     output	if2id_pkt_t     data_o,
@@ -55,9 +57,6 @@ logic               ic_resp_pred_taken;
 logic               ic_resp_err;
 logic				ic_resp_ready /* verilator public_flat_rd */;
 
-logic               bp_pred_taken;
-logic   [31:0]      bp_pred_pc;
-
 
 
 // ==========================================
@@ -67,9 +66,15 @@ wire	ic_req_fire	= ic_req_valid & ic_req_ready;
 
 logic   [31:0]  pc_r /* verilator public_flat_rd */;
 logic   [31:0]  pc_n;
+wire    [31:0]  pc_plus4;
+
+logic           bpu_pred_taken;
+logic   [31:0]  bpu_pred_pc;
+
+assign pc_plus4 = pc_r + 32'd4;
 
 assign pc_n	=	redirect_valid_i ? redirect_pc_i :   // 这里当前设置为重定向当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
-				ic_req_fire ? bp_pred_pc :
+				ic_req_fire ? (bpu_pred_taken ? bpu_pred_pc : pc_plus4) :
 				pc_r;
 
 always_ff @(posedge clk) begin
@@ -85,20 +90,7 @@ end
 // ==========================================
 assign	ic_req_valid	=	~redirect_valid_i;
 assign	ic_req_addr		=	pc_r;
-assign  ic_req_pred_taken = bp_pred_taken;
-
-branch_predictor #(
-    .BTB_ENTRIES    (BTB_ENTRIES),
-    .BHT_ENTRIES    (BHT_ENTRIES)
-) u_branch_predictor (
-    .clk            (clk),
-    .rst            (rst),
-    .pc_i           (pc_r),
-    .pred_taken_o   (bp_pred_taken),
-    .pred_pc_o      (bp_pred_pc),
-    .update_i       (bp_update_i),
-    .inval_i        (icache_inval_i)
-);
+assign  ic_req_pred_taken = bpu_pred_taken;
 
 
 // ==========================================
@@ -157,6 +149,27 @@ icache #(
     .refill_resp_data_i (refill_resp_data),
     .refill_resp_err_i  (refill_resp_err),
     .refill_resp_ready_o(refill_resp_ready)
+);
+
+// ==========================================
+// 7. Branch Prediction Unit
+// ==========================================
+BPU #(
+    .ADDR_WIDTH  (32),
+    .BTB_ENTRIES (4),
+    .BHT_ENTRIES (32)
+) u_BPU (
+    .clk                (clk),
+    .rst                (rst),
+    .pc_i               (pc_r),
+    .pred_taken_o       (bpu_pred_taken),
+    .pred_pc_o          (bpu_pred_pc),
+    .update_valid_i     (bpu_update_valid_i),
+    .update_type_i      (bpu_update_type_i),
+    .update_taken_i     (bpu_update_taken_i),
+    .update_pc_i        (bpu_update_pc_i),
+    .update_target_i    (bpu_update_target_i),
+    .inval_i            (icache_inval_i)
 );
 // ==========================================
 // 7. AXI Read Adapter 例化

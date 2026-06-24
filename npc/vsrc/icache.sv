@@ -51,10 +51,10 @@ typedef struct packed {
     logic [TAG_WIDTH-1:0]       tag;
     logic [INDEX_WIDTH-1:0]     index;
     logic [OFFSET_WIDTH-1:0]    offset;
+    logic                       pred_taken;
     logic                       entry_valid;
     logic [TAG_WIDTH-1:0]       entry_tag;
     logic [LINE_WIDTH-1:0]      entry_data;
-    logic                       pred_taken;
 } lookup_pkt_t;
 
 
@@ -161,10 +161,10 @@ icache_array #(
 assign s1_pre_data.tag         = req_tag;
 assign s1_pre_data.index       = req_index;
 assign s1_pre_data.offset      = req_offset;
+assign s1_pre_data.pred_taken  = req_pred_taken_i;
 assign s1_pre_data.entry_valid = entry_valid;
 assign s1_pre_data.entry_tag   = entry_tag;
 assign s1_pre_data.entry_data  = entry_data;
-assign s1_pre_data.pred_taken  = req_pred_taken_i;
 
 
 /*============================================================

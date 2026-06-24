@@ -188,15 +188,12 @@ typedef struct packed {
     logic [31:0]    addr;
 } redirect_t;
 
-
 typedef struct packed {
     logic           valid;
-    logic           is_branch;
-    logic           is_jal;
+    logic           btb_type;       // 0: branch, 1: jal
     logic           taken;
-    logic [31:0]    pc;
     logic [31:0]    target;
-} bp_update_t;
+} bpu_update_t;
 
 
 //============================================================
@@ -209,6 +206,10 @@ typedef pipe_meta_t if2id_pkt_t;
 
 typedef struct packed {
     pipe_meta_t     meta;
+
+    // 顺序下一条 PC。分支预测失败且实际 not-taken 时，EXU 可以直接用它恢复，
+    // 避免把 branch_taken 串到 redirect 加法器输入选择上。
+    logic   [31:0]  seq_pc;
 
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
@@ -229,7 +230,7 @@ typedef struct packed {
     sys_ctrl_t      sys;
 
     redirect_t      redirect;
-    bp_update_t     bp_update;
+    bpu_update_t    bpu_update;
 
     logic   [31:0]  result;
     logic   [31:0]  store_data;

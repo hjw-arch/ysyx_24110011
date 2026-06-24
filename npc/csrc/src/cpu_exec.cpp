@@ -20,6 +20,13 @@
 
 #define min_num_to_disasm   10
 
+#define EX2LS_PC_HI     204
+#define EX2LS_PC_LO     173
+#define LS2WB_PC_HI     102
+#define LS2WB_PC_LO     71
+#define LS2WB_INST_HI   70
+#define LS2WB_INST_LO   39
+
 #define FTRACE_RECORD     record_ftrace(current_pc, current_inst == 0x8067 ? 1 : 0, cpu.pc)
 
 #ifdef SOC
@@ -82,15 +89,15 @@ static bool difftest_addr_is_pmem(uint32_t addr) {
 }
 
 static uint32_t get_lsu_pc() {
-	return get_wide_bits(CORE_SIG(ex2ls_data).data(), 168, 137);
+	return get_wide_bits(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO);
 }
 
 static uint32_t get_wbu_pc() {
-	return get_wide_bits(CORE_SIG(ls2wb_data).data(), 101, 70);
+	return get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_PC_HI, LS2WB_PC_LO);
 }
 
 static uint32_t get_wbu_inst() {
-	return get_wide_bits(CORE_SIG(ls2wb_data).data(), 69, 38);
+	return get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_INST_HI, LS2WB_INST_LO);
 }
 
 static void record_lsu_redirect() {
@@ -118,7 +125,7 @@ static void record_lsu_difftest_skip() {
 		(CORE_SIG(u_LSU__DOT__input_is_load) | CORE_SIG(u_LSU__DOT__input_is_store));
 
 	if (mem_output_fire && !difftest_addr_is_pmem(CORE_SIG(u_LSU__DOT__lsu_addr))) {
-		pending_difftest_skip.pc = get_wide_bits(CORE_SIG(ex2ls_data).data(), 168, 137);
+		pending_difftest_skip.pc = get_wide_bits(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO);
 		pending_difftest_skip.valid = true;
 	}
 #endif
