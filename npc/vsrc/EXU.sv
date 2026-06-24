@@ -51,7 +51,8 @@ wire [31:0] rs2_data = ({32{data_i.ex.fwd_rs2_sel[0]}} & fwd_ls_data_i) |
 //   01: rs1, imm
 //   10: pc,  4
 //   11: pc,  imm
-// IDU 已经把 fence.i 配成 pc+4，因此 EXU 不需要额外识别 fence.i。
+// jal/jalr/fence.i 的结果直接使用 ID 阶段带来的 seq_pc；
+// 主 ALU 仍服务于普通计算、访存地址、auipc 和 branch 比较。
 logic [31:0] alu_src1;
 logic [31:0] alu_src2;
 
