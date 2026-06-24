@@ -88,7 +88,7 @@ BHT #(
 );
 
 assign pred_taken_o = btb_lookup_hit & (btb_lookup_type | bht_lookup_taken);
-assign pred_pc_o    = pred_taken_o ? btb_lookup_target : pc_i + 32'd4;
+assign pred_pc_o    = btb_lookup_target;
 
 
 

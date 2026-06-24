@@ -10,6 +10,7 @@ package pipeline_pkt_pkg;
 typedef struct packed {
     logic   [31:0]  pc;
     logic   [31:0]  inst;
+    logic           pred_taken;
 } pipe_meta_t;
 
 
@@ -187,6 +188,13 @@ typedef struct packed {
     logic [31:0]    addr;
 } redirect_t;
 
+typedef struct packed {
+    logic           valid;
+    logic           btb_type;       // 0: branch, 1: jal
+    logic           taken;
+    logic [31:0]    target;
+} bpu_update_t;
+
 
 //============================================================
 // Pipeline packets
@@ -218,6 +226,7 @@ typedef struct packed {
     sys_ctrl_t      sys;
 
     redirect_t      redirect;
+    bpu_update_t    bpu_update;
 
     logic   [31:0]  result;
     logic   [31:0]  store_data;

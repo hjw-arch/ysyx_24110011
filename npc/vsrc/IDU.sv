@@ -125,6 +125,7 @@ assign id_rs2_used = valid_i & rs2_used;
 
 assign data_o.meta.pc   = pc;
 assign data_o.meta.inst = inst;
+assign data_o.meta.pred_taken = data_i.pred_taken;
 
 assign data_o.ex.rs1_used = rs1_used;
 assign data_o.ex.rs2_used = rs2_used;

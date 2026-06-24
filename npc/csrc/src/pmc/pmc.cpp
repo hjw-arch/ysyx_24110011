@@ -29,8 +29,17 @@ extern Vysyx dut;
 #define MEM_CMD_LOAD 0x1u
 
 enum ex2ls_pkt_bit_t {
-    EX2LS_MEM_CMD_LO = 103,
-    EX2LS_MEM_CMD_HI = 104,
+    EX2LS_MEM_CMD_LO = 138,
+    EX2LS_MEM_CMD_HI = 139,
+    EX2LS_PC_LO = 173,
+    EX2LS_PC_HI = 204,
+};
+
+enum ls2wb_pkt_bit_t {
+    LS2WB_INST_LO = 39,
+    LS2WB_INST_HI = 70,
+    LS2WB_PC_LO = 71,
+    LS2WB_PC_HI = 102,
 };
 
 enum pmc_inst_t {
@@ -169,15 +178,15 @@ static uint32_t get_wide_bits(const WData *data, int hi, int lo) {
 }
 
 static uint32_t get_lsu_pc() {
-    return get_wide_bits(CORE_SIG(ex2ls_data).data(), 168, 137);
+    return get_wide_bits(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO);
 }
 
 static pmc_wbu_info_t sample_wbu() {
     pmc_wbu_info_t wbu = {};
 
     wbu.valid = CORE_SIG(ls2wb_valid);
-    wbu.pc = get_wide_bits(CORE_SIG(ls2wb_data).data(), 101, 70);
-    wbu.inst = get_wide_bits(CORE_SIG(ls2wb_data).data(), 69, 38);
+    wbu.pc = get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_PC_HI, LS2WB_PC_LO);
+    wbu.inst = get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_INST_HI, LS2WB_INST_LO);
 
     return wbu;
 }

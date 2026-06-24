@@ -100,21 +100,28 @@ always_comb begin
     endcase
 end
 
-// 控制流目标地址只保留一个加法器：
-//   branch/jal 使用 pc  + imm
-//   jalr       使用 rs1 + imm，并清掉 bit0
+// 控制流恢复地址只保留一个加法器：
+//   taken branch/jal 使用 pc  + imm
+//   jalr             使用 rs1 + imm，并清掉 bit0
+//   predicted-taken 但实际 not-taken 的 branch 使用 pc + 4 恢复顺序流
 //
 // jal/jalr 的写回值 pc+4 仍由主 ALU 产生。对于 branch，主 ALU 同拍还要做比较，
 // 因此若希望 EX 阶段单拍给出 redirect，额外保留一个“目标地址加法器”是必要的。
-// 这里把 pc+imm 和 rs1+imm 复用到同一个加法器，避免综合出两个并行 target adder。
-wire        redirect_is_jalr = &data_i.ex.cfi_type;
-wire [31:0] redirect_base    = redirect_is_jalr ? rs1_data : pc;
-wire [31:0] redirect_sum     = redirect_base + imm;
-wire [31:0] redirect_target  = redirect_is_jalr ? {redirect_sum[31:1], 1'b0} : redirect_sum;
-
+// 这里把 pc+imm、rs1+imm 和 pc+4 复用到同一个加法器，避免再引入额外 pc+4 adder。
 wire redirect_is_branch = ~data_i.ex.cfi_type[1] & data_i.ex.cfi_type[0];
+wire redirect_is_jal    =  data_i.ex.cfi_type[1] & ~data_i.ex.cfi_type[0];
+wire redirect_is_jalr   = &data_i.ex.cfi_type;
 wire redirect_is_jump   = data_i.ex.cfi_type[1];
-wire redirect_valid     = redirect_is_jump | (redirect_is_branch & branch_taken);
+wire redirect_is_cfi    = |data_i.ex.cfi_type;
+wire actual_taken       = redirect_is_jump | (redirect_is_branch & branch_taken);
+
+wire        recover_to_seq  = redirect_is_branch & ~branch_taken;
+wire [31:0] redirect_base   = redirect_is_jalr ? rs1_data : pc;
+wire [31:0] redirect_addend = recover_to_seq ? 32'd4 : imm;
+wire [31:0] redirect_sum    = redirect_base + redirect_addend;
+wire [31:0] redirect_target = redirect_is_jalr ? {redirect_sum[31:1], 1'b0} : redirect_sum;
+
+wire redirect_valid = redirect_is_cfi & (actual_taken ^ data_i.meta.pred_taken);
 
 // CSR 指令的写入源在 EXU 准备好，后续 WBU 用 result 作为 csr_src。
 // CSR immediate 形式使用 ID 阶段生成的 zimm immediate；寄存器形式使用 rs1_data。
@@ -131,9 +138,15 @@ assign data_o.sys        = data_i.sys;
 assign data_o.result     = ex_result;
 assign data_o.store_data = rs2_data;
 
-// addr 在 valid=0 时无语义，直接接 target，避免额外综合出清零 mux。
+// addr 在 valid=0 时无语义，直接接恢复地址，避免额外综合出清零 mux。
 assign data_o.redirect.valid = redirect_valid;
 assign data_o.redirect.addr  = redirect_target;
+
+// BPU 只训练 direct CFI。jalr 暂不预测，后续若做 RAS 再单独处理。
+assign data_o.bpu_update.valid  = redirect_is_branch | redirect_is_jal;
+assign data_o.bpu_update.btb_type = redirect_is_jal;
+assign data_o.bpu_update.taken  = actual_taken;
+assign data_o.bpu_update.target = redirect_target;
 
 // hazard 只关心真实会写回的指令，并且 rd=x0 已经在 IDU 的 rd_wen 中被屏蔽。
 assign rd_addr_o = rd_addr & {5{valid_i & data_i.wb.rd_wen}};
