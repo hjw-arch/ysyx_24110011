@@ -5,71 +5,92 @@
 #if !defined(__ISA_NATIVE__) || defined(__NATIVE_USE_KLIB__)
 
 size_t strlen(const char *s) {
-    uint32_t num = 0;
-    while(*(s++) != '\0') {
-        num++;
+    const char *p = s;
+    while (*p != '\0') {
+        p++;
     }
-    return num;
+    return (size_t)(p - s);
 }
 
 char *strcpy(char *dst, const char *src) {
     char *ret = dst;
-    while(*src != '\0') {
-        *(dst++) = *(src++);
-    }
-    *dst = '\0';
+
+    while ((*dst++ = *src++) != '\0') {}
+
     return ret;
 }
 
 char *strncpy(char *dst, const char *src, size_t n) {
     char *ret = dst;
 
-    uint32_t i = 0;
-
-    while(i++ < n && *src != '\0') {
-        *(dst++) = *(src++);
+    while (n != 0 && *src != '\0') {
+        *dst++ = *src++;
+        n--;
     }
 
-    if (i >= n) {
-        return ret;
+    while (n != 0) {
+        *dst++ = '\0';
+        n--;
     }
-
-    *dst = '\0';
 
     return ret;
 }
 
 char *strcat(char *dst, const char *src) {
     char *ret = dst;
-    while(*dst != '\0') dst++;
-    while(*src != '\0') *(dst++) = *(src++);
-    *dst = '\0';        // 有安全漏洞
+
+    while (*dst != '\0') {
+        dst++;
+    }
+
+    while ((*dst++ = *src++) != '\0') {}
+
     return ret;
 }
 
 int strcmp(const char *s1, const char *s2) {
-    while(*s1 - *s2 == 0 && *s1 != '\0') s1++, s2++;
-    return *s1 - *s2;
+    const unsigned char *a = (const unsigned char *)s1;
+    const unsigned char *b = (const unsigned char *)s2;
+
+    while (*a == *b) {
+        if (*a == '\0') {
+            return 0;
+        }
+
+        a++;
+        b++;
+  }
+
+  return (int)*a - (int)*b;
 }
 
 int strncmp(const char *s1, const char *s2, size_t n) {
-    uint32_t i = 0;
-    while (i < n) {
-        if (s1[i] == s2[i] && s1[i] != '\0') {
-            i++;
-            continue;
-        } else {
-            return s1[i] - s2[i];
+    const unsigned char *a = (const unsigned char *)s1;
+    const unsigned char *b = (const unsigned char *)s2;
+
+    while (n != 0) {
+        if (*a != *b) {
+            return (int)*a - (int)*b;
         }
+        
+        if (*a == '\0') {
+            return 0;
+        }
+    
+        a++;
+        b++;
+        n--;
     }
 
-    return 0;
-    
+  return 0;
 }
 
 void *memset(void *s, int c, size_t n) {
-    for (uint8_t *ptr = (uint8_t *)s; ptr < (uint8_t *)s + n; ptr++) {
-        *ptr = (uint8_t)c;
+    unsigned char *p = s;
+
+    while (n != 0) {
+        *p++ = (unsigned char)c;
+        n--;
     }
 
     return s;
@@ -78,25 +99,38 @@ void *memset(void *s, int c, size_t n) {
 void *memmove(void *dst, const void *src, size_t n) {
     uint8_t *d = dst, *s = (uint8_t *)src;
     if (d < s) {
-        for (int i = 0; i < n; ++i) d[i] = s[i];
+        for (size_t i = 0; i < n; ++i) d[i] = s[i];
     } else {
-        for (int i = n - 1; i >= 0; --i) d[i] = s[i];
+        for (size_t i = n - 1; i >= 0; --i) d[i] = s[i];
     }
 
     return dst;
 }
 
-void *memcpy(void *out, const void *in, size_t n) {
-    uint8_t *o = out, *i = (uint8_t *)in;
-    for (int k = 0; k < n; ++k) o[k] = i[k];
+void *memcpy(void *dst, const void *src, size_t n) {
+    unsigned char *d = dst;
+    const unsigned char *s = src;
 
-    return out;
+    while (n != 0) {
+        *d++ = *s++;
+        n--;
+    }
+
+    return dst;
 }
 
 int memcmp(const void *s1, const void *s2, size_t n) {
-    uint8_t *str1 = (uint8_t *)s1, *str2 = (uint8_t *)s2;
-    for (int i = 0; i < n; ++i) {
-        if (str1[i] != str2[i]) return str1[i] - str2[i];
+    const unsigned char *a = s1;
+    const unsigned char *b = s2;
+
+    while (n != 0) {
+        if (*a != *b) {
+            return (int)*a - (int)*b;
+        }
+        
+        a++;
+        b++;
+        n--;
     }
 
     return 0;

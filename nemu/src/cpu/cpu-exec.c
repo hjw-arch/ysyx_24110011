@@ -102,9 +102,7 @@ static void execute(uint64_t n) {
 }
 
 static void statistic() {
-    IFDEF(CONFIG_ITRACE, itrace_display());      // iringbuf
-    IFDEF(CONFIG_MTRACE, mtrace_display());         // mtrace
-    IFDEF(CONFIG_BTRACE, btrace_finish());
+    trace_finish();
     IFNDEF(CONFIG_TARGET_AM, setlocale(LC_NUMERIC, ""));
 #define NUMBERIC_FMT MUXDEF(CONFIG_TARGET_AM, "%", "%'") PRIu64
     Log("host time spent = " NUMBERIC_FMT " us", g_timer);

@@ -29,6 +29,7 @@ void diaplay_wp();
 // iringbuf
 void itrace_write(vaddr_t addr, uint32_t inst);
 void itrace_display();
+void trace_finish();
 
 void set_entry_main_flag();
 void mtrace_load(vaddr_t addr, uint32_t len, word_t content);
@@ -36,6 +37,7 @@ void mtrace_store(vaddr_t addr, uint32_t len, word_t content);
 void mtrace_display();
 
 void decode_elf();
+enum { FTRACE_CALL, FTRACE_RET, FTRACE_TAIL };
 void record_ftrace(uint32_t pc_now, uint32_t action, uint32_t pc_target);
 void display_ftrace();
 
@@ -48,6 +50,5 @@ void record_etrace(vaddr_t pc, uint32_t cause, uint32_t tvec);
 
 // btrace
 void btrace_record(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst);
-void btrace_finish();
 
 #endif

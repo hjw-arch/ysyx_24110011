@@ -104,69 +104,69 @@ localparam bit USE_RV32E = 1'b1;
 `endif
 
 
-	// IF/ID
-	logic 			if2id_pre_valid /* verilator public_flat_rd */;
-	if2id_pkt_t		if2id_pre_data;
-	logic			if2id_pre_ready;
-	logic 			if2id_valid /* verilator public_flat_rd */;
-	if2id_pkt_t		if2id_data;
-	logic 			if2id_ready;
+// IF/ID
+logic 			if2id_pre_valid /* verilator public_flat_rd */;
+if2id_pkt_t		if2id_pre_data;
+logic			if2id_pre_ready;
+logic 			if2id_valid /* verilator public_flat_rd */;
+if2id_pkt_t		if2id_data;
+logic 			if2id_ready;
 
-	// ID/EX
-	logic 			id2ex_pre_valid;
-	id2ex_pkt_t		id2ex_pre_data;
-	logic			id2ex_pre_ready;
-	logic			id2ex_valid /* verilator public_flat_rd */;
-	id2ex_pkt_t		id2ex_data;
-	logic			id2ex_ready;
+// ID/EX
+logic 			id2ex_pre_valid;
+id2ex_pkt_t		id2ex_pre_data;
+logic			id2ex_pre_ready;
+logic			id2ex_valid /* verilator public_flat_rd */;
+id2ex_pkt_t		id2ex_data;
+logic			id2ex_ready;
 
-	// EX/LS
-	logic			ex2ls_pre_valid;
-	ex2ls_pkt_t		ex2ls_pre_data;
-	logic			ex2ls_pre_ready;
-	logic			ex2ls_valid /* verilator public_flat_rd */;
-	ex2ls_pkt_t		ex2ls_data /* verilator public_flat_rd */;
-	logic			ex2ls_ready;
+// EX/LS
+logic			ex2ls_pre_valid;
+ex2ls_pkt_t		ex2ls_pre_data;
+logic			ex2ls_pre_ready;
+logic			ex2ls_valid /* verilator public_flat_rd */;
+ex2ls_pkt_t		ex2ls_data /* verilator public_flat_rd */;
+logic			ex2ls_ready;
 
-	// LS/WB
-	logic			ls2wb_pre_valid;
-	ls2wb_pkt_t		ls2wb_pre_data;
-	logic			ls2wb_pre_ready;
-	logic			ls2wb_valid /* verilator public_flat_rd */;
-	ls2wb_pkt_t		ls2wb_data /* verilator public_flat_rd */;
-	logic			ls2wb_ready;
-	logic [31:0]	rf_wdata;
+// LS/WB
+logic			ls2wb_pre_valid;
+ls2wb_pkt_t		ls2wb_pre_data;
+logic			ls2wb_pre_ready;
+logic			ls2wb_valid /* verilator public_flat_rd */;
+ls2wb_pkt_t		ls2wb_data /* verilator public_flat_rd */;
+logic			ls2wb_ready;
+logic [31:0]	rf_wdata;
 
 
-	// RF
-	logic [4:0]		rf_rs1_addr;
-	logic [4:0]		rf_rs2_addr;
-	logic [31:0]	rf_rs1_data;
-	logic [31:0]	rf_rs2_data;
+// RF
+logic [4:0]		rf_rs1_addr;
+logic [4:0]		rf_rs2_addr;
+logic [31:0]	rf_rs1_data;
+logic [31:0]	rf_rs2_data;
 
-	// redirect/flush
-	logic 			pipeline_flush;
-	logic [31:0]	redirect_pc;
-	logic			lsu_redirect_valid /* verilator public_flat_rd */;
-	logic [31:0]	lsu_redirect_pc /* verilator public_flat_rd */;
-	logic			wbu_redirect_valid /* verilator public_flat_rd */;
-	logic [31:0]	wbu_redirect_pc /* verilator public_flat_rd */;
-	logic			icache_inval;
-	logic			bpu_update_valid;
-	logic			bpu_update_type;
-	logic			bpu_update_taken;
-	logic [31:0]	bpu_update_pc;
-	logic [31:0]	bpu_update_target;
+// redirect/flush
+logic 			pipeline_flush;
+logic [31:0]	redirect_pc;
+logic			lsu_redirect_valid /* verilator public_flat_rd */;
+logic [31:0]	lsu_redirect_pc /* verilator public_flat_rd */;
+logic			wbu_redirect_valid /* verilator public_flat_rd */;
+logic [31:0]	wbu_redirect_pc /* verilator public_flat_rd */;
+logic			icache_inval;
+logic			bpu_update_valid;
+logic			bpu_update_type;
+logic			bpu_update_taken;
+logic [31:0]	bpu_update_pc;
+logic [31:0]	bpu_update_target;
 
-	assign pipeline_flush = wbu_redirect_valid | lsu_redirect_valid;
-	assign redirect_pc    = wbu_redirect_valid ? wbu_redirect_pc : lsu_redirect_pc;
+assign pipeline_flush = wbu_redirect_valid | lsu_redirect_valid;
+assign redirect_pc    = wbu_redirect_valid ? wbu_redirect_pc : lsu_redirect_pc;
 
 // forward
 logic [4:0]		id_rs1_addr;
 logic [4:0]		id_rs2_addr;
-	logic			id_rs1_used;
-	logic			id_rs2_used;
-	logic [4:0]		ex_rd_addr;
+logic			id_rs1_used;
+logic			id_rs2_used;
+logic [4:0]		ex_rd_addr;
 logic [4:0]		ls_rd_addr;
 logic			ex_is_load /* verilator public_flat_rd */;
 logic			ex_is_csr /* verilator public_flat_rd */;
@@ -192,18 +192,18 @@ IFU u_IFU(
 	.RLAST   	(IFU_RLAST    ),
 	.RID     	(IFU_RID      ),
 	.RDATA   	(IFU_RDATA    ),
-		.RRESP   	(IFU_RRESP    ),
-		.icache_inval_i(icache_inval),
-		.redirect_pc_i 	(redirect_pc  ),
-		.redirect_valid_i(pipeline_flush),
-		.bpu_update_valid_i(bpu_update_valid),
-		.bpu_update_type_i (bpu_update_type ),
-		.bpu_update_taken_i(bpu_update_taken),
-		.bpu_update_pc_i   (bpu_update_pc   ),
-		.bpu_update_target_i(bpu_update_target),
-		.valid_o 	(if2id_pre_valid),
-		.data_o  	(if2id_pre_data ),
-		.ready_i 	(if2id_pre_ready)
+	.RRESP   	(IFU_RRESP    ),
+	.icache_inval_i(icache_inval),
+	.redirect_pc_i 	(redirect_pc  ),
+	.redirect_valid_i(pipeline_flush),
+	.bpu_update_valid_i(bpu_update_valid),
+	.bpu_update_type_i (bpu_update_type ),
+	.bpu_update_taken_i(bpu_update_taken),
+	.bpu_update_pc_i   (bpu_update_pc   ),
+	.bpu_update_target_i(bpu_update_target),
+	.valid_o 	(if2id_pre_valid),
+	.data_o  	(if2id_pre_data ),
+	.ready_i 	(if2id_pre_ready)
 	);
 
 
@@ -212,37 +212,37 @@ pip_reg #(
 	.WIDTH 	($bits(if2id_pkt_t)))
 u_if2id_pip(
 	.clk        	(clock       ),
-		.rst        	(reset       ),
-		.flush      	(pipeline_flush ),
-		.pre_valid  	(if2id_pre_valid),
-		.pre_data   	(if2id_pre_data ),
-		.next_ready 	(if2id_ready    ),
-		.pre_ready  	(if2id_pre_ready),
-		.next_data  	(if2id_data     ),
-		.next_valid 	(if2id_valid    )
+	.rst        	(reset       ),
+	.flush      	(pipeline_flush ),
+	.pre_valid  	(if2id_pre_valid),
+	.pre_data   	(if2id_pre_data ),
+	.next_ready 	(if2id_ready    ),
+	.pre_ready  	(if2id_pre_ready),
+	.next_data  	(if2id_data     ),
+	.next_valid 	(if2id_valid    )
 	);
 
 
 
 
 IDU u_IDU(
-		.rf_rs1_addr_o(rf_rs1_addr),
-		.rf_rs2_addr_o(rf_rs2_addr),
-		.rf_rs1_data_i(rf_rs1_data),
-		.rf_rs2_data_i(rf_rs2_data),
-		.id_rs1_addr(id_rs1_addr   ),
-		.id_rs2_addr(id_rs2_addr   ),
-		.id_rs1_used(id_rs1_used   ),
-		.id_rs2_used(id_rs2_used   ),
-		.fwd_rs1_sel_i(fwd_rs1_sel ),
-		.fwd_rs2_sel_i(fwd_rs2_sel ),
-		.hazard_i 	(hazard_valid  ),
-		.valid_i  	(if2id_valid   ),
-		.data_i   	(if2id_data    ),
-		.ready_o  	(if2id_ready   ),
-		.valid_o  	(id2ex_pre_valid),
-		.data_o   	(id2ex_pre_data ),
-		.ready_i  	(id2ex_pre_ready)
+	.rf_rs1_addr_o(rf_rs1_addr),
+	.rf_rs2_addr_o(rf_rs2_addr),
+	.rf_rs1_data_i(rf_rs1_data),
+	.rf_rs2_data_i(rf_rs2_data),
+	.id_rs1_addr(id_rs1_addr   ),
+	.id_rs2_addr(id_rs2_addr   ),
+	.id_rs1_used(id_rs1_used   ),
+	.id_rs2_used(id_rs2_used   ),
+	.fwd_rs1_sel_i(fwd_rs1_sel ),
+	.fwd_rs2_sel_i(fwd_rs2_sel ),
+	.hazard_i 	(hazard_valid  ),
+	.valid_i  	(if2id_valid   ),
+	.data_i   	(if2id_data    ),
+	.ready_o  	(if2id_ready   ),
+	.valid_o  	(id2ex_pre_valid),
+	.data_o   	(id2ex_pre_data ),
+	.ready_i  	(id2ex_pre_ready)
 );
 
 
@@ -250,31 +250,31 @@ pip_reg #(
 	.WIDTH 	($bits(id2ex_pkt_t)))
 u_id2ex_pip(
 	.clk        	(clock       ),
-		.rst        	(reset       ),
-		.flush      	(pipeline_flush  ),
-		.pre_valid  	(id2ex_pre_valid),
-		.pre_data   	(id2ex_pre_data ),
-		.next_ready 	(id2ex_ready    ),
-		.pre_ready  	(id2ex_pre_ready),
-		.next_data  	(id2ex_data     ),
-		.next_valid 	(id2ex_valid    )
+	.rst        	(reset       ),
+	.flush      	(pipeline_flush  ),
+	.pre_valid  	(id2ex_pre_valid),
+	.pre_data   	(id2ex_pre_data ),
+	.next_ready 	(id2ex_ready    ),
+	.pre_ready  	(id2ex_pre_ready),
+	.next_data  	(id2ex_data     ),
+	.next_valid 	(id2ex_valid    )
 	);
 
 
 
-	EXU u_EXU(
-		.clk     	(clock	 ),
-		.rst     	(reset	 ),
-		.rd_addr_o  (ex_rd_addr      ),
-		.fwd_ls_data_i(ex2ls_data.result),
-		.fwd_wb_data_i(ls2wb_data.result),
-		.valid_i 	(id2ex_valid	),
-		.data_i  	(id2ex_data 	),
-		.ready_o 	(id2ex_ready	),
-		.valid_o 	(ex2ls_pre_valid),
-		.data_o  	(ex2ls_pre_data ),
-		.ready_i 	(ex2ls_pre_ready)
-	);
+EXU u_EXU(
+	.clk     	(clock	 ),
+	.rst     	(reset	 ),
+	.rd_addr_o  (ex_rd_addr      ),
+	.fwd_ls_data_i(ex2ls_data.result),
+	.fwd_wb_data_i(ls2wb_data.result),
+	.valid_i 	(id2ex_valid	),
+	.data_i  	(id2ex_data 	),
+	.ready_o 	(id2ex_ready	),
+	.valid_o 	(ex2ls_pre_valid),
+	.data_o  	(ex2ls_pre_data ),
+	.ready_i 	(ex2ls_pre_ready)
+);
 
 
 
@@ -282,14 +282,14 @@ pip_reg #(
 	.WIDTH 	($bits(ex2ls_pkt_t)))
 u_ex2ls_pip(
 	.clk        	(clock       ),
-		.rst        	(reset       ),
-		.flush      	(pipeline_flush  ),
-		.pre_valid  	(ex2ls_pre_valid),
-		.pre_data   	(ex2ls_pre_data ),
-		.next_ready 	(ex2ls_ready    ),
-		.pre_ready  	(ex2ls_pre_ready),
-		.next_data  	(ex2ls_data     ),
-		.next_valid 	(ex2ls_valid    )
+	.rst        	(reset       ),
+	.flush      	(pipeline_flush  ),
+	.pre_valid  	(ex2ls_pre_valid),
+	.pre_data   	(ex2ls_pre_data ),
+	.next_ready 	(ex2ls_ready    ),
+	.pre_ready  	(ex2ls_pre_ready),
+	.next_data  	(ex2ls_data     ),
+	.next_valid 	(ex2ls_valid    )
 	);
 
 
@@ -323,24 +323,24 @@ LSU u_LSU(
 	.WVALID  	(LSU_WVALID   ),
 	.WREADY  	(LSU_WREADY   ),
 	.BID     	(LSU_BID      ),
-		.BRESP   	(LSU_BRESP    ),
-		.BVALID  	(LSU_BVALID   ),
-		.BREADY  	(LSU_BREADY   ),
-		.rd_addr_o(ls_rd_addr),
-		.redirect_pc_o(lsu_redirect_pc),
-		.redirect_valid_o(lsu_redirect_valid),
-		.bpu_update_valid_o(bpu_update_valid),
-		.bpu_update_type_o (bpu_update_type ),
-		.bpu_update_taken_o(bpu_update_taken),
-		.bpu_update_pc_o   (bpu_update_pc   ),
-		.bpu_update_target_o(bpu_update_target),
-		.kill_i		(wbu_redirect_valid),
-		.valid_i 	(ex2ls_valid  ),
-		.data_i  	(ex2ls_data   ),
-		.ready_o 	(ex2ls_ready  ),
-		.valid_o 	(ls2wb_pre_valid),
-		.data_o  	(ls2wb_pre_data )
-	);
+	.BRESP   	(LSU_BRESP    ),
+	.BVALID  	(LSU_BVALID   ),
+	.BREADY  	(LSU_BREADY   ),
+	.rd_addr_o(ls_rd_addr),
+	.redirect_pc_o(lsu_redirect_pc),
+	.redirect_valid_o(lsu_redirect_valid),
+	.bpu_update_valid_o(bpu_update_valid),
+	.bpu_update_type_o (bpu_update_type ),
+	.bpu_update_taken_o(bpu_update_taken),
+	.bpu_update_pc_o   (bpu_update_pc   ),
+	.bpu_update_target_o(bpu_update_target),
+	.kill_i		(wbu_redirect_valid),
+	.valid_i 	(ex2ls_valid  ),
+	.data_i  	(ex2ls_data   ),
+	.ready_o 	(ex2ls_ready  ),
+	.valid_o 	(ls2wb_pre_valid),
+	.data_o  	(ls2wb_pre_data )
+);
 
 
 
@@ -348,42 +348,42 @@ pip_reg #(
 	.WIDTH 	($bits(ls2wb_pkt_t)))
 u_ls2wb_pip(
 	.clk        	(clock       ),
-		.rst        	(reset       ),
-		.flush      	(wbu_redirect_valid),
-		.pre_valid  	(ls2wb_pre_valid  ),
-		.pre_data   	(ls2wb_pre_data   ),
-		.next_ready 	(ls2wb_ready      ),
-		.pre_ready  	(ls2wb_pre_ready  ),
-		.next_data  	(ls2wb_data       ),
-		.next_valid 	(ls2wb_valid      )
-	);
+	.rst        	(reset       ),
+	.flush      	(wbu_redirect_valid),
+	.pre_valid  	(ls2wb_pre_valid  ),
+	.pre_data   	(ls2wb_pre_data   ),
+	.next_ready 	(ls2wb_ready      ),
+	.pre_ready  	(ls2wb_pre_ready  ),
+	.next_data  	(ls2wb_data       ),
+	.next_valid 	(ls2wb_valid      )
+);
 
 
 
 WBU #(
 	.RV32E		(USE_RV32E		)
-	) u_WBU(
-		.clk		(clock			),
-		.rst		(reset			),
-		.rf_rs1_addr_i(rf_rs1_addr	),
-		.rf_rs2_addr_i(rf_rs2_addr	),
-		.rf_rs1_data_o(rf_rs1_data	),
-		.rf_rs2_data_o(rf_rs2_data	),
-		.rf_wdata_o	(rf_wdata	    ),
-		.redirect_valid_o(wbu_redirect_valid),
-		.redirect_pc_o(wbu_redirect_pc),
-		.icache_inval_o(icache_inval),
-		.valid_i	(ls2wb_valid	),
-		.data_i		(ls2wb_data		),
-		.ready_o	(ls2wb_ready	)
-	);
+) u_WBU(
+	.clk		(clock			),
+	.rst		(reset			),
+	.rf_rs1_addr_i(rf_rs1_addr	),
+	.rf_rs2_addr_i(rf_rs2_addr	),
+	.rf_rs1_data_o(rf_rs1_data	),
+	.rf_rs2_data_o(rf_rs2_data	),
+	.rf_wdata_o	(rf_wdata	    ),
+	.redirect_valid_o(wbu_redirect_valid),
+	.redirect_pc_o(wbu_redirect_pc),
+	.icache_inval_o(icache_inval),
+	.valid_i	(ls2wb_valid	),
+	.data_i		(ls2wb_data		),
+	.ready_o	(ls2wb_ready	)
+);
 
 
-	assign ex_is_load	=	id2ex_valid & (id2ex_data.mem.cmd == MEM_LOAD);
-	assign ex_is_csr	=	id2ex_valid & (id2ex_data.sys.csr_cmd != CSR_CMD_NONE);
-	assign ls_is_csr	=	ex2ls_valid & (ex2ls_data.sys.csr_cmd != CSR_CMD_NONE);
-	// WBU 固定 ready，LSU valid 即表示 LS 结果本拍可进入 WB/作为转发源。
-	assign ls_can_wb	=	ls2wb_pre_valid;
+assign ex_is_load	=	id2ex_valid & (id2ex_data.mem.cmd == MEM_LOAD);
+assign ex_is_csr	=	id2ex_valid & (id2ex_data.sys.csr_cmd != CSR_CMD_NONE);
+assign ls_is_csr	=	ex2ls_valid & (ex2ls_data.sys.csr_cmd != CSR_CMD_NONE);
+// WBU 固定 ready，LSU valid 即表示 LS 结果本拍可进入 WB/作为转发源。
+assign ls_can_wb	=	ls2wb_pre_valid;
 
 hazard_unit u_hazard_unit(
 	.id_rs1_addr  	(id_rs1_addr   ),

@@ -372,18 +372,20 @@ int vsprintf(char *out, const char *fmt, va_list ap) {
                 switch (fmt[i]) {
                     case '-': {
                         leftAlign = true;
+                        paddingCharZero = false;
                         i++;
                         break;
                     }
 
                     case '+': {
+                        showSymbol = true;
                         blankBeforePostiveNum = false;
                         i++;
                         break;
                     }
 
                     case '0': {
-                        paddingCharZero = true;
+                        if (!leftAlign) paddingCharZero = true;
                         i++;
                         break;
                     }

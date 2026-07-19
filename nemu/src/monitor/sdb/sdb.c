@@ -203,6 +203,8 @@ void decode_elf() {
     fclose(fp);
 }
 
+#if defined(CONFIG_MTRACE2FILE) || defined(CONFIG_BTRACE)
+
 static uint32_t entry_main_flag = 0;
 static vaddr_t main_addr;
 
@@ -225,6 +227,7 @@ void set_entry_main_flag() {
 
 }
 
+#endif
 
 #endif
 
@@ -306,8 +309,6 @@ void itrace_display() {
         index++;
     }
     puts("\n");
-
-	IFDEF(CONFIG_ITRACE2FILE, close_trace_file(&itrace_output_file_fp, itrace_file));
 }
 
 #endif
@@ -383,25 +384,25 @@ void mtrace_write(vaddr_t addr, uint32_t len, uint32_t op) {
         }
         
         close_trace_file(&mtrace_output_file_fp, mtrace_file);
-        mtrace_output_file_fp = NULL; // 避免后续尝试写入
     }
 }
 
 #endif
 
 
-void mtrace_load(vaddr_t addr, uint32_t len, word_t content) {
+static void mtrace_record(vaddr_t addr, uint32_t len, word_t content, uint32_t is_load) {
     if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, 1};
+    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, is_load};
     mringbuf_index = (mringbuf_index + 1) % BUFFER_SIZE;
-    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 1));
+    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, is_load));
+}
+
+void mtrace_load(vaddr_t addr, uint32_t len, word_t content) {
+    mtrace_record(addr, len, content, 1);
 }
 
 void mtrace_store(vaddr_t addr, uint32_t len, word_t content) {
-    if (addr < CONFIG_MTRACE_START_ADDR || addr > CONFIG_MTRACE_END_ADDR) return;
-    mringbuf[mringbuf_index] = (mtrace_entry_t){cpu.pc, addr, len, content, 0};
-    mringbuf_index = (mringbuf_index + 1) % BUFFER_SIZE;
-    IFDEF(CONFIG_MTRACE2FILE, mtrace_write(addr, len, 0));
+    mtrace_record(addr, len, content, 0);
 }
 
 void mtrace_display() {
@@ -425,8 +426,6 @@ void mtrace_display() {
         index++;
     }
     puts("\n");
-
-	IFDEF(CONFIG_MTRACE2FILE, close_trace_file(&mtrace_output_file_fp, mtrace_file));
 }
 
 #endif
@@ -437,67 +436,56 @@ void mtrace_display() {
 
 typedef struct _ftrace{
     uint32_t pc_now;
-    uint32_t action;        // 0: call;  1: ret
+    uint32_t action;
     uint32_t pc_target;
 }ftrace;
 
 static ftrace fring_ftrace[64];
 static uint32_t fring_index = 0;
+static uint32_t fring_count = 0;
+
+static const symtab *find_func(vaddr_t addr) {
+    for (uint32_t i = 0; i < symtab_count; i++) {
+        if (symtabs[i].start_addr <= addr && addr < symtabs[i].end_addr) {
+            return &symtabs[i];
+        }
+    }
+    return NULL;
+}
 
 void record_ftrace(uint32_t pc_now, uint32_t action, uint32_t pc_target) {
     if (elf_file == NULL) return;
-    if (!action) {
-        uint32_t flag = 0;
-        for (int j = 0; j < symtab_count; j++) {
-            if (symtabs[j].start_addr == pc_target) {
-                flag = 1;
-                break;
-            }
-        }
-        if (!flag) return;
+    if (action == FTRACE_TAIL) {
+        const symtab *from = find_func(pc_now);
+        const symtab *to = find_func(pc_target);
+        if (to == NULL || to == from) return;
     }
-    if (fring_index >= 64) fring_index = 0;
-    fring_ftrace[fring_index].pc_now = pc_now;
-    fring_ftrace[fring_index].action = action;
-    fring_ftrace[fring_index++].pc_target = pc_target;
+    fring_ftrace[fring_index] = (ftrace){pc_now, action, pc_target};
+    fring_index = (fring_index + 1) % ARRLEN(fring_ftrace);
+    if (fring_count < (uint32_t)ARRLEN(fring_ftrace)) fring_count++;
 }
 
 void display_ftrace() {
     if (elf_file == NULL) return;
-    uint32_t blank_num = 0;
-    uint32_t start_index = fring_index;
-    uint32_t end_index = fring_index == 0 ? 63 : fring_index - 1;
-    uint32_t index = start_index;
-    while(1) {
-        if (index >= 64) index = 0;
+    uint32_t index = (fring_index + ARRLEN(fring_ftrace) - fring_count) % ARRLEN(fring_ftrace);
+    int indent = 0;
 
-        if (fring_ftrace[index].pc_now == 0) {
-            if (index == end_index) break;
-            index++;
-            continue;
+    for (uint32_t n = 0; n < fring_count; n++) {
+        const ftrace *entry = &fring_ftrace[index];
+        const symtab *func = find_func(entry->action == FTRACE_RET ? entry->pc_now : entry->pc_target);
+        const char *func_name = func ? func->name : "???";
+
+        if (entry->action == FTRACE_CALL) {
+            printf("0x%08x: %*scall [%s@0x%08x]\n", entry->pc_now, indent, "", func_name, entry->pc_target);
+            indent += 2;
+        } else if (entry->action == FTRACE_RET) {
+            if (indent >= 2) indent -= 2;
+            printf("0x%08x: %*sret  [%s]\n", entry->pc_now, indent, "", func_name);
+        } else {
+            printf("0x%08x: %*stail [%s@0x%08x]\n", entry->pc_now, indent, "", func_name, entry->pc_target);
         }
 
-        char *func_name;
-        for (int j = 0; j < symtab_count; j++) {
-            if (symtabs[j].start_addr <= fring_ftrace[index].pc_target && symtabs[j].end_addr > fring_ftrace[index].pc_target) {
-                func_name = (char *)&symtabs[j].name;
-                break;
-            }
-        }
-
-        if (!fring_ftrace[index].action) {
-            printf("0x%08x: %*s%s [%s@0x%08x]\n", fring_ftrace[index].pc_now, blank_num, "", "call", func_name, fring_ftrace[index].pc_target);
-            blank_num += 2;
-        }
-        else {
-            blank_num -= 2;
-            if (blank_num < 0) blank_num = 0;
-            printf("0x%08x: %*s%s [%s@0x%08x]\n", fring_ftrace[index].pc_now, blank_num, "", "ret", func_name, fring_ftrace[index].pc_target);
-        }
-
-        
-
-        index++;
+        index = (index + 1) % ARRLEN(fring_ftrace);
     }
 }
 
@@ -638,7 +626,6 @@ static void btrace_write(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst) 
         }
         
         close_trace_file(&btrace_output_file_fp, btrace_file);
-        btrace_output_file_fp = NULL; // 避免后续尝试写入
     }
 }
 
@@ -659,11 +646,13 @@ void btrace_record(vaddr_t pc, vaddr_t snpc, vaddr_t dnpc, uint32_t inst) {
     btrace_record_count++;
 }
 
-void btrace_finish() {
-    close_trace_file(&btrace_output_file_fp, btrace_file);
-}
-
 #endif
+
+void trace_finish() {
+    IFDEF(CONFIG_ITRACE2FILE, close_trace_file(&itrace_output_file_fp, itrace_file));
+    IFDEF(CONFIG_MTRACE2FILE, close_trace_file(&mtrace_output_file_fp, mtrace_file));
+    IFDEF(CONFIG_BTRACE, close_trace_file(&btrace_output_file_fp, btrace_file));
+}
 
 static int cmd_c(char *args) {
     cpu_exec(-1);
@@ -671,6 +660,7 @@ static int cmd_c(char *args) {
 }
 
 static int cmd_q(char *args) {
+    trace_finish();
     nemu_state.state = NEMU_QUIT;
     return -1;
 }
@@ -894,36 +884,42 @@ static int cmd_p(char *args) {
     return 0;
 }
 
-static int cmd_ftrace(char *args) {
+static bool cmd_no_args(char *args) {
     if (args != NULL) {
         printf("Unknown command '%s'\n", args);
-        return 0;
+        return false;
     }
 
-    IFDEF(CONFIG_FTRACE, display_ftrace());
+    return true;
+}
 
+static int cmd_ftrace(char *args) {
+    if (!cmd_no_args(args)) return 0;
+    IFDEF(CONFIG_FTRACE, display_ftrace());
+    return 0;
+}
+
+static int cmd_itrace(char *args) {
+    if (!cmd_no_args(args)) return 0;
+    IFDEF(CONFIG_ITRACE, itrace_display());
+    return 0;
+}
+
+static int cmd_mtrace(char *args) {
+    if (!cmd_no_args(args)) return 0;
+    IFDEF(CONFIG_MTRACE, mtrace_display());
     return 0;
 }
 
 static int cmd_dtrace(char *args) {
-    if (args != NULL) {
-        printf("Unknown command '%s'\n", args);
-        return 0;
-    }
-
+    if (!cmd_no_args(args)) return 0;
     IFDEF(CONFIG_DTRACE, display_dtrace());
-
     return 0;
 }
 
 static int cmd_etrace(char *args) {
-    if (args != NULL) {
-        printf("Unknown command '%s'\n", args);
-        return 0;
-    }
-
+    if (!cmd_no_args(args)) return 0;
     IFDEF(CONFIG_ETRACE, display_etrace());
-
     return 0;
 }
 
@@ -943,7 +939,9 @@ static struct {
     {"p", "p [d/x] EXPR | Evaluate the expression EXPR", cmd_p},
     {"w", "w EXPR | When the value of the expression EXPR changes, program execution is stopped", cmd_w},
     {"d", "d NO | Delete a watchpoint with serial number N", cmd_d},
+    {"itrace", "View instruction trace", cmd_itrace},
     {"ftrace", "View function trace", cmd_ftrace},
+    {"mtrace", "View memory trace", cmd_mtrace},
     {"dtrace", "View device trace", cmd_dtrace},
     {"etrace", "View exception trace", cmd_etrace},
     {"test_expr", "test expr", cmd_test_expr},
@@ -983,6 +981,7 @@ void sdb_set_batch_mode() {
 void sdb_mainloop() {
     if (is_batch_mode) {
         cmd_c(NULL);
+        trace_finish();
         return;
     }
 
@@ -1022,6 +1021,8 @@ void sdb_mainloop() {
             printf("Unknown command '%s'\n", cmd);
         }
     }
+
+    trace_finish();
 }
 
 void init_sdb()

@@ -6,6 +6,8 @@
 !/nanos-lite/*
 !/navy-apps/*
 !/npc/*
+!/review-site/
+!/review-site/*
 !RT-Thread
 !/RT-Thread/*
 !Makefile
