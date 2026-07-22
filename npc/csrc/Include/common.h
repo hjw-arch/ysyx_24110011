@@ -5,8 +5,8 @@
 #include "config.h"
 #include <stdint.h>
 
-#define		RF_NUM			MUXDEF(CONFIG_RVE, 16, 32)
-#define     CPU_RESET_VECTOR   (MUXDEF(SOC, 0x30000000u, 0x80000000u) + CONFIG_PC_RST_OFFSET)
+#define		RF_NUM			    MUXDEF(CONFIG_RVE, 16, 32)
+#define     CPU_RESET_VECTOR    (MUXDEF(SOC, 0x30000000u, 0x80000000u) + CONFIG_PC_RST_OFFSET)
 
 void wave_dump();
 

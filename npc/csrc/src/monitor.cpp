@@ -51,6 +51,8 @@ long load_img() {
     fseek(fp, 0, SEEK_END);
 
     long size = ftell(fp);
+	Assert(size >= 0 && (uint64_t)size <= RAM_SIZE,
+	       "Image '%s' is too large (%ld bytes, RAM size is %u bytes).", img_file, size, (unsigned)RAM_SIZE);
 
     Log("The image is %s, size = %ld", img_file, size);
 
@@ -173,17 +175,22 @@ int main(int argc, char *argv[]) {
     init_sdb();
     IFDEF(CONFIG_WAVE, init_wave());
     cpu_rst;
+	cpu = {};
+	cpu.pc = CPU_RESET_VECTOR;
     IFDEF(CONFIG_FTRACE, decode_elf());
     IFDEF(CONFIG_DIFFTEST, init_difftest(diff_so_file, img_size, difftest_port));
     IFDEF(CONFIG_DEVICE, init_device());
     if (batch_mode_flag) {
         cpu_exec(-1);
         IFDEF(CONFIG_WAVE, close_wave());
-        return 0;
+        return npc_is_exit_status_bad();
     }
     welcome();
     sdb_cli_loop();
 
+	if (npc_state.state == NPC_STOP || npc_state.state == NPC_RUNNING) {
+		npc_set_state(NPC_QUIT, cpu.pc, 0);
+	}
     IFDEF(CONFIG_WAVE, close_wave());
-    exit(0);
+    return npc_is_exit_status_bad();
 }

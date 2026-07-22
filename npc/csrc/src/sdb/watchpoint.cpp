@@ -17,6 +17,7 @@
 #include "../Include/macro.h"
 #include "../Include/log.h"
 #include "../Include/ram.h"
+#include "../Include/cpu_exec.h"
 
 #define NR_WP 32
 #define LEN_WP_EXPR 128
@@ -152,8 +153,7 @@ int diff_wp(vaddr_t front_pc) {
         }
     }
 
-    #include "../Include/cpu_exec.h"
-    if(flag) cpu_state = STOPPED;
+    if (flag) npc_set_state(NPC_STOP, front_pc, 0);
     return flag;
 }
 
@@ -170,5 +170,3 @@ void diaplay_wp() {
 }
 
 #endif
-
-/* TODO: Implement the functionality of watchpoint */

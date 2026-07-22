@@ -60,7 +60,7 @@ static uint32_t key_dequeue()
 
 void send_key(uint8_t scancode, uint32_t is_keydown)
 {
-    if (cpu_state == RUNNING && keymap[scancode] != NPC_KEY_NONE)
+    if (npc_state.state == NPC_RUNNING && keymap[scancode] != NPC_KEY_NONE)
     {
         uint32_t am_scancode = keymap[scancode] | (is_keydown ? KEYDOWN_MASK : 0);
         key_enqueue(am_scancode);

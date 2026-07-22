@@ -5,9 +5,6 @@
 #include <stdint.h>
 #include <SDL2/SDL.h>
 #include "../Include/cpu_exec.h"
-
-
-extern uint32_t cpu_state;
 void device_update()
 {
     static uint64_t last = 0;
@@ -26,7 +23,7 @@ void device_update()
         switch (event.type)
         {
         case SDL_QUIT:
-            cpu_state = QUIT;
+            npc_set_state(NPC_QUIT, cpu.pc, 0);
             break;
 #ifdef CONFIG_HAS_KEYBOARD
         // If a key was pressed

@@ -187,7 +187,6 @@ static pmc_wbu_info_t sample_wbu() {
     wbu.valid = CORE_SIG(ls2wb_valid);
     wbu.pc = get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_PC_HI, LS2WB_PC_LO);
     wbu.inst = get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_INST_HI, LS2WB_INST_LO);
-
     return wbu;
 }
 
@@ -279,31 +278,22 @@ static pmc_cycle_sample_t sample_cycle() {
     sample.pc = CORE_SIG(u_IFU__DOT__pc_r);
     sample.wbu_valid = wbu.valid;
     sample.wbu_pc = wbu.pc;
-
     sample.ifu_fetch = ifu_resp_valid && ifu_resp_ready;
     sample.ifu_backend_stall = ifu_resp_valid && !ifu_resp_ready;
     sample.ifu_flush = CORE_SIG(u_IFU__DOT__redirect_valid_i);
-
     sample.icache_hit = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_hit);
     sample.icache_miss = CORE_SIG(u_IFU__DOT__u_icache__DOT__req_miss);
     sample.icache_wait = icache_busy || ifu_req_stall;
     sample.icache_invalidate = CORE_SIG(u_IFU__DOT__icache_inval_i);
-
     sample.load_req = lsu_mem_req_fire && lsu_input_is_load;
     sample.store_req = lsu_mem_req_fire && lsu_input_is_store;
     sample.load_busy = sample.load_req || (lsu_wait_resp && lsu_input_is_load);
     sample.store_busy = sample.store_req || (lsu_wait_resp && lsu_input_is_store);
-
     sample.raw_stall = CORE_SIG(hazard_valid);
-    sample.load_use_stall = (ex_wait && CORE_SIG(ex_is_load)) ||
-                             (ls_wait && ls_is_load);
-    sample.csr_use_stall = (ex_wait && CORE_SIG(ex_is_csr)) ||
-                            (ls_wait && CORE_SIG(ls_is_csr));
-    sample.other_raw_stall = sample.raw_stall &&
-                              !sample.load_use_stall &&
-                              !sample.csr_use_stall;
+    sample.load_use_stall = (ex_wait && CORE_SIG(ex_is_load)) || (ls_wait && ls_is_load);
+    sample.csr_use_stall = (ex_wait && CORE_SIG(ex_is_csr)) || (ls_wait && CORE_SIG(ls_is_csr));
+    sample.other_raw_stall = sample.raw_stall && !sample.load_use_stall && !sample.csr_use_stall;
     sample.count_younger_side = !(wbu.valid && wbu.inst == EBREAK_INST);
-
     return sample;
 }
 
@@ -410,7 +400,6 @@ void PerformanceCounter_record_lsu_redirect() {
 
 void PerformanceCounter_record_wbu_redirect() {
     pmc_wbu_info_t wbu = sample_wbu();
-
     start_redirect(wbu.pc, CORE_SIG(wbu_redirect_pc),
                    CORE_SIG(if2id_pre_valid), CORE_SIG(if2id_valid),
                    CORE_SIG(id2ex_valid), CORE_SIG(ex2ls_valid));

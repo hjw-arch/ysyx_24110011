@@ -29,7 +29,8 @@ remove_quote = $(patsubst "%",%,$(1))
 # Extract variabls from menuconfig
 GUEST_ISA ?= $(call remove_quote,$(CONFIG_ISA))
 ENGINE ?= $(call remove_quote,$(CONFIG_ENGINE))
-NAME    = $(GUEST_ISA)-nemu-$(ENGINE)
+REF_VARIANT = $(if $(CONFIG_TARGET_SHARE),$(if $(CONFIG_SOC),-soc,-npc),)
+NAME    = $(GUEST_ISA)-nemu-$(ENGINE)$(REF_VARIANT)
 
 # Include all filelist.mk to merge file lists
 FILELIST_MK = $(shell find -L ./src -name "filelist.mk")

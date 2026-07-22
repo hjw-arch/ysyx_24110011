@@ -7,27 +7,38 @@
 #include "../Include/pmc.h"
 
 #ifdef SOC
-
 #include "VysyxSoCFull___024root.h"
-
 #else
-
 #include "Vysyx___024root.h"
-
 #endif
 
-#define ebreak      0x00100073
+#define EBREAK_INST 0x00100073u
+#define MIN_NUM_TO_DISASM 10
 
-#define min_num_to_disasm   10
+#define EX2LS_PC_HI 204
+#define EX2LS_PC_LO 173
+#define EX2LS_INST_HI 172
+#define EX2LS_INST_LO 141
+#define EX2LS_STORE_DATA_HI 31
+#define EX2LS_STORE_DATA_LO 0
+#define LS2WB_PC_HI 102
+#define LS2WB_PC_LO 71
+#define LS2WB_INST_HI 70
+#define LS2WB_INST_LO 39
 
-#define EX2LS_PC_HI     204
-#define EX2LS_PC_LO     173
-#define LS2WB_PC_HI     102
-#define LS2WB_PC_LO     71
-#define LS2WB_INST_HI   70
-#define LS2WB_INST_LO   39
-
-#define FTRACE_RECORD     record_ftrace(current_pc, current_inst == 0x8067 ? 1 : 0, cpu.pc)
+#define WIDE_BITS(data, hi, lo) \
+	({ \
+		const WData *const words = (data); \
+		const int high = (hi); \
+		const int low = (lo); \
+		uint32_t value = 0; \
+		for (int bit = low; bit <= high; bit++) { \
+			if (words[bit / 32] & (1u << (bit % 32))) { \
+				value |= 1u << (bit - low); \
+			} \
+		} \
+		value; \
+	})
 
 #ifdef SOC
 #define CORE_SIG(name) dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__##name
@@ -35,238 +46,178 @@
 #define CORE_SIG(name) dut.rootp->ysyx__DOT__u_cpu__DOT__##name
 #endif
 
-cpu_t cpu;
-uint32_t current_pc, current_inst;
-
-uint32_t cpu_state = RUNNING;
-
-uint64_t cycle_times = 0;
-uint64_t dynamic_insts = 0;
+#define LSU_PC() WIDE_BITS(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO)
+#define LSU_INST() WIDE_BITS(CORE_SIG(ex2ls_data).data(), EX2LS_INST_HI, EX2LS_INST_LO)
+#define LSU_STORE_DATA() WIDE_BITS(CORE_SIG(ex2ls_data).data(), EX2LS_STORE_DATA_HI, EX2LS_STORE_DATA_LO)
+#define WBU_PC() WIDE_BITS(CORE_SIG(ls2wb_data).data(), LS2WB_PC_HI, LS2WB_PC_LO)
+#define WBU_INST() WIDE_BITS(CORE_SIG(ls2wb_data).data(), LS2WB_INST_HI, LS2WB_INST_LO)
+#define LSU_AXI_DONE() CORE_SIG(u_LSU__DOT__mem_resp_fire)
 
 typedef struct {
 	uint32_t pc;
 	uint32_t inst;
-	uint32_t next_pc;
+	bool skip_ref;
 } commit_info_t;
 
-typedef struct {
-	uint32_t pc;
-	uint32_t target;
-	bool valid;
-} redirect_info_t;
+cpu_t cpu;
+npc_state_t npc_state = {NPC_STOP, 0, 0};
 
-typedef struct {
-	uint32_t pc;
-	bool valid;
-} skip_info_t;
+uint64_t cycle_times = 0;
+uint64_t dynamic_insts = 0;
+static bool wbu_skip_ref = false;
 
-static redirect_info_t pending_redirect = {};
-static skip_info_t pending_difftest_skip = {};
-static bool current_difftest_skip = false;
+void npc_set_state(npc_exec_state_t state, uint32_t halt_pc, uint32_t halt_ret) {
+	npc_state.state = state;
+	npc_state.halt_pc = halt_pc;
+	npc_state.halt_ret = halt_ret;
+}
 
-static uint32_t get_wide_bits(const WData *data, int hi, int lo) {
-	uint32_t value = 0;
-	for (int bit = lo; bit <= hi; bit++) {
-		if (data[bit / 32] & (1u << (bit % 32))) {
-			value |= 1u << (bit - lo);
-		}
+bool npc_is_exit_status_bad() {
+	return !((npc_state.state == NPC_END && npc_state.halt_ret == 0) ||
+			 npc_state.state == NPC_QUIT);
+}
+
+static void npc_report_state() {
+	if (npc_state.state == NPC_END) {
+		printf("%s at pc = 0x%08x\n",
+			npc_state.halt_ret == 0 ? ANSI_FMT("HIT GOOD TRAP", ANSI_FG_GREEN)
+									 : ANSI_FMT("HIT BAD TRAP", ANSI_FG_RED),
+			npc_state.halt_pc);
+	} else if (npc_state.state == NPC_ABORT) {
+		printf("%s at pc = 0x%08x\n", ANSI_FMT("ABORT", ANSI_FG_RED), npc_state.halt_pc);
 	}
-	return value;
 }
 
-static bool addr_in_range(uint32_t addr, uint32_t base, uint32_t size) {
-	return addr - base < size;
-}
+#ifdef CONFIG_DIFFTEST
+#define ADDR_IN_RANGE(addr, base, size) ((uint32_t)((addr) - (base)) < (size))
 
-static bool difftest_addr_is_pmem(uint32_t addr) {
+static bool difftest_addr_needs_skip(uint32_t addr) {
 #ifdef SOC
-	return addr_in_range(addr, 0x30000000u, 0x10000000u) ||  // flash
-	       addr_in_range(addr, 0x0f000000u, 0x00002000u) ||  // SRAM
-	       addr_in_range(addr, 0xa0000000u, 0x02000000u);    // SDRAM
+	return !(ADDR_IN_RANGE(addr, 0x30000000u, 0x10000000u) ||
+			 ADDR_IN_RANGE(addr, 0x0f000000u, 0x00002000u) ||
+			 ADDR_IN_RANGE(addr, 0xa0000000u, 0x02000000u));
 #else
-	return addr_in_range(addr, RESET_VECTOR, RAM_SIZE);
+	return !ADDR_IN_RANGE(addr, RAM_START_ADDR, RAM_SIZE);
 #endif
 }
-
-static uint32_t get_lsu_pc() {
-	return get_wide_bits(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO);
-}
-
-static uint32_t get_wbu_pc() {
-	return get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_PC_HI, LS2WB_PC_LO);
-}
-
-static uint32_t get_wbu_inst() {
-	return get_wide_bits(CORE_SIG(ls2wb_data).data(), LS2WB_INST_HI, LS2WB_INST_LO);
-}
-
-static void record_lsu_redirect() {
-	if (CORE_SIG(ls2wb_valid) && get_wbu_inst() == ebreak) {
-		return;
-	}
-
-	if (CORE_SIG(lsu_redirect_valid)) {
-		pending_redirect.pc = get_lsu_pc();
-		pending_redirect.target = CORE_SIG(lsu_redirect_pc);
-		pending_redirect.valid = true;
-		IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_lsu_redirect());
-	}
-}
-
-static void record_wbu_redirect() {
-	if (CORE_SIG(wbu_redirect_valid)) {
-		IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_wbu_redirect());
-	}
-}
-
-static void record_lsu_difftest_skip() {
-#if defined(SOC) && defined(CONFIG_DIFFTEST)
-	bool mem_output_fire = CORE_SIG(u_LSU__DOT__output_fire) &
-		(CORE_SIG(u_LSU__DOT__input_is_load) | CORE_SIG(u_LSU__DOT__input_is_store));
-
-	if (mem_output_fire && !difftest_addr_is_pmem(CORE_SIG(u_LSU__DOT__lsu_addr))) {
-		pending_difftest_skip.pc = get_wide_bits(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO);
-		pending_difftest_skip.valid = true;
-	}
 #endif
+
+#ifdef CONFIG_MTRACE
+static void record_mtrace_lsu() {
+	bool is_load = CORE_SIG(u_LSU__DOT__input_is_load);
+	uint8_t len = 1u << ((LSU_INST() >> 12) & 0x3);
+	uint32_t data = is_load ? CORE_SIG(u_LSU__DOT__axi_rdata) : LSU_STORE_DATA();
+	mtrace_record(LSU_PC(), is_load, CORE_SIG(u_LSU__DOT__lsu_addr), len, data);
 }
+#endif
 
 static commit_info_t get_commit_info() {
-	commit_info_t info;
+	return {
+		.pc = WBU_PC(),
+		.inst = WBU_INST(),
+	};
+}
 
-	info.pc = get_wbu_pc();
-	info.inst = get_wbu_inst();
-
-	if (CORE_SIG(wbu_redirect_valid)) {
-		info.next_pc = CORE_SIG(wbu_redirect_pc);
-	} else if (pending_redirect.valid && pending_redirect.pc == info.pc) {
-		info.next_pc = pending_redirect.target;
-		pending_redirect.valid = false;
-	} else {
-		info.next_pc = info.pc + 4;
+static void sync_arch_state(uint32_t pc) {
+	for (int i = 0; i < RF_NUM; i++) {
+		cpu.registerFile[i] = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__register_file)[i];
 	}
-
-	return info;
+	cpu.registerFile[0] = 0;
+	cpu.pc = pc;
 }
 
-static bool take_difftest_skip(uint32_t pc) {
-	bool skip = pending_difftest_skip.valid && pending_difftest_skip.pc == pc;
+static void exec_cycle() {
+	bool axi_done = LSU_AXI_DONE();
+	bool next_skip_ref = false;
 
-	if (skip) {
-		pending_difftest_skip.valid = false;
-	}
-
-	return skip;
-}
-
-static void exec_one_cycle() {
-	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_cycle());
-	cycle;
-	cycle_times++;
-}
-
-void halt() {
-    cpu_state = IDLE;
-
-	Log("Get 'ebreak' instruction, program over.");
-	
-    printf(ANSI_FG_CYAN "\n\nTotal cycle times = %lu, Total dynamic_insts = %lu\n\n" ANSI_NONE, cycle_times, dynamic_insts);
-	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_display());
-	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_export_json());
-    if (cpu.registerFile[10] != 0) {
-        printf(ANSI_FG_RED "Hit bad trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
-        return;
-    } else {
-        printf(ANSI_FG_GREEN "Hit good trap" ANSI_NONE " at pc = 0x%08x\n", cpu.pc);
-        return;
-    }
-}
-
-#ifdef NVBOARD
-
-#include "nvboard.h"
-
+#ifdef CONFIG_DIFFTEST
+	next_skip_ref = axi_done && difftest_addr_needs_skip(CORE_SIG(u_LSU__DOT__lsu_addr));
 #endif
 
-void cpu_exec_one() {
+	IFDEF(CONFIG_MTRACE, if (axi_done) record_mtrace_lsu());
+	IFDEF(CONFIG_PERFORMANCE_COUNTER,
+		if (CORE_SIG(wbu_redirect_valid)) PerformanceCounter_record_wbu_redirect();
+		if (CORE_SIG(lsu_redirect_valid)) PerformanceCounter_record_lsu_redirect();
+		PerformanceCounter_record_cycle());
+	cycle;
+	cycle_times++;
+	wbu_skip_ref = CORE_SIG(ls2wb_valid) && next_skip_ref;
+}
 
+static commit_info_t cpu_exec_one() {
 	uint64_t retire_cycles = 0;
 
-	while (1) {
-		record_lsu_redirect();
-		record_wbu_redirect();
-		record_lsu_difftest_skip();
-
-		if (CORE_SIG(ls2wb_valid)) {
-			commit_info_t commit_info = get_commit_info();
-			current_difftest_skip = take_difftest_skip(commit_info.pc);
-
-			exec_one_cycle();
-			retire_cycles++;
-		
-			for (int i = 0; i < RF_NUM; i++) {
-				cpu.registerFile[i] = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__register_file)[i];
-			}
-			cpu.pc = commit_info.next_pc;
-			current_inst = commit_info.inst;
-			current_pc = commit_info.pc;
-			dynamic_insts++;
-			IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_commit(current_pc, current_inst, retire_cycles));
-			if (current_inst == ebreak) {
-				halt();
-			}
-			return;
-		}
-
-		exec_one_cycle();
+	while (!CORE_SIG(ls2wb_valid)) {
+		exec_cycle();
 		retire_cycles++;
-	
 	}
+
+	commit_info_t commit = get_commit_info();
+	commit.skip_ref = wbu_skip_ref;
+	exec_cycle();			// 正式提交
+	retire_cycles++;
+	sync_arch_state(commit.pc);
+	dynamic_insts++;
+	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_commit(commit.pc, commit.inst, retire_cycles));
+	return commit;
 }
 
 void cpu_exec(uint32_t n) {
-    if (cpu_state == IDLE) {
-        Log("Program has over, if you want to restart, please enter 'q' and then restart again.");
-        return;
-    }
+	if (npc_state.state == NPC_END || npc_state.state == NPC_ABORT) {
+		Log("Program has ended; restart NPC to run it again.");
+		return;
+	}
 
-    for (int i = 0; i < n; ++i) {
+	if (npc_state.state == NPC_QUIT) {
+		return;
+	}
 
-        // 执行一次
-        cpu_exec_one();
+	npc_set_state(NPC_RUNNING, cpu.pc, 0);
 
-        if (n < min_num_to_disasm) {
-            char p[64];
-            printf("0x%08x: ", current_pc);
-            for(int j = 3; j >= 0; j--) {
-                printf("%02x ", ((uint8_t *)&current_inst)[j]);
-            }
-            disassemble(p, sizeof(p), current_pc, (uint8_t *)&current_inst, 4);
-            printf("        %s\n", p);
-        }
+	for (uint32_t i = 0; i < n; i++) {
+		commit_info_t commit = cpu_exec_one();
 
+		if (n < MIN_NUM_TO_DISASM) {
+			char disasm_buf[64];
+			printf("0x%08x: ", commit.pc);
+			for (int j = 3; j >= 0; j--) {
+				printf("%02x ", ((uint8_t *)&commit.inst)[j]);
+			}
+			disassemble(disasm_buf, sizeof(disasm_buf), commit.pc, (uint8_t *)&commit.inst, 4);
+			printf("        %s\n", disasm_buf);
+		}
 
-        IFDEF(CONFIG_ITRACE, iringbuf_load(current_pc, current_inst));
+		IFDEF(CONFIG_ITRACE, iringbuf_load(commit.pc, commit.inst));
+		IFDEF(CONFIG_FTRACE, ftrace_record(commit.pc, commit.inst));
 
-        IFDEF(CONFIG_FTRACE, FTRACE_RECORD);
-        IFDEF(CONFIG_WATCHPOINT, diff_wp(current_pc));
+		if (commit.inst == EBREAK_INST) {
+			Log("Get 'ebreak' instruction, program over.");
+			npc_set_state(NPC_END, commit.pc, cpu.registerFile[10]);
+		}
+
 #ifdef CONFIG_DIFFTEST
-		if (current_difftest_skip) difftest_skip_ref();
-		if (cpu_state != IDLE) difftest_step(current_pc);
+		if (npc_state.state == NPC_RUNNING) {
+			difftest_step(commit.pc, commit.skip_ref);
+		}
 #endif
-        IFDEF(CONFIG_DEVICE, device_update());
-		IFDEF(NVBOARD, nvboard_update());
+		IFDEF(CONFIG_WATCHPOINT, if (npc_state.state == NPC_RUNNING) diff_wp(commit.pc));
 
-        if (cpu_state != RUNNING) {
-            switch (cpu_state) {
-                case IDLE:
-                    IFDEF(CONFIG_ITRACE, iringbuf_display());
-                    return;
-                case STOPPED:
-                    return;
-                case QUIT:
-                    return;
-            }
-        }
-    }
+		if (npc_state.state == NPC_RUNNING) {
+			IFDEF(CONFIG_DEVICE, device_update());
+			IFDEF(NVBOARD, nvboard_update());
+			continue;
+		}
+
+		if (npc_state.state == NPC_END || npc_state.state == NPC_ABORT) {
+			printf(ANSI_FG_CYAN "\n\nTotal cycle times = %llu, Total dynamic_insts = %llu\n\n" ANSI_NONE,
+				(unsigned long long)cycle_times, (unsigned long long)dynamic_insts);
+			IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_display(); PerformanceCounter_export_json());
+			npc_report_state();
+		}
+		return;
+	}
+
+	if (npc_state.state == NPC_RUNNING) {
+		npc_set_state(NPC_STOP, cpu.pc, 0);
+	}
 }

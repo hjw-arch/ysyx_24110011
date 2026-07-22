@@ -23,7 +23,8 @@ CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/ysyxsoc/ioe -I$(AM_HOME)/am/src/riscv/
 .PHONY: $(AM_HOME)/am/src/riscv/ysyxsoc/trm.c
 
-NPCARGS = -e $(IMAGE).elf -d ./libnemu.so
+NEMU_REF ?= $(NEMU_HOME)/build/riscv32-nemu-interpreter-soc-so
+NPCARGS = -e $(IMAGE).elf -d $(NEMU_REF)
 
 image: $(IMAGE).elf
 	@$(OBJDUMP) -d $(IMAGE).elf > $(IMAGE).txt

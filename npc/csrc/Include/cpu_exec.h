@@ -13,17 +13,26 @@ typedef struct _cpu
 
 extern cpu_t cpu;   // CPU Info
 
-extern uint32_t cpu_state;
+typedef enum {
+    NPC_STOP,
+    NPC_RUNNING,
+    NPC_END,
+    NPC_ABORT,
+    NPC_QUIT,
+} npc_exec_state_t;
 
-enum {
-    RUNNING = 0,
-    STOPPED,
-    IDLE,
-    QUIT,
-};
+typedef struct {
+    npc_exec_state_t state;
+    uint32_t halt_pc;
+    uint32_t halt_ret;
+} npc_state_t;
+
+extern npc_state_t npc_state;
+
+void npc_set_state(npc_exec_state_t state, uint32_t halt_pc, uint32_t halt_ret);
+bool npc_is_exit_status_bad();
 
 void cpu_exec(uint32_t n);
 
 
 #endif
-

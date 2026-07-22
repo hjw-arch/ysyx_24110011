@@ -13,11 +13,7 @@ void (*difftest_exec)(uint64_t n) = NULL;
 void (*difftest_raise_intr)(uint64_t NO) = NULL;
 void (*difftest_init)(int) = NULL;
 
-static bool is_skip_ref = false;
-
-void difftest_skip_ref() {
-    is_skip_ref = true;
-}
+static vaddr_t ref_pc = 0;
 
 void init_difftest(char *ref_so_file, long img_size, int port) {
   assert(ref_so_file != NULL);
@@ -49,12 +45,14 @@ void init_difftest(char *ref_so_file, long img_size, int port) {
   difftest_init(port);
   difftest_memcpy(RESET_VECTOR, guest_to_host(RESET_VECTOR), img_size, DIFFTEST_TO_REF);
   difftest_regcpy(&cpu, DIFFTEST_TO_REF);
+  ref_pc = cpu.pc;
 }
 
 void defftest_reset() {
     difftest_init(1234);
     difftest_memcpy(RESET_VECTOR, guest_to_host(RESET_VECTOR), img_size, DIFFTEST_TO_REF);
     difftest_regcpy(&cpu, DIFFTEST_TO_REF);
+    ref_pc = cpu.pc;
 }
 
 static bool difftest_checkregs(cpu_t *ref) {
@@ -66,33 +64,36 @@ static bool difftest_checkregs(cpu_t *ref) {
         }
     }
 
-    if (ref->pc != cpu.pc) {
-        printf("ref->pc = 0x%08x---------npc->pc = 0x%08x\n", ref->pc, cpu.pc);
-        flag = 1;
-    }
-
     return flag == 1 ? false : true;
 }
 
 
 static void checkregs(cpu_t *ref, vaddr_t pc) {
   if (!difftest_checkregs(ref)) {
-    cpu_state = IDLE;
+    npc_set_state(NPC_ABORT, pc, 0);
     printf("There has different state at pc = 0x%08x\n", pc);
   }
 }
 
-void difftest_step(vaddr_t pc) {
+void difftest_step(vaddr_t pc, bool skip_ref) {
     cpu_t ref_info;
 
-    if (is_skip_ref) {
-        // SoC 外设访问具有时序/副作用差异；DUT 执行后直接同步到 ref。
-        difftest_regcpy(&cpu, DIFFTEST_TO_REF);
-        is_skip_ref = false;
+    if (pc != ref_pc) {
+        printf("ref->pc = 0x%08x---------npc->pc = 0x%08x\n", ref_pc, pc);
+        npc_set_state(NPC_ABORT, pc, 0);
+        return;
+    }
+
+    if (skip_ref) {
+        cpu_t ref_sync = cpu;
+        ref_sync.pc = pc + 4;
+        difftest_regcpy(&ref_sync, DIFFTEST_TO_REF);
+        ref_pc = ref_sync.pc;
         return;
     }
 
     difftest_exec(1);
     difftest_regcpy(&ref_info, DIFFTEST_TO_DUT);
+    ref_pc = ref_info.pc;
     checkregs(&ref_info, pc);
 }

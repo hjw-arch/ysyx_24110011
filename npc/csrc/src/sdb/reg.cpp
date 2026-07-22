@@ -4,7 +4,7 @@
 #include "../Include/log.h"
 
 uint32_t is_reg_index_valid(uint32_t index) {
-    Assert((index >=0 && index <= 31), "Error reg index: %d", index);
+    Assert(index < RF_NUM, "Error reg index: %d", index);
     return cpu.registerFile[index];
 }
 
@@ -18,7 +18,7 @@ const char *regs[] = {
 };
 
 void isa_reg_display() {
-    for (int i = 0; i < MUXDEF(CONFIG_RVE, 16, 32); i++) {
+    for (int i = 0; i < RF_NUM; i++) {
         printf("%-15s0x%-20x%u\n", regs[i], R(i), R(i));
     }
     printf("%-15s0x%-20x0x%x\n", "pc", cpu.pc, cpu.pc);
@@ -35,7 +35,7 @@ word_t isa_reg_str2val(const char *s, bool *success) {
         return R(reg_index);
     }
 
-    for (int i = 0; i < MUXDEF(CONFIG_RVE, 16, 32); i++) {
+    for (int i = 0; i < RF_NUM; i++) {
         if (strcmp(s, regs[i]) == 0) {
             return R(i);
         }

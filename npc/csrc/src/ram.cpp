@@ -1,7 +1,5 @@
 #include "../Include/ram.h"
 #include "../Include/log.h"
-#include "../Include/sdb.h"
-#include "../Include/cpu_exec.h"
 #include "../Include/device.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -81,8 +79,6 @@ int pmem_read(int addr, int len) {
                 return 0;
         }
 
-        IFDEF(CONFIG_MTRACE, mtrace_read(addr, len == 0 ? 1 : (len == 1 ? 2 : 4), ret, 0));
-
         return ret;
     } else {
         IFDEF(CONFIG_DEVICE, ret = mmio_read(addr, len));
@@ -104,7 +100,6 @@ void pmem_write(int addr, int data, int len) {
         if (len & 0x4) host[2] = (data >> 16) & 0xff;
         if (len & 0x8) host[3] = (data >> 24) & 0xff;
 
-        IFDEF(CONFIG_MTRACE, mtrace_write(aligned_addr, len, data, 0));
         return;
     } else {
         IFDEF(CONFIG_DEVICE, mmio_write(addr, len, data));

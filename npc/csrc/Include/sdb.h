@@ -38,16 +38,15 @@ int diff_wp(vaddr_t front_pc);
 void diaplay_wp();
 
 // trace
-#define CONFIG_MTRACE_START_ADDR    0x80000000
-#define CONFIG_MTRACE_END_ADDR      0x87ffffff
 void decode_elf();
-void record_ftrace(uint32_t pc_now, uint32_t action, uint32_t pc_target);
+void ftrace_record(uint32_t pc, uint32_t inst);
 void display_ftrace();
 
-void mtrace_read(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc);
-void mtrace_write(uint32_t addr, uint32_t len, uint32_t content, uint32_t is_record_fetch_pc);
+extern "C" void mtrace_record(uint32_t pc, uint8_t is_load, uint32_t addr,
+                                uint8_t len, uint32_t data);
+void display_mtrace();
 
-void iringbuf_load(MUXDEF(RV64, uint64_t addr, uint32_t addr), uint32_t inst);
+void iringbuf_load(word_t addr, uint32_t inst);
 void iringbuf_display();
 
 // sdb

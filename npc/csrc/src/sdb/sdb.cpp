@@ -29,6 +29,8 @@ static int cmd_c(char *args) {
 }
 
 static int cmd_q(char *args) {
+	(void)args;
+    npc_set_state(NPC_QUIT, cpu.pc, 0);
     return -1;
 }
 
@@ -180,7 +182,11 @@ static int cmd_ftrace(char *args) {
         return 0;
     }
 
-    IFDEF(CONFIG_FTRACE, display_ftrace());
+#ifdef CONFIG_FTRACE
+    display_ftrace();
+#else
+    puts("FTrace is disabled in the current configuration.");
+#endif
 
     return 0;
 }
@@ -191,7 +197,26 @@ static int cmd_itrace(char *args) {
         return 0;
     }
 
+#ifdef CONFIG_ITRACE
     iringbuf_display();
+#else
+    puts("ITrace is disabled in the current configuration.");
+#endif
+
+    return 0;
+}
+
+static int cmd_mtrace(char *args) {
+    if (args != NULL) {
+        printf("Unknown command '%s'\n", args);
+        return 0;
+    }
+
+#ifdef CONFIG_MTRACE
+    display_mtrace();
+#else
+    puts("MTrace is disabled in the current configuration.");
+#endif
 
     return 0;
 }
@@ -214,6 +239,7 @@ static struct {
     {"d", "d NO | Delete a watchpoint with serial number N", cmd_d},
     {"itrace", "View lastest 16 instructions", cmd_itrace},
     {"ftrace", "View function trace", cmd_ftrace},
+    {"mtrace", "View latest completed load/store accesses", cmd_mtrace},
     /* TODO: Add more commands */
 
 };
@@ -290,7 +316,6 @@ void init_sdb() {
     /* Initialize the watchpoint pool. */
     init_wp_pool();
 }
-
 
 
 
