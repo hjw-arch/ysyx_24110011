@@ -17,17 +17,8 @@ config DEVICE
   bool "Enable device model"
   default n
 
-config DIFFTEST
-  bool "Enable difftest"
-  default n
-
 config PERFORMANCE_COUNTER
   bool "Enable performance counter"
-  default n
-
-config WAVE
-  bool "Enable waveform dump"
-  select VERILATOR_TRACE
   default n
 
 endmenu
@@ -65,6 +56,15 @@ config DTRACE
 
 config WATCHPOINT
   bool "Enable watchpoint"
+  default n
+
+config DIFFTEST
+  bool "Enable difftest"
+  default n
+
+config WAVE
+  bool "Enable waveform dump"
+  select VERILATOR_TRACE
   default n
 
 endmenu
