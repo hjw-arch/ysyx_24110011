@@ -24,7 +24,7 @@ CFLAGS += -I$(AM_HOME)/am/src/riscv/ysyxsoc/ioe -I$(AM_HOME)/am/src/riscv/
 .PHONY: $(AM_HOME)/am/src/riscv/ysyxsoc/trm.c
 
 NEMU_REF ?= $(NEMU_HOME)/build/riscv32-nemu-interpreter-soc-so
-NPCARGS = -e $(IMAGE).elf -d $(NEMU_REF)
+NPCARGS = -e $(IMAGE).elf -d $(NEMU_REF) -b
 
 image: $(IMAGE).elf
 	@$(OBJDUMP) -d $(IMAGE).elf > $(IMAGE).txt

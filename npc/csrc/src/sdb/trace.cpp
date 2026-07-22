@@ -210,6 +210,20 @@ void decode_elf() {
 	Log("FTrace: loaded %u function symbol(s) from %s", symtab_count, elf_file);
 }
 
+
+// | 指令形式 | 判断 |
+// |---|---|
+// | `jal x1, target` | CALL |
+// | `jal x5, target` | CALL |
+// | `jal x0, target`，跳到其他函数 | TAIL |
+// | `jal x0, target`，跳到当前函数内部 | 忽略 |
+// | `jalr x1, imm(rs1)` | CALL |
+// | `jalr x5, imm(rs1)` | CALL |
+// | `jalr x0, 0(x1)` | RET |
+// | `jalr x0, 0(x5)` | RET |
+// | `jalr x0, imm(rs1)`，不符合 RET | TAIL |
+// | 其他 `jalr` | 不记录 |
+
 static bool is_link_reg(uint32_t reg) {
 	return reg == 1 || reg == 5;
 }
@@ -218,13 +232,15 @@ static int classify_ftrace_action(uint32_t inst) {
 	uint32_t opcode = inst & 0x7f;
 	uint32_t rd = (inst >> 7) & 0x1f;
 
-	if (opcode == 0x6f) {
+	if (opcode == 0x6f) {		// jal | call | tail call
 		return is_link_reg(rd) ? FTRACE_CALL : (rd == 0 ? FTRACE_TAIL : FTRACE_NONE);
 	}
+
 	if (opcode != 0x67 || ((inst >> 12) & 0x7) != 0) {
 		return FTRACE_NONE;
 	}
 
+	// jalr
 	uint32_t rs1 = (inst >> 15) & 0x1f;
 	uint32_t imm = inst >> 20;
 	if (is_link_reg(rd)) {
