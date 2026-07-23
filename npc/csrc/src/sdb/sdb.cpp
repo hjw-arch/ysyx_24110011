@@ -221,6 +221,21 @@ static int cmd_mtrace(char *args) {
     return 0;
 }
 
+static int cmd_dtrace(char *args) {
+    if (args != NULL) {
+        printf("Unknown command '%s'\n", args);
+        return 0;
+    }
+
+#ifdef CONFIG_DTRACE
+    display_dtrace();
+#else
+    puts("DTrace is disabled in the current configuration.");
+#endif
+
+    return 0;
+}
+
 static int cmd_help(char *args);
 
 static struct {
@@ -240,6 +255,7 @@ static struct {
     {"itrace", "View lastest 16 instructions", cmd_itrace},
     {"ftrace", "View function trace", cmd_ftrace},
     {"mtrace", "View latest completed load/store accesses", cmd_mtrace},
+    {"dtrace", "View latest device accesses", cmd_dtrace},
     /* TODO: Add more commands */
 
 };
@@ -316,7 +332,6 @@ void init_sdb() {
     /* Initialize the watchpoint pool. */
     init_wp_pool();
 }
-
 
 
 

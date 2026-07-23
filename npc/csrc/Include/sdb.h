@@ -46,6 +46,10 @@ extern "C" void mtrace_record(uint32_t pc, uint8_t is_load, uint32_t addr,
                                 uint8_t len, uint32_t data);
 void display_mtrace();
 
+void record_dtrace(const char *name, uint32_t addr, uint8_t access,
+                   uint32_t data, bool is_write);
+void display_dtrace();
+
 void iringbuf_load(word_t addr, uint32_t inst);
 void iringbuf_display();
 

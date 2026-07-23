@@ -8,6 +8,7 @@
 enum {
 	ITRACE_CAPACITY = 16,
 	MTRACE_CAPACITY = 32,
+	DTRACE_CAPACITY = 32,
 	FTRACE_CAPACITY = 64,
 	FTRACE_SYMBOL_CAPACITY = 1024,
 	FTRACE_NAME_SIZE = 64,
@@ -84,6 +85,44 @@ void display_mtrace() {
 			entry->pc, entry->is_load ? "load" : "store", entry->addr,
 			entry->len, entry->data);
 		index = (index + 1) % MTRACE_CAPACITY;
+	}
+	puts("");
+}
+
+typedef struct {
+	const char *name;
+	uint32_t addr;
+	uint32_t data;
+	uint8_t access;
+	bool is_write;
+} dtrace_entry_t;
+
+static dtrace_entry_t dtrace_ring[DTRACE_CAPACITY] = {};
+static uint32_t dtrace_write_index = 0;
+static uint32_t dtrace_count = 0;
+
+void record_dtrace(const char *name, uint32_t addr, uint8_t access, uint32_t data, bool is_write) {
+	dtrace_ring[dtrace_write_index] = {name, addr, data, access, is_write};
+	dtrace_write_index = (dtrace_write_index + 1) % DTRACE_CAPACITY;
+	if (dtrace_count < DTRACE_CAPACITY) {
+		dtrace_count++;
+	}
+}
+
+void display_dtrace() {
+	puts("\nDevice trace:");
+	uint32_t index = (dtrace_write_index + DTRACE_CAPACITY - dtrace_count) % DTRACE_CAPACITY;
+
+	for (uint32_t n = 0; n < dtrace_count; n++) {
+		const dtrace_entry_t *entry = &dtrace_ring[index];
+		if (entry->is_write) {
+			printf("write %-8s addr=0x%08x, mask=0x%x, data=0x%08x\n",
+				entry->name, entry->addr, (unsigned)entry->access, entry->data);
+		} else {
+			printf("read  %-8s addr=0x%08x, len=%u, data=0x%08x\n",
+				entry->name, entry->addr, (unsigned)entry->access, entry->data);
+		}
+		index = (index + 1) % DTRACE_CAPACITY;
 	}
 	puts("");
 }

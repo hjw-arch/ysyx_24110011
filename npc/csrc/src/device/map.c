@@ -4,6 +4,7 @@
 #include "../Include/device.h"
 #include "../Include/ram.h"
 #include "../Include/log.h"
+#include "../Include/sdb.h"
 
 #define IO_SPACE_MAX (6 * 1024 * 1024)
 
@@ -40,7 +41,7 @@ word_t map_read(paddr_t addr, int len, IOMap *map) {
     invoke_callback(map->callback, offset, len, 0);
     uint8_t *space = (uint8_t *)map->space;
     word_t ret = *(uint32_t *)(space + offset);
-    IFDEF(CONFIG_DTRACE, record_dtrace(map->name, 0));
+    IFDEF(CONFIG_DTRACE, record_dtrace(map->name, addr, len, ret, false));
     return ret;
 }
 
@@ -62,7 +63,7 @@ void map_write(paddr_t addr, int wmask, word_t data, IOMap *map) {
 
     paddr_t offset = addr - map->low;
     invoke_callback(map->callback, offset, wmask, 1);
-    IFDEF(CONFIG_DTRACE, record_dtrace(map->name, 1));
+    IFDEF(CONFIG_DTRACE, record_dtrace(map->name, addr, wmask, data, true));
 }
 
 #endif
