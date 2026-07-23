@@ -493,56 +493,38 @@ void display_ftrace() {
 
 #ifdef CONFIG_DTRACE
 
-typedef struct dtrace
-{
+typedef struct {
     const char *name;
-    vaddr_t addr;
-    bool isWrite;
-} dtrace;
+    vaddr_t pc;
+    paddr_t addr;
+    word_t data;
+    uint8_t len;
+    bool is_write;
+} dtrace_entry_t;
 
-static dtrace dtrace_buf[BUFFER_SIZE];
-static uint32_t dtrace_index = 0;
+static dtrace_entry_t dtrace_ring[BUFFER_SIZE] = {};
+static uint32_t dtrace_write_index = 0;
+static uint32_t dtrace_count = 0;
 
-#include "../include/device/map.h"
-void record_dtrace(const char *name, bool isWrite) {
-    dtrace_buf[dtrace_index++] = (dtrace){.name = name, .addr = cpu.pc, .isWrite = isWrite};
-    dtrace_index = dtrace_index % BUFFER_SIZE;
+void record_dtrace(const char *name, paddr_t addr, int len, word_t data, bool is_write) {
+    dtrace_ring[dtrace_write_index] = (dtrace_entry_t){
+        .name = name, .pc = cpu.pc, .addr = addr,
+        .data = data, .len = len, .is_write = is_write
+    };
+    dtrace_write_index = (dtrace_write_index + 1) % BUFFER_SIZE;
+    if (dtrace_count < BUFFER_SIZE) dtrace_count++;
 }
 
 void display_dtrace() {
-    uint32_t start_index = dtrace_index;
-    uint32_t end_index = dtrace_index == 0 ? BUFFER_SIZE - 1 : dtrace_index - 1;
-    uint32_t index = start_index;
-
     puts("\nDevice Trace:");
+    uint32_t index = (dtrace_write_index + BUFFER_SIZE - dtrace_count) % BUFFER_SIZE;
 
-    puts("Action\t\tAT\t\tDevice Name");
-
-    while (1)
-    {
-        if (dtrace_buf[index].addr == 0) {
-            if (index == end_index) {
-                break;
-            }
-            index++;
-            index = index % BUFFER_SIZE;
-            continue;
-        }
-
-        if (dtrace_buf[index].isWrite) printf("Wirte");
-        else printf("Read");
-        printf("\t\t");
-
-        printf("0x%08x\t", dtrace_buf[index].addr);
-
-        printf("%s\n", dtrace_buf[index].name);
-
-        if (index == end_index) {
-            break;
-        }
-
-        index++;
-        index = index % BUFFER_SIZE;
+    for (uint32_t n = 0; n < dtrace_count; n++) {
+        dtrace_entry_t *entry = &dtrace_ring[index];
+        printf(FMT_WORD ": %-5s %-8s addr=" FMT_PADDR ", len=%u, data=" FMT_WORD "\n",
+            entry->pc, entry->is_write ? "write" : "read", entry->name,
+            entry->addr, (unsigned)entry->len, entry->data);
+        index = (index + 1) % BUFFER_SIZE;
     }
 }
 

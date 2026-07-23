@@ -42,7 +42,7 @@ void record_ftrace(uint32_t pc_now, uint32_t action, uint32_t pc_target);
 void display_ftrace();
 
 // dtrace
-void record_dtrace(const char *name, bool isWrite);
+void record_dtrace(const char *name, paddr_t addr, int len, word_t data, bool is_write);
 void display_dtrace();
 
 // etrace
