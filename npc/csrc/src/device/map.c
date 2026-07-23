@@ -32,6 +32,11 @@ void init_map() {
     p_space = io_space;
 }
 
+void destroy_map() {
+    free(io_space);
+    io_space = p_space = NULL;
+}
+
 word_t map_read(paddr_t addr, int len, IOMap *map) {
     assert(len >= 1 && len <= 8);
     if (map == NULL) {

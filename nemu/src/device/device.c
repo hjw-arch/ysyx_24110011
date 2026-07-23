@@ -29,12 +29,19 @@ void init_audio();
 void init_disk();
 void init_sdcard();
 void init_alarm();
+void destroy_map();
 
 void destory_audio();
 void destory_vga();
 
 void send_key(uint8_t, bool);
 void vga_update_screen();
+
+static void destroy_device() {
+  IFDEF(CONFIG_HAS_AUDIO, destory_audio());
+  IFDEF(CONFIG_HAS_VGA, destory_vga());
+  destroy_map();
+}
 
 void device_update() {
   static uint64_t last = 0;
@@ -52,9 +59,6 @@ void device_update() {
     switch (event.type) {
       case SDL_QUIT:
         nemu_state.state = NEMU_QUIT;
-        // destory_audio();
-        // destory_vga();
-        // SDL_Quit();
         break;
 #ifdef CONFIG_HAS_KEYBOARD
       // If a key was pressed
@@ -92,4 +96,5 @@ void init_device() {
   IFDEF(CONFIG_HAS_SDCARD, init_sdcard());
 
   IFNDEF(CONFIG_TARGET_AM, init_alarm());
+  atexit(destroy_device);
 }

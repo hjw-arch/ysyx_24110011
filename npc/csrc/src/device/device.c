@@ -3,8 +3,17 @@
 
 #include "../Include/device.h"
 #include <stdint.h>
+#include <stdlib.h>
 #include <SDL2/SDL.h>
 #include "../Include/cpu_exec.h"
+
+void destroy_map();
+
+static void destroy_device() {
+    SDL_Quit();
+    destroy_map();
+}
+
 void device_update()
 {
     static uint64_t last = 0;
@@ -57,6 +66,7 @@ void init_device() {
     IFDEF(CONFIG_HAS_VGA, init_vga());
     IFDEF(CONFIG_HAS_KEYBOARD, init_i8042());
     IFDEF(CONFIG_HAS_AUDIO, init_audio());
+    atexit(destroy_device);
 }
 
 #endif

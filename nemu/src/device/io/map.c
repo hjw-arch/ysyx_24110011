@@ -52,6 +52,11 @@ void init_map() {
   p_space = io_space;
 }
 
+void destroy_map() {
+  free(io_space);
+  io_space = p_space = NULL;
+}
+
 #include "../../monitor/sdb/sdb.h"
 
 word_t map_read(paddr_t addr, int len, IOMap *map) {
