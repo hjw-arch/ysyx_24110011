@@ -59,6 +59,7 @@ __am_asm_trap:
   or t1, t1, a0
   csrw mstatus, t1
 
+  # __am_irq_handle((Context *)sp);
   mv a0, sp
   jal __am_irq_handle
   mv sp, a0
@@ -71,5 +72,6 @@ __am_asm_trap:
 
   MAP(REGS, POP)
 
+  # resume sp(R2)
   addi sp, sp, CONTEXT_SIZE
   mret

@@ -36,11 +36,10 @@ wire mret      = data_i.sys.priv_redir == PRIV_REDIR_MRET;
 wire fence_i   = data_i.sys.fence_i;
 
 wire [31:0] csr_src = data_i.result;
-wire csr_src_zero = ~|csr_src;
 
-// CSRRW 无条件写 CSR；CSRRS/CSRRC 源为 0 时只读不写，避免无意义翻转。
+// CSRRW 无条件写 CSR；CSRRS/CSRRC 的 rs1/zimm 编码为 0 时只读不写。
 wire csr_write_en = valid_i & csr_valid &
-                    ((data_i.sys.csr_cmd == CSR_CMD_WRITE) | ~csr_src_zero);
+                    ((data_i.sys.csr_cmd == CSR_CMD_WRITE) | (|inst[19:15]));
 
 wire [31:0] csr_rdata;
 wire [31:0] csr_mtvec;
