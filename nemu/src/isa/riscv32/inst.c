@@ -27,14 +27,14 @@
 #define PRR(i)  ((i) == 0x305 ? cpu.mtvec : \
                 (i) == 0x342 ? cpu.mcause : \
                 (i) == 0x341 ? cpu.mepc : \
-                (i) == 0x300 ? cpu.mstate :	\
+                (i) == 0x300 ? cpu.mstatus :	\
 				(i) == 0xffffff11 ? 0x79737978 : \
 				(i) == 0xffffff12 ? 0x016FE3BB : 0)
 
 #define PRW(i, val)  ((i) == 0x305 ? cpu.mtvec = val : \
                 (i) == 0x342 ? cpu.mcause = val : \
                 (i) == 0x341 ? cpu.mepc = val : \
-                (i) == 0x300 ? cpu.mstate = val : 0)
+                (i) == 0x300 ? cpu.mstatus = val : 0)
 
 #ifdef CONFIG_FTRACE
 #define FTRACE_IS_LINK_REG(i) ((i) == 1 || (i) == 5)
@@ -145,8 +145,8 @@ static int decode_exec(Decode *s) {
 
   INSTPAT("??????? ????? ????? ??? ????? 11011 11", jal    , J, s->dnpc = s->pc + imm; R(rd) = s->snpc; IFDEF(CONFIG_FTRACE, FTRACE_JAL()));
 
-  INSTPAT("??????? ????? ????? 001 ????? 11100 11", csrrw  , I, R(rd) = PRR(imm), PRW(imm, src1));
-  INSTPAT("??????? ????? ????? 010 ????? 11100 11", csrrs  , I, R(rd) = PRR(imm), PRW(imm, (PRR(imm) | src1)));
+  INSTPAT("??????? ????? ????? 001 ????? 11100 11", csrrw  , I, if (rd != 0) R(rd) = PRR(imm); PRW(imm, src1));
+  INSTPAT("??????? ????? ????? 010 ????? 11100 11", csrrs  , I, word_t old = PRR(imm); R(rd) = old; if (BITS(s->isa.inst.val, 19, 15) != 0) PRW(imm, old | src1));
 
   INSTPAT("0011000 00010 00000 000 00000 11100 11", mret   , N, s->dnpc = cpu.mepc);
   INSTPAT("0000000 00000 00000 000 00000 11100 11", ecall  , N, s->dnpc = isa_raise_intr(11, cpu.pc); IFDEF(CONFIG_ETRACE, record_etrace(cpu.pc, cpu.mcause, cpu.mtvec)));

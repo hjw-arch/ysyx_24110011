@@ -30,6 +30,10 @@ void isa_reg_display() {
         printf("%-15s0x%-20x%u\n", regs[i], R(i), R(i));
     }
     printf("%-15s0x%-20x0x%x\n", "pc", cpu.pc, cpu.pc);
+    printf("%-15s0x%08x\n", "mstatus", cpu.mstatus);
+    printf("%-15s0x%08x\n", "mtvec", cpu.mtvec);
+    printf("%-15s0x%08x\n", "mepc", cpu.mepc);
+    printf("%-15s0x%08x\n", "mcause", cpu.mcause);
 }
 
 // 根据寄存器的名称返回寄存器的值
@@ -37,6 +41,10 @@ word_t isa_reg_str2val(const char *s, bool *success) {
     if (strcmp(s, "pc") == 0) {
         return cpu.pc;
     }
+    if (strcmp(s, "mstatus") == 0) return cpu.mstatus;
+    if (strcmp(s, "mtvec") == 0) return cpu.mtvec;
+    if (strcmp(s, "mepc") == 0) return cpu.mepc;
+    if (strcmp(s, "mcause") == 0) return cpu.mcause;
 
     if (s[0] == 'x' || s[0] == 'X') {
         int reg_index = atoi(s+1);
