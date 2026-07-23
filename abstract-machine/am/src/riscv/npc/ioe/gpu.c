@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #define SYNC_ADDR (VGACTL_ADDR + 4)
+#define BLIT_ADDR (VGACTL_ADDR + 8)
 
 void __am_gpu_init() {
     // int i;
@@ -25,16 +26,26 @@ void __am_gpu_config(AM_GPU_CONFIG_T *cfg) {
 }
 
 void __am_gpu_fbdraw(AM_GPU_FBDRAW_T *ctl) {
+#if GPU_BLIT
+    uint32_t cmd[] = {
+        (uintptr_t)ctl->pixels,
+        (uint32_t)ctl->x | (uint32_t)ctl->y << 16,
+        (uint32_t)ctl->w | (uint32_t)ctl->h << 16,
+        ctl->sync
+    };
+    asm volatile("" ::: "memory");
+    outl(BLIT_ADDR, (uintptr_t)cmd);
+#else
     int width = io_read(AM_GPU_CONFIG).width;
     for (uint32_t i = ctl->y; i < ctl->y + ctl->h; i++) {
         for (uint32_t j = ctl->x; j < ctl->x + ctl->w; j++) {
             outl(FB_ADDR + (i * width * 4 + j * 4), ((uint32_t *)ctl->pixels)[(i - ctl->y) * ctl->w + (j - ctl->x)]);
         }
     }
-
     if (ctl->sync) {
         outl(SYNC_ADDR, 1);
     }
+#endif
 }
 
 void __am_gpu_status(AM_GPU_STATUS_T *status) {

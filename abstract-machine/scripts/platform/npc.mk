@@ -10,13 +10,15 @@ AM_SRCS := riscv/npc/start.S \
            platform/dummy/vme.c \
            platform/dummy/mpe.c
 
-CFLAGS    += -fdata-sections -ffunction-sections
+GPU_BLIT ?= 1
+CFLAGS    += -fdata-sections -ffunction-sections -DGPU_BLIT=$(GPU_BLIT)
 LDFLAGS   += -T $(AM_HOME)/scripts/linker.ld \
 						 --defsym=_pmem_start=0x80000000 --defsym=_entry_offset=0x0
 LDFLAGS   += --gc-sections -e _start
 CFLAGS += -DMAINARGS=\"$(mainargs)\"
 CFLAGS += -I$(AM_HOME)/am/src/riscv/npc/ioe -I$(AM_HOME)/am/src/riscv/
-.PHONY: $(AM_HOME)/am/src/riscv/npc/trm.c
+.PHONY: $(AM_HOME)/am/src/riscv/npc/trm.c \
+        $(AM_HOME)/am/src/riscv/npc/ioe/gpu.c
 
 NEMU_REF ?= $(NEMU_HOME)/build/riscv32-nemu-interpreter-npc-so
 NPCARGS = -e $(IMAGE).elf -d $(NEMU_REF) -b
