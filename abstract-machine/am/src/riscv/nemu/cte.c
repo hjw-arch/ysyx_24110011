@@ -40,6 +40,7 @@ bool cte_init(Context*(*handler)(Event, Context*)) {
 
 Context *kcontext(Area kstack, void (*entry)(void *), void *arg) {
   // Context *ptr = kstack.start;
+
   uint8_t *end = kstack.end;
   Context *context = (Context *)(end - CONTEXT_SIZE);
   
@@ -47,8 +48,8 @@ Context *kcontext(Area kstack, void (*entry)(void *), void *arg) {
     context->gpr[i] = 0;
   }
 
-  context->gpr[2] = (uintptr_t)(end - CONTEXT_SIZE);    // 栈指针
-  context->gpr[10] = (uintptr_t)(arg);
+  context->gpr[2] = (uintptr_t)(end - CONTEXT_SIZE);    // 栈指针，其实没什么用，是冗余
+  context->gpr[10] = (uintptr_t)(arg);                  // a0，参数传递
 
   context->mepc = (uintptr_t)(entry);
 
