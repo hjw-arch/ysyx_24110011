@@ -12,7 +12,7 @@ Context *__am_irq_handle(Context *c)
         switch (c->mcause)
         {
         case 11:
-            ev.event = EVENT_YIELD;
+            ev.event = c->GPR1 == (uintptr_t)-1 ? EVENT_YIELD : EVENT_SYSCALL;
             break;
         default:
             ev.event = EVENT_ERROR;
