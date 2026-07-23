@@ -35,7 +35,9 @@ void __am_audio_status(AM_AUDIO_STATUS_T *stat) {
 void __am_audio_play(AM_AUDIO_PLAY_T *ctl) {
     static uint32_t index = 0;
     uint32_t len = ctl->buf.end - ctl->buf.start;
-    uint32_t remaindSize = inl(AUDIO_SBUF_SIZE_ADDR) - index;   // 查看距离缓冲区结束地址还有多大空间
+    uint32_t bufsize = inl(AUDIO_SBUF_SIZE_ADDR);
+    while (bufsize - inl(AUDIO_COUNT_ADDR) < len);
+    uint32_t remaindSize = bufsize - index;   // 查看距离缓冲区结束地址还有多大空间
 
     if (remaindSize < len) {    // 如果剩余的空间不足以存下len字节的音频数据
         memcpy((void *)(AUDIO_SBUF_ADDR + index), ctl->buf.start, remaindSize); // 先将剩下的缓冲区填满

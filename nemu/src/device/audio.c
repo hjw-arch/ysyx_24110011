@@ -37,7 +37,8 @@ SDL_AudioSpec spec;
 static void audio_callback(void *userdata, uint8_t *stream, int len) {
     uint32_t len_to_copy;       // 需要复制的字节
 
-    if (audio_base[reg_count] == 0) {   // 如果缓冲区没有音频数据了，直接返回
+    if (audio_base[reg_count] == 0) {
+        SDL_memset(stream, spec.silence, len);
         return;
     }
 
@@ -59,7 +60,7 @@ static void audio_callback(void *userdata, uint8_t *stream, int len) {
         audio_pos += len_to_copy;
     }
     // 如果给到SDL的字节小于len，将后面缺少的空间填0
-    if (len_to_copy < len) memset(stream + len_to_copy, 0, len - len_to_copy);
+    if (len_to_copy < len) SDL_memset(stream + len_to_copy, spec.silence, len - len_to_copy);
 
     // 更新剩余的音频字节
     audio_base[reg_count] -= len_to_copy;
@@ -74,7 +75,6 @@ static void audio_io_handler(uint32_t offset, int len, bool is_write) {
 
     if (audio_base[reg_init]) {
         audio_pos = sbuf;
-        audio_base[reg_sbuf_size] = CONFIG_SB_SIZE;
         sbuf_end = sbuf + CONFIG_SB_SIZE;
         SDL_InitSubSystem(SDL_INIT_AUDIO);
         spec.callback = audio_callback;
@@ -90,6 +90,8 @@ static void audio_io_handler(uint32_t offset, int len, bool is_write) {
 void init_audio() {
     uint32_t space_size = sizeof(uint32_t) * nr_reg;
     audio_base = (uint32_t *)new_space(space_size);
+    SDL_memset(audio_base, 0, space_size);
+    audio_base[reg_sbuf_size] = CONFIG_SB_SIZE;
 #ifdef CONFIG_HAS_PORT_IO
     add_pio_map ("audio", CONFIG_AUDIO_CTL_PORT, audio_base, space_size, audio_io_handler);
 #else
