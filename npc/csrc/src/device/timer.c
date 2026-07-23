@@ -15,7 +15,7 @@ static void rtc_io_handler(uint32_t offset, int len, uint32_t is_write) {
         rtc_port_base[1] = us >> 32;
     }
 
-    if(offset > 4 && !is_write) {
+    if (!is_write && offset == 8) {
 
         time_t t = time(NULL);
 
