@@ -52,10 +52,8 @@ void device_update()
 }
 
 void sdl_clear_event_queue() {
-#ifndef CONFIG_TARGET_AM
     SDL_Event event;
     while (SDL_PollEvent(&event));
-#endif
 }
 
 void init_device() {

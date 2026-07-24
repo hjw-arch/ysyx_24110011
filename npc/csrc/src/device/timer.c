@@ -1,5 +1,5 @@
 #include <config.h>
-#ifdef CONFIG_DEVICE
+#if defined(CONFIG_DEVICE) && defined(CONFIG_HAS_TIMER)
 
 #include "../Include/device.h"
 #include <sys/time.h>
@@ -38,7 +38,7 @@ static void rtc_io_handler(uint32_t offset, int len, uint32_t is_write) {
 
 void init_timer() {
   rtc_port_base = (uint32_t *)new_space(32);
-  add_mmio_map("rtc", CONFIG_RTC_MMIO, rtc_port_base, 32, rtc_io_handler);
+  add_mmio_map("rtc", RTC_MMIO, rtc_port_base, 32, rtc_io_handler);
 }
 
 

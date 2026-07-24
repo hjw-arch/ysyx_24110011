@@ -13,9 +13,61 @@ endchoice
 
 menu "Simulation Options"
 
-config DEVICE
+menuconfig DEVICE
   bool "Enable device model"
   default n
+
+if DEVICE
+
+config HAS_SERIAL
+  bool "Enable serial"
+  default y
+
+config HAS_TIMER
+  bool "Enable timer"
+  default y
+
+config HAS_KEYBOARD
+  bool "Enable keyboard"
+  default y
+
+config HAS_VGA
+  bool "Enable VGA"
+  default y
+
+if HAS_VGA
+
+config VGA_SHOW_SCREEN
+  bool "Enable SDL screen"
+  default y
+
+choice
+  prompt "Screen size"
+  default VGA_SIZE_400x300
+
+config VGA_SIZE_400x300
+  bool "400 x 300"
+
+config VGA_SIZE_800x600
+  bool "800 x 600"
+
+endchoice
+
+endif
+
+config HAS_AUDIO
+  bool "Enable audio"
+  default y
+
+if HAS_AUDIO
+
+config SB_SIZE
+  hex "Audio stream buffer size"
+  default 0x200000
+
+endif
+
+endif
 
 config PERFORMANCE_COUNTER
   bool "Enable performance counter"
@@ -76,7 +128,3 @@ config VERILATOR_TRACE
   default WAVE
 
 endmenu
-
-config PC_RST_OFFSET
-  hex "PC reset offset"
-  default 0x0

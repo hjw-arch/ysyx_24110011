@@ -9,27 +9,15 @@
 #include <sys/time.h>
 #include "ram.h"
 
-#define CONFIG_HAS_SERIAL       1
-#define CONFIG_HAS_TIMER        1
-#define CONFIG_HAS_VGA          1
-#define CONFIG_HAS_KEYBOARD     1
-#define CONFIG_HAS_AUDIO        1
-
-
-
 #define TIMER_HZ 60
-#define CONFIG_VGA_SIZE_400x300 1
-#define CONFIG_VGA_SHOW_SCREEN 1
 
-#define CONFIG_SERIAL_MMIO      0xa00003f8
-#define CONFIG_RTC_MMIO         0xa0000048
-#define CONFIG_I8042_DATA_MMIO  0xa0000080      // 与nemu不同
-#define CONFIG_FB_ADDR          0xa1000000
-#define CONFIG_VGA_CTL_MMIO     0xa0000100
-#define CONFIG_AUDIO_CTL_MMIO   0xa0000200
-#define CONFIG_SB_ADDR          0xa1200000
-
-#define CONFIG_SB_SIZE 0x200000
+#define SERIAL_MMIO      0xa00003f8
+#define RTC_MMIO         0xa0000048
+#define I8042_DATA_MMIO  0xa0000080
+#define FB_ADDR          0xa1000000
+#define VGA_CTL_MMIO     0xa0000100
+#define AUDIO_CTL_MMIO   0xa0000200
+#define SB_ADDR          0xa1200000
 
 typedef void(*io_callback_t)(uint32_t, int, uint32_t);
 uint8_t* new_space(int size);

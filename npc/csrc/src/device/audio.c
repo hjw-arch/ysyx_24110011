@@ -1,5 +1,5 @@
 #include <config.h>
-#ifdef CONFIG_DEVICE
+#if defined(CONFIG_DEVICE) && defined(CONFIG_HAS_AUDIO)
 
 #include "../Include/device.h"
 #include <SDL2/SDL.h>
@@ -93,10 +93,10 @@ void init_audio()
     audio_base = (uint32_t *)new_space(space_size);
     SDL_memset(audio_base, 0, space_size);
     audio_base[reg_sbuf_size] = CONFIG_SB_SIZE;
-    add_mmio_map("audio", CONFIG_AUDIO_CTL_MMIO, audio_base, space_size, audio_io_handler);
+    add_mmio_map("audio", AUDIO_CTL_MMIO, audio_base, space_size, audio_io_handler);
 
     sbuf = (uint8_t *)new_space(CONFIG_SB_SIZE);
-    add_mmio_map("audio-sbuf", CONFIG_SB_ADDR, sbuf, CONFIG_SB_SIZE, NULL);
+    add_mmio_map("audio-sbuf", SB_ADDR, sbuf, CONFIG_SB_SIZE, NULL);
 }
 
 #endif

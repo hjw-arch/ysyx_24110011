@@ -1,5 +1,5 @@
 #include <config.h>
-#ifdef CONFIG_DEVICE
+#if defined(CONFIG_DEVICE) && defined(CONFIG_HAS_SERIAL)
 
 #include "../Include/device.h"
 #include <stdio.h>
@@ -15,7 +15,7 @@ static void serial_io_handler(uint32_t offset, int len, uint32_t is_write) {
 void init_serial()
 {
     serial_base = new_space(8);
-    add_mmio_map("serial", CONFIG_SERIAL_MMIO, serial_base, 4, serial_io_handler);
+    add_mmio_map("serial", SERIAL_MMIO, serial_base, 4, serial_io_handler);
 }
 
 

@@ -1,5 +1,5 @@
 #include <config.h>
-#ifdef CONFIG_DEVICE
+#if defined(CONFIG_DEVICE) && defined(CONFIG_HAS_VGA)
 
 #include "../Include/device.h"
 
@@ -78,7 +78,7 @@ void vga_update_screen()
 {
     if (vgactl_port_base[VGACTL_SYNC])
     {
-        update_screen();
+        IFDEF(CONFIG_VGA_SHOW_SCREEN, update_screen());
         vgactl_port_base[VGACTL_SYNC] = 0;
     }
 }
@@ -88,10 +88,10 @@ void init_vga()
     vgactl_port_base = (uint32_t *)new_space(VGACTL_NR * sizeof(uint32_t));
     vgactl_port_base[VGACTL_SCREEN] = (SCREEN_W << 16) | SCREEN_H;
 
-    add_mmio_map("vgactl", CONFIG_VGA_CTL_MMIO, vgactl_port_base, VGACTL_NR * sizeof(uint32_t), vga_io_handler);
+    add_mmio_map("vgactl", VGA_CTL_MMIO, vgactl_port_base, VGACTL_NR * sizeof(uint32_t), vga_io_handler);
 
     vmem = new_space(screen_size());
-    add_mmio_map("vmem", CONFIG_FB_ADDR, vmem, screen_size(), NULL);
+    add_mmio_map("vmem", FB_ADDR, vmem, screen_size(), NULL);
     IFDEF(CONFIG_VGA_SHOW_SCREEN, init_screen());
     IFDEF(CONFIG_VGA_SHOW_SCREEN, memset(vmem, 0, screen_size()));
 }

@@ -1,5 +1,5 @@
 #include <config.h>
-#ifdef CONFIG_DEVICE
+#if defined(CONFIG_DEVICE) && defined(CONFIG_HAS_KEYBOARD)
 
 #include "../Include/device.h"
 #include <SDL2/SDL.h>
@@ -80,7 +80,7 @@ void init_i8042()
 {
     i8042_data_port_base = (uint32_t *)new_space(4);
     i8042_data_port_base[0] = NPC_KEY_NONE;
-    add_mmio_map("keyboard", CONFIG_I8042_DATA_MMIO, i8042_data_port_base, 4, i8042_data_io_handler);
+    add_mmio_map("keyboard", I8042_DATA_MMIO, i8042_data_port_base, 4, i8042_data_io_handler);
     init_keymap();
 }
 
