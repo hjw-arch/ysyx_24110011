@@ -101,7 +101,10 @@ void *memmove(void *dst, const void *src, size_t n) {
     if (d < s) {
         for (size_t i = 0; i < n; ++i) d[i] = s[i];
     } else {
-        for (size_t i = n - 1; i >= 0; --i) d[i] = s[i];
+        while (n != 0) {
+            n--;
+            d[n] = s[n];
+        }
     }
 
     return dst;
