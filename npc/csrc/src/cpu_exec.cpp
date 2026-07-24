@@ -6,6 +6,10 @@
 #include "../Include/difftest.h"
 #include "../Include/pmc.h"
 
+#ifdef NVBOARD
+#include "nvboard.h"
+#endif
+
 #ifdef SOC
 #include "VysyxSoCFull___024root.h"
 #else
@@ -128,6 +132,7 @@ static void exec_cycle() {
 		if (CORE_SIG(lsu_redirect_valid)) PerformanceCounter_record_lsu_redirect();
 		PerformanceCounter_record_cycle());
 	cycle;
+	IFDEF(NVBOARD, nvboard_update());
 	cycle_times++;
 	wbu_skip_ref = CORE_SIG(ls2wb_valid) && next_skip_ref;
 }
@@ -192,7 +197,6 @@ void cpu_exec(uint32_t n) {
 
 		if (npc_state.state == NPC_RUNNING) {
 			IFDEF(CONFIG_DEVICE, if (!(dynamic_insts & 0x3ff)) device_update());
-			IFDEF(NVBOARD, nvboard_update());
 			continue;
 		}
 

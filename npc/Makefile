@@ -153,7 +153,7 @@ NVBOARD_CSRC += $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE)
 
 # INC_PATH += /home/hjw-arch/ysyx_workbench/nvboard/include
 
-NVBOARD_CFLAGS = $(addprefix -CFLAGS , $(addprefix -I, $(INC_PATH)) $(CXXFLAGS))
+NVBOARD_CFLAGS = $(addprefix -CFLAGS , $(addprefix -I, $(INC_PATH)) $(CXXFLAGS) -DNVBOARD)
 
 
 sim: $(SRC_AUTO_BIND) $(NVBOARD_ARCHIVE) prepare_build
