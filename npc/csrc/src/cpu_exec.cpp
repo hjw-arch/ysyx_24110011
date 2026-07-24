@@ -15,29 +15,17 @@
 #define EBREAK_INST 0x00100073u
 #define MIN_NUM_TO_DISASM 10
 
-#define EX2LS_PC_HI 204
 #define EX2LS_PC_LO 173
-#define EX2LS_INST_HI 172
 #define EX2LS_INST_LO 141
-#define EX2LS_STORE_DATA_HI 31
 #define EX2LS_STORE_DATA_LO 0
-#define LS2WB_PC_HI 102
 #define LS2WB_PC_LO 71
-#define LS2WB_INST_HI 70
 #define LS2WB_INST_LO 39
 
-#define WIDE_BITS(data, hi, lo) \
+#define WIDE_U32(data, lo) \
 	({ \
 		const WData *const words = (data); \
-		const int high = (hi); \
 		const int low = (lo); \
-		uint32_t value = 0; \
-		for (int bit = low; bit <= high; bit++) { \
-			if (words[bit / 32] & (1u << (bit % 32))) { \
-				value |= 1u << (bit - low); \
-			} \
-		} \
-		value; \
+		(uint32_t)((((uint64_t)words[low / 32 + 1] << 32) | words[low / 32]) >> (low % 32)); \
 	})
 
 #ifdef SOC
@@ -46,11 +34,11 @@
 #define CORE_SIG(name) dut.rootp->ysyx__DOT__u_cpu__DOT__##name
 #endif
 
-#define LSU_PC() WIDE_BITS(CORE_SIG(ex2ls_data).data(), EX2LS_PC_HI, EX2LS_PC_LO)
-#define LSU_INST() WIDE_BITS(CORE_SIG(ex2ls_data).data(), EX2LS_INST_HI, EX2LS_INST_LO)
-#define LSU_STORE_DATA() WIDE_BITS(CORE_SIG(ex2ls_data).data(), EX2LS_STORE_DATA_HI, EX2LS_STORE_DATA_LO)
-#define WBU_PC() WIDE_BITS(CORE_SIG(ls2wb_data).data(), LS2WB_PC_HI, LS2WB_PC_LO)
-#define WBU_INST() WIDE_BITS(CORE_SIG(ls2wb_data).data(), LS2WB_INST_HI, LS2WB_INST_LO)
+#define LSU_PC() WIDE_U32(CORE_SIG(ex2ls_data).data(), EX2LS_PC_LO)
+#define LSU_INST() WIDE_U32(CORE_SIG(ex2ls_data).data(), EX2LS_INST_LO)
+#define LSU_STORE_DATA() WIDE_U32(CORE_SIG(ex2ls_data).data(), EX2LS_STORE_DATA_LO)
+#define WBU_PC() WIDE_U32(CORE_SIG(ls2wb_data).data(), LS2WB_PC_LO)
+#define WBU_INST() WIDE_U32(CORE_SIG(ls2wb_data).data(), LS2WB_INST_LO)
 #define LSU_AXI_DONE() CORE_SIG(u_LSU__DOT__mem_resp_fire)
 
 typedef struct {
@@ -203,7 +191,7 @@ void cpu_exec(uint32_t n) {
 		IFDEF(CONFIG_WATCHPOINT, if (npc_state.state == NPC_RUNNING) diff_wp(commit.pc));
 
 		if (npc_state.state == NPC_RUNNING) {
-			IFDEF(CONFIG_DEVICE, device_update());
+			IFDEF(CONFIG_DEVICE, if (!(dynamic_insts & 0x3ff)) device_update());
 			IFDEF(NVBOARD, nvboard_update());
 			continue;
 		}

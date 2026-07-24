@@ -96,7 +96,7 @@ static void execute(uint64_t n) {
         if (nemu_state.state != NEMU_RUNNING)
             break;
 #if defined(CONFIG_DEVICE) && !defined(CONFIG_SOC)
-        device_update();
+        if (!(g_nr_guest_inst & 0x3ff)) device_update();
 #endif
     }
 }
