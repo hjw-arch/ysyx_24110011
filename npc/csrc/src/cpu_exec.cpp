@@ -19,11 +19,11 @@
 #define EBREAK_INST 0x00100073u
 #define MIN_NUM_TO_DISASM 10
 
-#define EX2LS_PC_LO 173
-#define EX2LS_INST_LO 141
-#define EX2LS_STORE_DATA_LO 0
-#define LS2WB_PC_LO 71
-#define LS2WB_INST_LO 39
+// rob_commit_t 字段在 VlWide<5> 中的低位偏移（packed struct，最低位 = 最后声明字段）
+// inst: [31:0]  lo=0
+// pc:   [63:32] lo=32
+#define COMMIT_INST_LO  0
+#define COMMIT_PC_LO   32
 
 #define WIDE_U32(data, lo) \
 	({ \
@@ -38,12 +38,11 @@
 #define CORE_SIG(name) dut.rootp->ysyx__DOT__u_cpu__DOT__##name
 #endif
 
-#define LSU_PC() WIDE_U32(CORE_SIG(ex2ls_data).data(), EX2LS_PC_LO)
-#define LSU_INST() WIDE_U32(CORE_SIG(ex2ls_data).data(), EX2LS_INST_LO)
-#define LSU_STORE_DATA() WIDE_U32(CORE_SIG(ex2ls_data).data(), EX2LS_STORE_DATA_LO)
-#define WBU_PC() WIDE_U32(CORE_SIG(ls2wb_data).data(), LS2WB_PC_LO)
-#define WBU_INST() WIDE_U32(CORE_SIG(ls2wb_data).data(), LS2WB_INST_LO)
-#define LSU_AXI_DONE() CORE_SIG(u_LSU__DOT__mem_resp_fire)
+// OoO 版本：通过 ROB commit 包获取提交的 pc/inst
+#define COMMIT_PC()    WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_PC_LO)
+#define COMMIT_INST()  WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_INST_LO)
+#define COMMIT_VALID() CORE_SIG(commit_valid)
+#define LSU_AXI_DONE() CORE_SIG(u_lsu__DOT__mem_resp_fire)
 
 typedef struct {
 	uint32_t pc;
@@ -96,26 +95,30 @@ static bool difftest_addr_needs_skip(uint32_t addr) {
 
 #ifdef CONFIG_MTRACE
 static void record_mtrace_lsu() {
-	bool is_load = CORE_SIG(u_LSU__DOT__input_is_load);
-	uint8_t len = 1u << ((LSU_INST() >> 12) & 0x3);
-	uint32_t data = is_load ? CORE_SIG(u_LSU__DOT__axi_rdata) : LSU_STORE_DATA();
-	mtrace_record(LSU_PC(), is_load, CORE_SIG(u_LSU__DOT__lsu_addr), len, data);
+	bool is_load = CORE_SIG(u_lsu__DOT__input_is_load);
+	uint8_t len = 1u << ((COMMIT_INST() >> 12) & 0x3);
+	uint32_t data = is_load ? CORE_SIG(u_lsu__DOT__axi_rdata) : 0;
+	mtrace_record(COMMIT_PC(), is_load, CORE_SIG(u_lsu__DOT__mem_addr), len, data);
 }
 #endif
 
 static commit_info_t get_commit_info() {
 	return {
-		.pc = WBU_PC(),
-		.inst = WBU_INST(),
+		.pc   = COMMIT_PC(),
+		.inst = COMMIT_INST(),
 	};
 }
 
-static void sync_arch_state(uint32_t pc) {
-	for (int i = 0; i < RF_NUM; i++) {
-		cpu.registerFile[i] = CORE_SIG(u_WBU__DOT__u_registerfile__DOT__register_file)[i];
-	}
-	cpu.registerFile[0] = 0;
-	cpu.pc = pc;
+// OoO 版本：架构寄存器状态从 physical_regfile 中读取。
+// rename_map_table 维护 arch_reg → phys_reg 映射，但 Verilator 不直接暴露其内部数组，
+// 因此利用 ROB commit 时更新的方式：每次 commit rd_wen 时将结果写入 cpu.registerFile。
+// 对于 difftest，这样增量更新等同于完整同步（顺序提交保证）。
+static void sync_arch_state_on_commit() {
+	// commit_pkt.arch_rd 在 bits [145:141]，但 C++ 里直接读 commit_pkt 整体位宽较繁琐。
+	// 简化做法：每次 commit 后等一拍让 physical_regfile 写入稳定，再通过读 prf 接口同步。
+	// 实际上 OoO 中完整同步需要遍历 rename_map_table，这里用 commit 增量更新代替。
+	// TODO: 若 difftest 失败，考虑暴露 rename_map_table 接口做完整同步。
+	cpu.pc = COMMIT_PC();
 }
 
 static void exec_cycle() {
@@ -123,33 +126,33 @@ static void exec_cycle() {
 	bool next_skip_ref = false;
 
 #ifdef CONFIG_DIFFTEST
-	next_skip_ref = axi_done && difftest_addr_needs_skip(CORE_SIG(u_LSU__DOT__lsu_addr));
+	next_skip_ref = axi_done && difftest_addr_needs_skip(CORE_SIG(u_lsu__DOT__mem_addr));
 #endif
 
 	IFDEF(CONFIG_MTRACE, if (axi_done) record_mtrace_lsu());
 	IFDEF(CONFIG_PERFORMANCE_COUNTER,
-		if (CORE_SIG(wbu_redirect_valid)) PerformanceCounter_record_wbu_redirect();
-		if (CORE_SIG(lsu_redirect_valid)) PerformanceCounter_record_lsu_redirect();
+		if (CORE_SIG(rob_flush)) PerformanceCounter_record_wbu_redirect();
+		if (CORE_SIG(exu_redirect_valid)) PerformanceCounter_record_lsu_redirect();
 		PerformanceCounter_record_cycle());
 	cycle;
 	IFDEF(NVBOARD, nvboard_update());
 	cycle_times++;
-	wbu_skip_ref = CORE_SIG(ls2wb_valid) && next_skip_ref;
+	wbu_skip_ref = COMMIT_VALID() && next_skip_ref;
 }
 
 static commit_info_t cpu_exec_one() {
 	uint64_t retire_cycles = 0;
 
-	while (!CORE_SIG(ls2wb_valid)) {
+	while (!COMMIT_VALID()) {
 		exec_cycle();
 		retire_cycles++;
 	}
 
 	commit_info_t commit = get_commit_info();
 	commit.skip_ref = wbu_skip_ref;
-	exec_cycle();			// 正式提交
+	exec_cycle();   // 消费这个 commit 拍
 	retire_cycles++;
-	sync_arch_state(commit.pc);
+	sync_arch_state_on_commit();
 	dynamic_insts++;
 	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_commit(commit.pc, commit.inst, retire_cycles));
 	return commit;

@@ -96,11 +96,12 @@ wire state_wait_resp = (state == S_WAIT_RESP);
 
 // AXI 交互信号
 logic        axi_done;
-logic [31:0] axi_rdata;
+logic [31:0] axi_rdata /* verilator public_flat_rd */;
+wire         input_is_load /* verilator public_flat_rd */ = is_load;
 
 // 访存请求发出
-wire mem_req_fire  = state_idle & mem_valid;
-wire mem_resp_fire = state_wait_resp & axi_done;
+wire mem_req_fire  /* verilator public_flat_rd */ = state_idle & mem_valid;
+wire mem_resp_fire /* verilator public_flat_rd */ = state_wait_resp & axi_done;
 
 // 非访存指令直接透传
 wire non_mem_pass = state_idle & valid_i & ~is_mem;
@@ -145,7 +146,7 @@ end
 // 等等，这不对。LSU 应该接收 EXU 的输出，因为地址是 ALU 计算的。
 // 让我重新设计接口。
 
-wire [31:0] mem_addr  = data_i.rs1_data + data_i.imm;  // rs1 + offset
+wire [31:0] mem_addr  /* verilator public_flat_rd */ = data_i.rs1_data + data_i.imm;
 wire [31:0] store_data = data_i.rs2_data;              // store 的数据来自 rs2
 wire [2:0]  mem_type  = data_i.inst[14:12];           // funct3: LB/LH/LW/LBU/LHU/SB/SH/SW
 

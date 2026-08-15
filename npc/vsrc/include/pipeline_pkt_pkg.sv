@@ -293,6 +293,8 @@ typedef struct packed {
     logic           rd_wen;
     sys_ctrl_t      sys;
     redirect_t      redirect;
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
 } rob_commit_t;
 
 // Decode → Rename

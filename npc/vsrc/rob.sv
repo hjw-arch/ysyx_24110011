@@ -79,6 +79,8 @@ assign commit_pkt_o.result      = rob_q[rob_head].result;
 assign commit_pkt_o.rd_wen      = rob_q[rob_head].rd_wen;
 assign commit_pkt_o.sys         = rob_q[rob_head].sys;
 assign commit_pkt_o.redirect    = '0;
+assign commit_pkt_o.pc          = rob_q[rob_head].pc;
+assign commit_pkt_o.inst        = rob_q[rob_head].inst;
 
 // ── 刷新：异常或分支误预测到达头部时触发 ──
 assign flush_o  = head_valid & head_complete & (head_excpt | head_redir);
@@ -139,7 +141,7 @@ always_ff @(posedge clk) begin
         end
 
         // 计数：alloc 和 commit 可以同拍发生
-        rob_count <= rob_count + alloc_fire - commit_fire;
+        rob_count <= rob_count + 6'(alloc_fire) - 6'(commit_fire);
     end
 end
 

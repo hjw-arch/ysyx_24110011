@@ -103,9 +103,9 @@ assign io_slave_rid     = 4'b0;
 //   1. ROB 检测到异常（ecall/mret/fence.i）→ rob.flush_o
 //   2. exu 检测到分支误预测 → exu.redirect_valid_o
 // 两者均触发 IFU redirect；ROB flush 同时清空整条流水线
-wire        exu_redirect_valid;
-wire [31:0] exu_redirect_addr;
-wire        rob_flush;
+wire        exu_redirect_valid /* verilator public_flat_rd */;
+wire [31:0] exu_redirect_addr  /* verilator public_flat_rd */;
+wire        rob_flush          /* verilator public_flat_rd */;
 wire [31:0] rob_flush_pc;
 
 wire        pipeline_flush  = rob_flush | exu_redirect_valid;
@@ -171,8 +171,8 @@ wire        exu_complete_redir_valid;
 wire [31:0] exu_complete_redir_addr;
 
 // ─── ROB commit ────────────────────────────────────────────
-wire        commit_valid;
-rob_commit_t commit_pkt;
+wire        commit_valid /* verilator public_flat_rd */;
+rob_commit_t commit_pkt  /* verilator public_flat_rd */;
 
 // ─── icache invalidate（fence.i 由 ROB commit 触发）────────
 wire        icache_inval;
