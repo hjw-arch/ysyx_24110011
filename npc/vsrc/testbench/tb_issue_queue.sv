@@ -1,6 +1,5 @@
 // 发射队列功能测试
 // 覆盖：分派、唤醒、年龄优先选择、同拍 issue+dispatch 复用槽、flush
-`timescale 1ns/1ps
 
 `include "../include/pipeline_pkt_pkg.sv"
 

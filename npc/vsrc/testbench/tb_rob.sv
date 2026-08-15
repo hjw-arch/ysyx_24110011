@@ -1,6 +1,5 @@
 // ROB 功能测试
 // 覆盖：分配、乱序完成、顺序提交、ROB 满、flush
-`timescale 1ns/1ps
 
 `include "../include/pipeline_pkt_pkg.sv"
 

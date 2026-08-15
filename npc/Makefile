@@ -141,7 +141,7 @@ npc: prepare_build $(VERILATOR_SRC_NPC)
 
 # --------------------- NVBOARD ----------------------------
 
-include $(NVBOARD_HOME)/scripts/nvboard.mk
+-include $(NVBOARD_HOME)/scripts/nvboard.mk
 
 NXDC_FILES = $(abspath ./constr/top.nxdc)
 SRC_AUTO_BIND = $(abspath $(BUILD_DIR)/auto_bind.cpp)
@@ -205,18 +205,13 @@ test_$(1): prepare_build
 	@echo ""
 	@echo ">>> 测试 $(1) ..."
 	@mkdir -p $(TB_OBJ_DIR)/$(1)
-	@$(VERILATOR) --binary --timing -sv $(TB_WNO) \
+	@$(VERILATOR) --binary -sv $(TB_WNO) \
 		$(TB_VINC) \
 		$(TB_DIR)/tb_$(1).sv \
 		$(abspath ./vsrc/$(1).sv) \
 		-Mdir $(TB_OBJ_DIR)/$(1) \
-		-o $(TB_OBJ_DIR)/$(1)/Vtb_$(1) \
-		2>&1; \
-	if [ $$? -eq 0 ] && [ -f $(TB_OBJ_DIR)/$(1)/Vtb_$(1) ]; then \
-		$(TB_OBJ_DIR)/$(1)/Vtb_$(1); \
-	else \
-		echo "  [ERROR] $(1) 编译失败"; \
-	fi
+		-o Vtb_$(1) && \
+	$(TB_OBJ_DIR)/$(1)/Vtb_$(1) || echo "  [ERROR] $(1) 测试失败"
 endef
 
 $(foreach m,$(TB_SIMPLE),$(eval $(call TB_SIMPLE_RULE,$(m))))
@@ -227,19 +222,14 @@ test_$(1): prepare_build
 	@echo ""
 	@echo ">>> 测试 $(1) ..."
 	@mkdir -p $(TB_OBJ_DIR)/$(1)
-	@$(VERILATOR) --binary --timing -sv $(TB_WNO) \
+	@$(VERILATOR) --binary -sv $(TB_WNO) \
 		$(TB_VINC) \
 		$(abspath ./vsrc/include/pipeline_pkt_pkg.sv) \
 		$(abspath ./vsrc/$(1).sv) \
 		$(TB_DIR)/tb_$(1).sv \
 		-Mdir $(TB_OBJ_DIR)/$(1) \
-		-o $(TB_OBJ_DIR)/$(1)/Vtb_$(1) \
-		2>&1; \
-	if [ $$? -eq 0 ] && [ -f $(TB_OBJ_DIR)/$(1)/Vtb_$(1) ]; then \
-		$(TB_OBJ_DIR)/$(1)/Vtb_$(1); \
-	else \
-		echo "  [ERROR] $(1) 编译失败"; \
-	fi
+		-o Vtb_$(1) && \
+	$(TB_OBJ_DIR)/$(1)/Vtb_$(1) || echo "  [ERROR] $(1) 测试失败"
 endef
 
 $(foreach m,$(TB_PKG),$(eval $(call TB_PKG_RULE,$(m))))
