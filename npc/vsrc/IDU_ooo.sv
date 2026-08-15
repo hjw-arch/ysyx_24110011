@@ -61,7 +61,7 @@ wire is_fence_i = is_misc_mem & (func3 == 3'b001);
 
 // System 子类型
 wire is_priv = is_system & (func3 == 3'b000);
-wire is_csr  = is_system & (func3[2] | func3[1]);
+wire is_csr  = is_system & (|func3);  // func3 非 0 即为 CSR 指令
 
 wire is_ecall = is_priv & (inst[21:20] == 2'b00);
 wire is_mret  = is_priv & (inst[21:20] == 2'b10);
@@ -73,11 +73,23 @@ wire is_csr_imm = is_csr &  func3[2];
 wire calc_op3 = inst[30] & (~is_cal_i | (func3 == 3'b101));
 
 // ── 立即数生成 ──
-// imm_sel: {U-type, J-type, I/S/B-type} (3位)
-wire [2:0] imm_sel;
-assign imm_sel[2] = is_lui | is_auipc | is_csr_imm;
-assign imm_sel[1] = is_store | is_branch | is_csr_imm;
-assign imm_sel[0] = 1'b0;  // 保留位
+// imm_sel 编码：I=000, S=001, Z=011, J=100, B=101, U=110
+logic [2:0] imm_sel;
+
+always_comb begin
+    if (is_lui | is_auipc)
+        imm_sel = 3'b110; // IMM_U
+    else if (is_jal)
+        imm_sel = 3'b100; // IMM_J
+    else if (is_branch)
+        imm_sel = 3'b101; // IMM_B
+    else if (is_store)
+        imm_sel = 3'b001; // IMM_S
+    else if (is_csr_imm)
+        imm_sel = 3'b011; // IMM_Z (zimm)
+    else
+        imm_sel = 3'b000; // IMM_I (默认，包括 load/cal_i/jalr)
+end
 
 logic [31:0] imm;
 imm_gen u_imm_gen (
@@ -156,6 +168,7 @@ always_comb begin
     case (imm_sel_i)
         IMM_I: imm_o = {{20{inst_i[31]}}, inst_i[31:20]};
         IMM_S: imm_o = {{20{inst_i[31]}}, inst_i[31:25], inst_i[11:7]};
+        IMM_Z: imm_o = {27'b0, inst_i[19:15]};  // CSR zimm（零扩展）
         IMM_B: imm_o = {{19{inst_i[31]}}, inst_i[31], inst_i[7], inst_i[30:25], inst_i[11:8], 1'b0};
         IMM_U: imm_o = {inst_i[31:12], 12'b0};
         IMM_J: imm_o = {{11{inst_i[31]}}, inst_i[31], inst_i[19:12], inst_i[20], inst_i[30:21], 1'b0};
