@@ -39,7 +39,7 @@ localparam logic [4:0] OPC_STORE    = 5'b01000;
 localparam logic [4:0] OPC_CAL_I    = 5'b00100;
 localparam logic [4:0] OPC_CAL_R    = 5'b01100;
 localparam logic [4:0] OPC_MISC_MEM = 5'b00011;
-localparam logic [4:0] OPC_SYSTEM   = 5'b11100;
+localparam logic [4:0] OPC_SYSTEM   = 5'b11100;  // SYSTEM 类，包含 ecall、mret、CSR 指令
 
 wire [4:0] opc = opcode[6:2];
 
@@ -56,21 +56,28 @@ wire is_misc_mem = (opc == OPC_MISC_MEM);
 wire is_system   = (opc == OPC_SYSTEM);
 
 wire is_calc  = is_cal_i | is_cal_r;
-wire is_fence = is_misc_mem & (func3 == 3'b000);
 wire is_fence_i = is_misc_mem & (func3 == 3'b001);
 
-// System 子类型
-wire is_priv = is_system & (func3 == 3'b000);
-wire is_csr  = is_system & (|func3);  // func3 非 0 即为 CSR 指令
+// SYSTEM 指令按照 funct3 分成两类：
+//   000: 特权/系统操作，例如 ecall/mret
+//   001/010/011: CSR 寄存器源操作，CSRRW/CSRRS/CSRRC
+//   101/110/111: CSR 立即数源操作，CSRRWI/CSRRSI/CSRRCI
+//   100: 保留编码，不当作合法 CSR 指令
+wire func3_is_csr = func3[1] | func3[0];
+wire func3_is_sys = func3 == 3'b000;
 
-wire is_ecall = is_priv & (inst[21:20] == 2'b00);
-wire is_mret  = is_priv & (inst[21:20] == 2'b10);
+wire is_csr      = is_system & func3_is_csr;
+wire is_csr_imm  = is_csr & func3[2];     // csrrwi、csrrsi、csrrci
+wire is_csr_reg  = is_csr & ~func3[2];    // csrrw、csrrs、csrrc
+wire is_sysop    = is_system & func3_is_sys;
 
-wire is_csr_reg = is_csr & ~func3[2];
-wire is_csr_imm = is_csr &  func3[2];
+// ecall/mret 在 ID 阶段先解出来，避免 WBU 提交重定向路径上再做宽指令比较
+wire is_ecall = is_sysop & (inst[31:20] == 12'h000);
+wire is_mret  = is_sysop & (inst[31:20] == 12'h302);
 
-// ALU op[3] 来自 funct7[5] (SRAI, SUB, SRA)
-wire calc_op3 = inst[30] & (~is_cal_i | (func3 == 3'b101));
+// SRAI/SUB/SRA 需要设置 ALU op[3]
+wire is_srai  = is_cal_i & (func3 == 3'b101) & inst[30];
+wire calc_op3 = is_srai | (is_cal_r & inst[30]);
 
 // ── 立即数生成 ──
 // imm_sel 编码：I=000, S=001, Z=011, J=100, B=101, U=110
@@ -99,11 +106,13 @@ imm_gen u_imm_gen (
 );
 
 // ── 源寄存器使用判断 ──
-// rs1_used: CSR 立即数形式使用 zimm，不读 rs1
+// rs1_used/rs2_used 是语义依赖判断，不是简单检查 rs 字段是否存在。
+// CSR 立即数形式使用 zimm（inst[19:15]），不读取 rs1。
 wire rs1_used = (is_jalr | is_branch | is_load | is_store | is_cal_i | is_cal_r | is_csr_reg) & |rs1_addr_raw;
 wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
 
-// ── 目的寄存器写使能（屏蔽 x0）──
+// ── 目的寄存器写使能 ──
+// rd_wen 在 ID 阶段顺手屏蔽 x0。后级如需原始 rd 字段，直接从随流水携带的 inst 中切片。
 wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) & |rd_addr_raw;
 
 // ── 输出：decode_pkt_t ──
@@ -118,32 +127,50 @@ assign data_o.rd_wen    = rd_wen;
 assign data_o.imm       = imm;
 
 // ── EX 控制信号 ──
-// ALU 操作（按 bit 生成）
+// ALU 操作按 bit 直接生成，避免写成优先级 mux 链。
+//   - LUI 使用 ALU_COPY2（即 ALU 的 data2 直通路径）
+//   - EQ/NE 分支使用 SUB 产生 zero_flag
+//   - LT/GE 使用 SLT，LTU/GEU 使用 SLTU
+//   - 普通计算指令大部分复用 funct3，op[3] 来自 funct7[5]/srai
 assign data_o.ex.alu_op[3] = is_lui | (is_branch & ~func3[2]) | (is_calc & calc_op3);
 assign data_o.ex.alu_op[2] = is_lui | (is_calc & func3[2]);
 assign data_o.ex.alu_op[1] = (is_branch & func3[2]) | (is_calc & func3[1]);
 assign data_o.ex.alu_op[0] = (is_branch & func3[2] & func3[1]) | (is_calc & func3[0]);
 
-// ALU 输入源：00=rs1+rs2, 01=rs1+imm, 10=pc+4, 11=pc+imm
+// ALU 输入源编码：
+//   00: rs1, rs2
+//   01: rs1, imm
+//   10: pc,  4
+//   11: pc,  imm
+// FENCE.I 使用 pc+4，这样 WBU 提交时可以直接拿 result 作为重定向地址，
+// 不需要在提交点再放一个 pc+4 加法器。
 assign data_o.ex.alu_src[1] = is_auipc | is_jal | is_jalr | is_fence_i;
 assign data_o.ex.alu_src[0] = is_lui | is_auipc | is_load | is_store | is_cal_i;
 
-// 控制流类型：00=无, 01=branch, 10=jal, 11=jalr
+// 控制流指令类型编码：
+//   00: 无控制流，01: branch，10: jal，11: jalr
 assign data_o.ex.cfi_type[1] = is_jal | is_jalr;
 assign data_o.ex.cfi_type[0] = is_branch | is_jalr;
 
 assign data_o.ex.br_cond = {func3[2], func3[0]};
 
-// OoO 不需要前递选择（在重命名阶段解决），fwd_sel 设为 RF（无前递）
+// OoO 不需要前递选择（在重命名阶段解决 RAW），fwd_sel 设为 RF（表示无前递）
 assign data_o.ex.rs1_used = rs1_used;
 assign data_o.ex.rs2_used = rs2_used;
 assign data_o.ex.fwd_rs1_sel = FWD_SEL_RF;
 assign data_o.ex.fwd_rs2_sel = FWD_SEL_RF;
 
 // ── MEM 控制信号 ──
+// mem.cmd 只告诉 LSU 是否为 load/store。访存宽度和符号扩展信息是 inst[14:12]
+// 的直接切片，留到 LSU 本地解码，不重复进入流水寄存器。
 assign data_o.mem.cmd = {is_store, is_load};
 
 // ── SYS 控制信号 ──
+// CSR/系统控制：
+//   csr_cmd    : NONE/WRITE/SET/CLEAR，由 CSR funct3[1:0] 压缩得到
+//   priv_redir : ECALL/MRET 提交点重定向，编码上天然互斥
+//   fence_i    : 与特权重定向分开，贴近 Rocket/Ibex 的语义分层
+// CSR 地址、zimm、rd、访存宽度都能从随流水携带的 inst 直接切片，因此不额外传。
 assign data_o.sys.csr_cmd    = {2{is_csr}} & func3[1:0];
 assign data_o.sys.priv_redir = {is_mret, is_ecall};
 assign data_o.sys.fence_i    = is_fence_i;
