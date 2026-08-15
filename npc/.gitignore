@@ -37,3 +37,4 @@ include/generated/
 include/config/
 .config
 .config.old
+vsrc/obj_dir/
