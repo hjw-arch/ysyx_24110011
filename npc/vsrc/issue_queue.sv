@@ -46,6 +46,7 @@ typedef struct packed {
     phys_reg_t      phys_rs1;
     phys_reg_t      phys_rs2;
     phys_reg_t      phys_rd;
+    logic           rd_wen;
     logic           rs1_ready;
     logic           rs2_ready;
     ex_ctrl_t       ex;
@@ -84,16 +85,18 @@ assign issue_phys_rs1_o  = iq[selected_idx].phys_rs1;
 assign issue_phys_rs2_o  = iq[selected_idx].phys_rs2;
 
 // rs1/rs2 data 由顶层从物理寄存器堆读取后填入，此处先输出地址
-assign issue_pkt_o.pc       = iq[selected_idx].pc;
-assign issue_pkt_o.inst     = iq[selected_idx].inst;
-assign issue_pkt_o.rob_idx  = iq[selected_idx].rob_idx;
-assign issue_pkt_o.phys_rd  = iq[selected_idx].phys_rd;
-assign issue_pkt_o.rs1_data = '0; // 由顶层用物理寄存器堆读出后覆盖
-assign issue_pkt_o.rs2_data = '0;
-assign issue_pkt_o.ex       = iq[selected_idx].ex;
-assign issue_pkt_o.mem      = iq[selected_idx].mem;
-assign issue_pkt_o.sys      = iq[selected_idx].sys;
-assign issue_pkt_o.imm      = iq[selected_idx].imm;
+assign issue_pkt_o.pc         = iq[selected_idx].pc;
+assign issue_pkt_o.inst       = iq[selected_idx].inst;
+assign issue_pkt_o.rob_idx    = iq[selected_idx].rob_idx;
+assign issue_pkt_o.phys_rd    = iq[selected_idx].phys_rd;
+assign issue_pkt_o.rs1_data   = '0; // 由顶层用物理寄存器堆读出后覆盖
+assign issue_pkt_o.rs2_data   = '0;
+assign issue_pkt_o.pred_taken = '0;
+assign issue_pkt_o.rd_wen     = iq[selected_idx].rd_wen;
+assign issue_pkt_o.ex         = iq[selected_idx].ex;
+assign issue_pkt_o.mem        = iq[selected_idx].mem;
+assign issue_pkt_o.sys        = iq[selected_idx].sys;
+assign issue_pkt_o.imm        = iq[selected_idx].imm;
 
 // ── 空闲槽优先编码器 ──
 // 关键优化：若本拍正在发射某槽（issue_fire），则该槽视为空闲可直接复用，
@@ -144,6 +147,7 @@ always_ff @(posedge clk) begin
             iq[alloc_idx].phys_rs1  <= dispatch_pkt_i.phys_rs1;
             iq[alloc_idx].phys_rs2  <= dispatch_pkt_i.phys_rs2;
             iq[alloc_idx].phys_rd   <= dispatch_pkt_i.phys_rd;
+            iq[alloc_idx].rd_wen    <= dispatch_pkt_i.rd_wen;
             iq[alloc_idx].rs1_ready <= dispatch_pkt_i.rs1_ready;
             iq[alloc_idx].rs2_ready <= dispatch_pkt_i.rs2_ready;
             iq[alloc_idx].ex        <= dispatch_pkt_i.ex;

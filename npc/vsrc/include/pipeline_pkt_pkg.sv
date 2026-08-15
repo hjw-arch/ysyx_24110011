@@ -319,6 +319,7 @@ typedef struct packed {
     phys_reg_t      phys_rs1;
     phys_reg_t      phys_rs2;
     phys_reg_t      phys_rd;
+    logic           rd_wen;
     logic           rs1_ready;
     logic           rs2_ready;
     ex_ctrl_t       ex;

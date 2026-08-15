@@ -113,6 +113,7 @@ assign dispatch_pkt_o.rob_idx   = rob_alloc_idx_i;
 assign dispatch_pkt_o.phys_rs1  = rs1_phys;
 assign dispatch_pkt_o.phys_rs2  = rs2_phys;
 assign dispatch_pkt_o.phys_rd   = decode_pkt_i.rd_wen ? rd_phys_new : 6'd0;
+assign dispatch_pkt_o.rd_wen    = decode_pkt_i.rd_wen;
 assign dispatch_pkt_o.rs1_ready = rs1_ready;
 assign dispatch_pkt_o.rs2_ready = rs2_ready;
 assign dispatch_pkt_o.ex        = decode_pkt_i.ex;
