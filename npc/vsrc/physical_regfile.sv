@@ -1,57 +1,50 @@
-// Physical Register File for Out-of-Order Processor
-// 64 physical registers (p0-p63) with multi-port support
-// p0 is hardwired to 0 (RISC-V x0 convention)
+// 物理寄存器堆（Physical Register File）
+// 64 个物理寄存器，2 读 2 写端口
+// p0 硬连线为 0（RISC-V x0 约定）
+// 同步复位，同拍写后读返回旧值（下拍可见）
 
 module physical_regfile #(
-    parameter int NUM_PHYS_REGS = 64,
-    parameter int DATA_WIDTH = 32,
-    parameter int READ_PORTS = 2,      // 2 源操作数（rs1, rs2）
-    parameter int WRITE_PORTS = 2      // 2 写端口（ALU, LSU）
-) (
-    input  logic                                clk,
-    input  logic                                rst_n,
-    
-    // 读端口（组合逻辑）
-    input  logic [READ_PORTS-1:0][5:0]          read_addr_i,
-    output logic [READ_PORTS-1:0][DATA_WIDTH-1:0] read_data_o,
-    
-    // 写端口（时序逻辑）
-    input  logic [WRITE_PORTS-1:0]              write_en_i,
-    input  logic [WRITE_PORTS-1:0][5:0]         write_addr_i,
-    input  logic [WRITE_PORTS-1:0][DATA_WIDTH-1:0] write_data_i
+    parameter int NUM_PHYS_REGS = 64
+)(
+    input               clk,
+    input               rst,
+
+    // 读端口（组合逻辑，p0 恒为 0）
+    input       [5:0]   read_addr1_i,
+    input       [5:0]   read_addr2_i,
+    output      [31:0]  read_data1_o,
+    output      [31:0]  read_data2_o,
+
+    // 写端口 1（ALU 写回）
+    input               write_en1_i,
+    input       [5:0]   write_addr1_i,
+    input       [31:0]  write_data1_i,
+
+    // 写端口 2（LSU 写回）
+    input               write_en2_i,
+    input       [5:0]   write_addr2_i,
+    input       [31:0]  write_data2_i
 );
 
-    // 寄存器数组
-    logic [DATA_WIDTH-1:0] regs [NUM_PHYS_REGS];
-    
-    // ========== 读逻辑（组合逻辑，用 assign）==========
-    // p0 硬连线为 0，其他寄存器正常读取
-    genvar i;
-    generate
-        for (i = 0; i < READ_PORTS; i++) begin : gen_read_ports
-            assign read_data_o[i] = (read_addr_i[i] == 6'd0) ? '0 : regs[read_addr_i[i]];
+logic [31:0] regs [0:NUM_PHYS_REGS-1] /* verilator public_flat_rd */;
+
+// p0 硬连线为 0，其余正常读取
+assign read_data1_o = (|read_addr1_i) ? regs[read_addr1_i] : 32'b0;
+assign read_data2_o = (|read_addr2_i) ? regs[read_addr2_i] : 32'b0;
+
+// 同步写入；两个写端口同时写同一地址时端口 2 优先
+always_ff @(posedge clk) begin
+    if (rst) begin
+        for (int i = 0; i < NUM_PHYS_REGS; i++) begin
+            regs[i] <= 32'b0;
         end
-    endgenerate
-    
-    // ========== 写逻辑（时序逻辑，用 always_ff）==========
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // 复位时清零所有寄存器
-            for (int j = 0; j < NUM_PHYS_REGS; j++) begin
-                regs[j] <= '0;
-            end
-        end else begin
-            // 支持多端口同时写入
-            for (int j = 0; j < WRITE_PORTS; j++) begin
-                if (write_en_i[j] && write_addr_i[j] != 6'd0) begin
-                    regs[write_addr_i[j]] <= write_data_i[j];
-                end
-            end
-        end
+    end else begin
+        if (write_en1_i && |write_addr1_i)
+            regs[write_addr1_i] <= write_data1_i;
+        // 端口 2 最后写，若与端口 1 地址相同则端口 2 覆盖
+        if (write_en2_i && |write_addr2_i)
+            regs[write_addr2_i] <= write_data2_i;
     end
-    
-    // ========== 写后读旁路（组合逻辑，可选优化）==========
-    // 如果同一周期写入和读取同一寄存器，读取到新值
-    // 这里为了保持简洁，先不实现，后续可以优化
+end
 
 endmodule

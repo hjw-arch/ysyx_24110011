@@ -1,7 +1,9 @@
-// Issue Queue
-// 存储等待执行的指令，跟踪操作数就绪状态
-// 选择就绪指令发射（年龄优先：ROB index 最小）
-// 8 项，单发射
+// 发射队列（Issue Queue）
+// 存储等待执行的指令，跟踪操作数就绪状态，乱序选择发射
+// 8 项，年龄优先（ROB index 最小的就绪指令先发射）
+// 修正：
+//   1. 用优先编码器替代 break 实现空闲槽查找（可综合）
+//   2. 同拍 issue + dispatch 时直接复用被发射的槽（无气泡）
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -9,148 +11,147 @@ module issue_queue
 import pipeline_pkt_pkg::*;
 #(
     parameter int IQ_SIZE = 8
-) (
-    input  logic                    clk,
-    input  logic                    rst_n,
-    
-    // 分配接口（Rename/Dispatch）
-    input  logic                    dispatch_en_i,
-    input  rename2issue_pkt_t       dispatch_pkt_i,
-    output logic                    dispatch_ready_o,   // 队列未满
-    
-    // 发射接口（到 Execute）
-    output logic                    issue_valid_o,
-    output issue2ex_pkt_t           issue_pkt_o,
-    input  logic                    issue_ready_i,      // Execute 就绪
-    
-    // 唤醒接口（监听写回总线）
-    input  logic                    wakeup_en_i,
-    input  phys_reg_t               wakeup_preg_i,
-    
-    // 刷新接口
-    input  logic                    flush_i
+)(
+    input               clk,
+    input               rst,
+
+    // ── 分配接口（Rename/Dispatch）──
+    input               dispatch_en_i,
+    input   rename2issue_pkt_t  dispatch_pkt_i,
+    output              dispatch_ready_o,
+
+    // ── 发射接口（到 RegRead + Execute）──
+    output              issue_valid_o,
+    output  issue2ex_pkt_t      issue_pkt_o,
+    input               issue_ready_i,
+
+    // 发射的物理源寄存器地址（供顶层读物理寄存器堆）
+    output      [5:0]   issue_phys_rs1_o,
+    output      [5:0]   issue_phys_rs2_o,
+
+    // ── 唤醒接口（执行单元写回，广播物理寄存器编号）──
+    input               wakeup_en_i,
+    input       [5:0]   wakeup_preg_i,
+
+    // ── 刷新接口 ──
+    input               flush_i
 );
 
-    // 队列项结构
-    typedef struct packed {
-        logic           valid;
-        rob_idx_t       rob_idx;
-        logic   [31:0]  pc;
-        logic   [31:0]  inst;
-        phys_reg_t      phys_rs1;
-        phys_reg_t      phys_rs2;
-        phys_reg_t      phys_rd;
-        logic           rs1_ready;
-        logic           rs2_ready;
-        ex_ctrl_t       ex;
-        mem_ctrl_t      mem;
-        sys_ctrl_t      sys;
-        logic   [31:0]  imm;
-    } iq_entry_t;
-    
-    // 队列数组
-    iq_entry_t iq [IQ_SIZE];
-    
-    // 队列项计数
-    logic [3:0] iq_count;
-    
-    // ========== 队列未满信号（组合逻辑）==========
-    assign dispatch_ready_o = (iq_count < IQ_SIZE);
-    
-    // ========== 选择逻辑：年龄优先（组合逻辑）==========
-    // 找到就绪的、ROB index 最小的指令
-    logic [2:0] selected_idx;
-    logic found_ready;
-    rob_idx_t min_rob_idx;
-    
-    always_comb begin
-        found_ready = 1'b0;
-        selected_idx = '0;
-        min_rob_idx = '1;  // 初始化为最大值
-        
-        for (int i = 0; i < IQ_SIZE; i++) begin
-            if (iq[i].valid && iq[i].rs1_ready && iq[i].rs2_ready) begin
-                if (iq[i].rob_idx < min_rob_idx) begin
-                    min_rob_idx = iq[i].rob_idx;
-                    selected_idx = i[2:0];
-                    found_ready = 1'b1;
-                end
+// 队列项结构
+typedef struct packed {
+    logic           valid;
+    rob_idx_t       rob_idx;
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
+    phys_reg_t      phys_rs1;
+    phys_reg_t      phys_rs2;
+    phys_reg_t      phys_rd;
+    logic           rs1_ready;
+    logic           rs2_ready;
+    ex_ctrl_t       ex;
+    mem_ctrl_t      mem;
+    sys_ctrl_t      sys;
+    logic   [31:0]  imm;
+} iq_entry_t;
+
+iq_entry_t iq [0:IQ_SIZE-1];
+
+// ── 发射选择：年龄优先（ROB index 最小的就绪项）──
+logic [2:0] selected_idx;
+logic       found_ready;
+rob_idx_t   min_rob_idx;
+
+always_comb begin
+    found_ready  = 1'b0;
+    selected_idx = '0;
+    min_rob_idx  = '1;  // 初始化为全1（最大值）
+    for (int i = 0; i < IQ_SIZE; i++) begin
+        if (iq[i].valid & iq[i].rs1_ready & iq[i].rs2_ready) begin
+            if (!found_ready || iq[i].rob_idx < min_rob_idx) begin
+                min_rob_idx  = iq[i].rob_idx;
+                selected_idx = 3'(i);
+                found_ready  = 1'b1;
             end
         end
     end
-    
-    assign issue_valid_o = found_ready;
-    
-    // ========== 发射包输出（组合逻辑）==========
-    assign issue_pkt_o.pc = iq[selected_idx].pc;
-    assign issue_pkt_o.inst = iq[selected_idx].inst;
-    assign issue_pkt_o.rob_idx = iq[selected_idx].rob_idx;
-    assign issue_pkt_o.phys_rd = iq[selected_idx].phys_rd;
-    assign issue_pkt_o.rs1_data = '0;  // 需要从物理寄存器堆读取
-    assign issue_pkt_o.rs2_data = '0;  // 需要从物理寄存器堆读取
-    assign issue_pkt_o.ex = iq[selected_idx].ex;
-    assign issue_pkt_o.mem = iq[selected_idx].mem;
-    assign issue_pkt_o.sys = iq[selected_idx].sys;
-    assign issue_pkt_o.imm = iq[selected_idx].imm;
-    
-    // ========== 分配、唤醒、发射逻辑（时序逻辑）==========
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // 复位
-            iq_count <= '0;
+end
+
+wire issue_fire   = found_ready & issue_ready_i;
+wire dispatch_fire = dispatch_en_i & dispatch_ready_o;
+
+assign issue_valid_o     = found_ready;
+assign issue_phys_rs1_o  = iq[selected_idx].phys_rs1;
+assign issue_phys_rs2_o  = iq[selected_idx].phys_rs2;
+
+// rs1/rs2 data 由顶层从物理寄存器堆读取后填入，此处先输出地址
+assign issue_pkt_o.pc       = iq[selected_idx].pc;
+assign issue_pkt_o.inst     = iq[selected_idx].inst;
+assign issue_pkt_o.rob_idx  = iq[selected_idx].rob_idx;
+assign issue_pkt_o.phys_rd  = iq[selected_idx].phys_rd;
+assign issue_pkt_o.rs1_data = '0; // 由顶层用物理寄存器堆读出后覆盖
+assign issue_pkt_o.rs2_data = '0;
+assign issue_pkt_o.ex       = iq[selected_idx].ex;
+assign issue_pkt_o.mem      = iq[selected_idx].mem;
+assign issue_pkt_o.sys      = iq[selected_idx].sys;
+assign issue_pkt_o.imm      = iq[selected_idx].imm;
+
+// ── 空闲槽优先编码器 ──
+// 关键优化：若本拍正在发射某槽（issue_fire），则该槽视为空闲可直接复用，
+// 避免 dispatch 等到下拍才能写入（消除一拍气泡）。
+logic [2:0] alloc_idx;
+logic       alloc_has_slot;
+
+always_comb begin
+    alloc_has_slot = 1'b0;
+    alloc_idx      = '0;
+    for (int i = 0; i < IQ_SIZE; i++) begin
+        // 该槽为空，或本拍正在发射该槽（同拍复用）
+        if ((!iq[i].valid || (3'(i) == selected_idx && issue_fire)) && !alloc_has_slot) begin
+            alloc_idx      = 3'(i);
+            alloc_has_slot = 1'b1;
+        end
+    end
+end
+
+assign dispatch_ready_o = alloc_has_slot;
+
+// ── 时序逻辑：唤醒、发射、分配 ──
+always_ff @(posedge clk) begin
+    if (rst || flush_i) begin
+        for (int i = 0; i < IQ_SIZE; i++)
+            iq[i].valid <= 1'b0;
+    end else begin
+        // 1. 唤醒：广播写回的物理寄存器，更新队列中所有匹配项的就绪位
+        if (wakeup_en_i) begin
             for (int i = 0; i < IQ_SIZE; i++) begin
-                iq[i].valid <= 1'b0;
-            end
-        end else if (flush_i) begin
-            // 刷新：清空整个队列
-            iq_count <= '0;
-            for (int i = 0; i < IQ_SIZE; i++) begin
-                iq[i].valid <= 1'b0;
-            end
-        end else begin
-            // 唤醒逻辑：广播写回的物理寄存器编号
-            if (wakeup_en_i) begin
-                for (int i = 0; i < IQ_SIZE; i++) begin
-                    if (iq[i].valid) begin
-                        if (iq[i].phys_rs1 == wakeup_preg_i) begin
-                            iq[i].rs1_ready <= 1'b1;
-                        end
-                        if (iq[i].phys_rs2 == wakeup_preg_i) begin
-                            iq[i].rs2_ready <= 1'b1;
-                        end
-                    end
-                end
-            end
-            
-            // 发射：移除已发射的指令
-            if (issue_valid_o && issue_ready_i) begin
-                iq[selected_idx].valid <= 1'b0;
-                iq_count <= iq_count - 4'd1;
-            end
-            
-            // 分配：找到第一个空闲位置插入新指令
-            if (dispatch_en_i && dispatch_ready_o) begin
-                for (int i = 0; i < IQ_SIZE; i++) begin
-                    if (!iq[i].valid) begin
-                        iq[i].valid <= 1'b1;
-                        iq[i].rob_idx <= dispatch_pkt_i.rob_idx;
-                        iq[i].pc <= dispatch_pkt_i.pc;
-                        iq[i].inst <= dispatch_pkt_i.inst;
-                        iq[i].phys_rs1 <= dispatch_pkt_i.phys_rs1;
-                        iq[i].phys_rs2 <= dispatch_pkt_i.phys_rs2;
-                        iq[i].phys_rd <= dispatch_pkt_i.phys_rd;
-                        iq[i].rs1_ready <= dispatch_pkt_i.rs1_ready;
-                        iq[i].rs2_ready <= dispatch_pkt_i.rs2_ready;
-                        iq[i].ex <= dispatch_pkt_i.ex;
-                        iq[i].mem <= dispatch_pkt_i.mem;
-                        iq[i].sys <= dispatch_pkt_i.sys;
-                        iq[i].imm <= dispatch_pkt_i.imm;
-                        iq_count <= iq_count + 4'd1;
-                        break;  // 只插入一次
-                    end
+                if (iq[i].valid) begin
+                    if (iq[i].phys_rs1 == wakeup_preg_i) iq[i].rs1_ready <= 1'b1;
+                    if (iq[i].phys_rs2 == wakeup_preg_i) iq[i].rs2_ready <= 1'b1;
                 end
             end
         end
+
+        // 2. 发射：将对应槽标为无效（若 dispatch 也在同拍写同槽，dispatch 最终覆盖 valid=1）
+        if (issue_fire)
+            iq[selected_idx].valid <= 1'b0;
+
+        // 3. 分配：将新指令写入空闲槽
+        if (dispatch_fire) begin
+            iq[alloc_idx].valid     <= 1'b1;
+            iq[alloc_idx].rob_idx   <= dispatch_pkt_i.rob_idx;
+            iq[alloc_idx].pc        <= dispatch_pkt_i.pc;
+            iq[alloc_idx].inst      <= dispatch_pkt_i.inst;
+            iq[alloc_idx].phys_rs1  <= dispatch_pkt_i.phys_rs1;
+            iq[alloc_idx].phys_rs2  <= dispatch_pkt_i.phys_rs2;
+            iq[alloc_idx].phys_rd   <= dispatch_pkt_i.phys_rd;
+            iq[alloc_idx].rs1_ready <= dispatch_pkt_i.rs1_ready;
+            iq[alloc_idx].rs2_ready <= dispatch_pkt_i.rs2_ready;
+            iq[alloc_idx].ex        <= dispatch_pkt_i.ex;
+            iq[alloc_idx].mem       <= dispatch_pkt_i.mem;
+            iq[alloc_idx].sys       <= dispatch_pkt_i.sys;
+            iq[alloc_idx].imm       <= dispatch_pkt_i.imm;
+        end
     end
+end
 
 endmodule
