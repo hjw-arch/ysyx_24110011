@@ -2,7 +2,7 @@
 
 `include "./include/pipeline_pkt_pkg.sv"
 
-module EXU_ooo_wrapper
+module exu_wrapper
 import pipeline_pkt_pkg::*;
 (
     input               clk,
@@ -86,7 +86,7 @@ always_comb begin
 end
 
 // 实例化真正的 EXU_ooo
-EXU_ooo u_exu (
+exu u_exu (
     .clk                            (clk),
     .rst                            (rst),
     .valid_i                        (valid_i),

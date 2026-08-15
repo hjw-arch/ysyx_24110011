@@ -1,10 +1,10 @@
-// EXU_ooo 详尽功能测试
+// exu 功能测试
 // 覆盖：ALU 运算、分支判断、跳转、CSR、重定向检测、唤醒信号、完成信号
 `timescale 1ns/1ps
 
 `include "../include/pipeline_pkt_pkg.sv"
 
-module tb_exu_ooo;
+module tb_exu;
 import pipeline_pkt_pkg::*;
 
 logic clk = 0, rst = 1;
@@ -33,7 +33,7 @@ logic        bpu_update_btb_type_o;
 logic        bpu_update_taken_o;
 logic [31:0] bpu_update_target_o;
 
-EXU_ooo dut (
+exu dut (
     .clk(clk),
     .rst(rst),
     .valid_i(valid_i),
@@ -114,7 +114,7 @@ task automatic set_alu(
 endtask
 
 initial begin
-    $display("\n===== EXU_ooo 详尽功能测试 =====\n");
+    $display("\n===== exu 功能测试 =====\n");
     tick; tick; rst = 0; tick;
     
     // ── 测试1：ALU ADD ──
@@ -289,7 +289,7 @@ initial begin
     chk("ready_o = 1", 1'b1, ready_o);
     
     tick;
-    $display("\n===== EXU_ooo: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);
+    $display("\n===== exu: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);
     if (fail_cnt == 0)
         $display("✅ 所有测试通过！");
     else

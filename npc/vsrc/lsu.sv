@@ -1,4 +1,4 @@
-// LSU_ooo (Load-Store Unit) - OoO 版本
+// lsu (Load-Store Unit)
 // 功能：处理访存指令，与 AXI 总线交互，完成后通知 ROB
 //
 // OoO 变化：
@@ -14,7 +14,7 @@
 
 `include "./include/pipeline_pkt_pkg.sv"
 
-module LSU_ooo
+module lsu
 import pipeline_pkt_pkg::*;
 (
     input               clk,

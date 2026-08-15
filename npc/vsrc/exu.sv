@@ -1,9 +1,9 @@
-// EXU_ooo (Execution Unit) - OoO 版本
+// exu (Execution Unit)
 // 功能：从 issue_queue 接收指令，执行后将结果写回 ROB 和唤醒等待指令
 
 `include "./include/pipeline_pkt_pkg.sv"
 
-module EXU_ooo
+module exu
 import pipeline_pkt_pkg::*;
 (
     input               clk,

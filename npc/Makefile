@@ -177,7 +177,6 @@ clean:
 # ──────────────────────── 单元测试 ────────────────────────
 # 用法：make test           运行所有单元测试
 #       make test_rob       只运行 ROB 测试
-# 依赖：verilator 支持 --timing（v5.x+）
 
 TB_DIR      = $(abspath ./vsrc/testbench)
 TB_OBJ_DIR  = $(BUILD_DIR)/obj-test
@@ -186,12 +185,14 @@ TB_WNO      = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-UNUSEDPARAM \
               --Wno-PINCONNECTEMPTY --Wno-EOFNEWLINE --Wno-WIDTHEXPAND \
               --Wno-WIDTHTRUNC --Wno-UNOPTFLAT
 
-# 不依赖 pipeline_pkt_pkg 的独立模块
+# 不依赖 pipeline_pkt_pkg 的独立模块（SV testbench）
 TB_SIMPLE = physical_regfile freelist rename_map_table busy_table
-# 依赖 pipeline_pkt_pkg 的模块
+# 依赖 pipeline_pkt_pkg 的模块（SV testbench）
 TB_PKG    = rob issue_queue
+# C++ testbench（使用 wrapper 展平 packed struct）
+TB_CPP    = exu lsu
 
-TEST_TARGETS = $(addprefix test_, $(TB_SIMPLE)) $(addprefix test_, $(TB_PKG))
+TEST_TARGETS = $(addprefix test_, $(TB_SIMPLE)) $(addprefix test_, $(TB_PKG)) $(addprefix test_, $(TB_CPP))
 
 .PHONY: test $(TEST_TARGETS)
 
@@ -216,7 +217,7 @@ endef
 
 $(foreach m,$(TB_SIMPLE),$(eval $(call TB_SIMPLE_RULE,$(m))))
 
-# 依赖 pipeline_pkt_pkg 的模块测试
+# 依赖 pipeline_pkt_pkg 的模块测试（SV testbench）
 define TB_PKG_RULE
 test_$(1): prepare_build
 	@echo ""
@@ -233,6 +234,27 @@ test_$(1): prepare_build
 endef
 
 $(foreach m,$(TB_PKG),$(eval $(call TB_PKG_RULE,$(m))))
+
+# C++ testbench（exu/lsu 用 wrapper 展平 packed struct）
+define TB_CPP_RULE
+test_$(1): prepare_build
+	@echo ""
+	@echo ">>> 测试 $(1) ..."
+	@mkdir -p $(TB_OBJ_DIR)/$(1)
+	@$(VERILATOR) --cc --exe --build -sv $(TB_WNO) \
+		--top-module $(1)_wrapper \
+		$(TB_VINC) \
+		$(TB_DIR)/tb_$(1).cpp \
+		$(TB_DIR)/$(1)_wrapper.sv \
+		$(abspath ./vsrc/$(1).sv) \
+		$(abspath ./vsrc/ALU.sv) \
+		$(abspath ./vsrc/axi4_full_master.sv) \
+		-Mdir $(TB_OBJ_DIR)/$(1) \
+		-o Vtb_$(1) && \
+	$(TB_OBJ_DIR)/$(1)/Vtb_$(1) || echo "  [ERROR] $(1) 测试失败"
+endef
+
+$(foreach m,$(TB_CPP),$(eval $(call TB_CPP_RULE,$(m))))
 
 
 include ../Makefile

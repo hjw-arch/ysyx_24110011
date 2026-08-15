@@ -2,7 +2,7 @@
 
 `include "./include/pipeline_pkt_pkg.sv"
 
-module LSU_ooo_wrapper
+module lsu_wrapper
 import pipeline_pkt_pkg::*;
 (
     input               clk,
@@ -105,7 +105,7 @@ always_comb begin
 end
 
 // 实例化真正的 LSU_ooo
-LSU_ooo u_lsu (
+lsu u_lsu (
     .clk                    (clk),
     .rst                    (rst),
     .valid_i                (valid_i),

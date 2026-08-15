@@ -1,10 +1,10 @@
-// IDU_ooo 详尽功能测试
+// idu 功能测试
 // 覆盖：所有指令类型、立即数格式、寄存器编号、控制信号、边界情况
 `timescale 1ns/1ps
 
 `include "../include/pipeline_pkt_pkg.sv"
 
-module tb_idu_ooo;
+module tb_idu;
 import pipeline_pkt_pkg::*;
 
 logic           valid_i = 0;
@@ -14,7 +14,7 @@ logic           valid_o;
 decode_pkt_t    data_o;
 logic           ready_o;
 
-IDU dut (.*);
+idu dut (.*);
 
 int pass_cnt = 0, fail_cnt = 0;
 
@@ -53,7 +53,7 @@ task automatic set_inst(input [31:0] pc, inst);
 endtask
 
 initial begin
-    $display("\n===== IDU_ooo 详尽功能测试 =====\n");
+    $display("\n===== idu 功能测试 =====\n");
     
     // ── 测试1：R 型指令（ADD x5, x3, x4）──
     $display("[TEST1] R型指令 ADD x5,x3,x4");
@@ -196,7 +196,7 @@ initial begin
     set_inst(32'h103c, 32'hfff10113); // addi x2, x2, -1
     chk32("imm = -1 (符号扩展)", 32'hffffffff, data_o.imm);
     
-    $display("\n===== IDU_ooo: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);
+    $display("\n===== idu: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);
     if (fail_cnt == 0)
         $display("✅ 所有测试通过！");
     else

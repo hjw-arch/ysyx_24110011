@@ -4,7 +4,7 @@
 
 `include "./include/pipeline_pkt_pkg.sv"
 
-module IDU
+module idu
 import pipeline_pkt_pkg::*;
 (
     // 流水线握手
