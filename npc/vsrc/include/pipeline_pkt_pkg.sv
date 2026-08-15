@@ -247,6 +247,100 @@ typedef struct packed {
 } ls2wb_pkt_t;
 
 
+//============================================================
+// OoO 扩展类型（单发射乱序执行）
+//============================================================
+
+// 物理寄存器编号（6 位，支持 64 个物理寄存器）
+typedef logic [5:0] phys_reg_t;
+
+// ROB 索引（5 位，支持 32 项 ROB）
+typedef logic [4:0] rob_idx_t;
+
+// ROB 项结构
+typedef struct packed {
+    logic           valid;
+    logic           complete;       // 执行完成标志
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
+    logic   [4:0]   arch_rd;        // 架构目的寄存器
+    phys_reg_t      phys_rd;        // 物理目的寄存器
+    phys_reg_t      phys_rd_old;    // 旧物理寄存器（提交时释放）
+    logic   [31:0]  result;
+    logic           rd_wen;
+    logic           exception;
+    logic   [3:0]   exception_cause;
+    sys_ctrl_t      sys;
+} rob_entry_t;
+
+// ROB 分配包
+typedef struct packed {
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
+    logic   [4:0]   arch_rd;
+    phys_reg_t      phys_rd;
+    phys_reg_t      phys_rd_old;
+    logic           rd_wen;
+    sys_ctrl_t      sys;
+} rob_alloc_pkt_t;
+
+// ROB 提交包
+typedef struct packed {
+    logic           valid;
+    logic   [4:0]   arch_rd;
+    phys_reg_t      phys_rd_old;
+    logic   [31:0]  result;
+    logic           rd_wen;
+    sys_ctrl_t      sys;
+    redirect_t      redirect;
+} rob_commit_t;
+
+// Decode → Rename
+typedef struct packed {
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
+    logic   [4:0]   rs1_arch;
+    logic   [4:0]   rs2_arch;
+    logic   [4:0]   rd_arch;
+    logic           rs1_used;
+    logic           rs2_used;
+    logic           rd_wen;
+    ex_ctrl_t       ex;
+    mem_ctrl_t      mem;
+    sys_ctrl_t      sys;
+    logic   [31:0]  imm;
+} decode_pkt_t;
+
+// Rename → Issue Queue
+typedef struct packed {
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
+    rob_idx_t       rob_idx;
+    phys_reg_t      phys_rs1;
+    phys_reg_t      phys_rs2;
+    phys_reg_t      phys_rd;
+    logic           rs1_ready;
+    logic           rs2_ready;
+    ex_ctrl_t       ex;
+    mem_ctrl_t      mem;
+    sys_ctrl_t      sys;
+    logic   [31:0]  imm;
+} rename2issue_pkt_t;
+
+// Issue Queue → Execute
+typedef struct packed {
+    logic   [31:0]  pc;
+    logic   [31:0]  inst;
+    rob_idx_t       rob_idx;
+    phys_reg_t      phys_rd;
+    logic   [31:0]  rs1_data;
+    logic   [31:0]  rs2_data;
+    ex_ctrl_t       ex;
+    mem_ctrl_t      mem;
+    sys_ctrl_t      sys;
+    logic   [31:0]  imm;
+} issue2ex_pkt_t;
+
     
 endpackage
 
