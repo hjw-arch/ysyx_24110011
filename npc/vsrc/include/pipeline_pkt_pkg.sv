@@ -335,6 +335,8 @@ typedef struct packed {
     phys_reg_t      phys_rd;
     logic   [31:0]  rs1_data;
     logic   [31:0]  rs2_data;
+    logic           pred_taken;     // 分支预测结果（用于误预测检测）
+    logic           rd_wen;         // 目的寄存器写使能（用于唤醒判断）
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;
