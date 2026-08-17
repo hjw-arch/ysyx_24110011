@@ -1,6 +1,9 @@
 // Store Queue（FIFO）
-// 不变量：store 仅在 ROB commit 后经 drain 口发出 AXI 写；issue 只入队。
-// IQ 已保证 mem 程序序，故 SQ 按 FIFO 即可与 ROB head 对齐。
+// 不变量：
+//   1. store 仅在 ROB commit 后经 drain 发出 AXI 写；issue 只入队
+//   2. data 存 rs2 原值，字节摆放由 axi4_full_master 按 addr/size 完成
+//   3. empty_o=0 时 LSU 不得发 load（无 STLF 时的保守内存序）
+// IQ 已保证 mem 程序序，SQ 按 FIFO 与 ROB head 对齐即可
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -17,10 +20,11 @@ import pipeline_pkt_pkg::*;
     input               alloc_en_i,
     input       [4:0]   alloc_rob_idx_i,
     input       [31:0]  alloc_addr_i,
-    input       [31:0]  alloc_data_i,
+    input       [31:0]  alloc_data_i,       // rs2 原值
     input       [3:0]   alloc_strb_i,
     input       [1:0]   alloc_size_i,
     output              alloc_ready_o,
+    output              empty_o,            // 无未完成 store，允许 load issue
 
     // ── commit drain（ROB head 为 store 且已 complete）──
     input               commit_req_i,
@@ -59,6 +63,7 @@ logic [PTR_W:0] head, tail, count;
 wire empty = (count == '0);
 wire full  = (count == SQ_DEPTH[PTR_W:0]);
 
+assign empty_o       = empty;
 assign alloc_ready_o = ~full;
 
 wire [PTR_W-1:0] head_ptr = head[PTR_W-1:0];
@@ -88,7 +93,7 @@ always_ff @(posedge clk) begin
         for (int i = 0; i < SQ_DEPTH; i++)
             sq[i].valid <= 1'b0;
     end else if (flush_i) begin
-        // 保留正在 AXI 的队头；其余作废
+        // 仅保留已发起 AXI 且未完成的队头；其余作废
         if (head_valid && sq[head_ptr].committed && !sq[head_ptr].done) begin
             for (int i = 0; i < SQ_DEPTH; i++) begin
                 if (PTR_W'(i) != head_ptr)

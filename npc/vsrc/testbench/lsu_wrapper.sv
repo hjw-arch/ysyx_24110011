@@ -46,6 +46,7 @@ import pipeline_pkt_pkg::*;
     output logic [3:0]  sq_alloc_strb_o,
     output logic [1:0]  sq_alloc_size_o,
     input               sq_alloc_ready_i,
+    input               sq_empty_i,
 
     // drain
     input               drain_req_i,
@@ -136,6 +137,7 @@ lsu u_lsu (
     .sq_alloc_strb_o        (sq_alloc_strb_o),
     .sq_alloc_size_o        (sq_alloc_size_o),
     .sq_alloc_ready_i       (sq_alloc_ready_i),
+    .sq_empty_i             (sq_empty_i),
     .drain_req_i            (drain_req_i),
     .drain_addr_i           (drain_addr_i),
     .drain_data_i           (drain_data_i),

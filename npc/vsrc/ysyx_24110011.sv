@@ -236,6 +236,7 @@ wire [31:0] sq_alloc_addr, sq_alloc_data;
 wire [3:0]  sq_alloc_strb;
 wire [1:0]  sq_alloc_size;
 wire        sq_alloc_ready;
+wire        sq_empty;
 
 wire        sq_commit_req;
 wire [4:0]  sq_commit_rob_idx;
@@ -390,6 +391,7 @@ store_queue u_sq (
     .alloc_strb_i       (sq_alloc_strb),
     .alloc_size_i       (sq_alloc_size),
     .alloc_ready_o      (sq_alloc_ready),
+    .empty_o            (sq_empty),
     .commit_req_i       (sq_commit_req),
     .commit_rob_idx_i   (sq_commit_rob_idx),
     .commit_ready_o     (sq_commit_ready),
@@ -549,6 +551,7 @@ lsu u_lsu (
     .sq_alloc_strb_o        (sq_alloc_strb),
     .sq_alloc_size_o        (sq_alloc_size),
     .sq_alloc_ready_i       (sq_alloc_ready),
+    .sq_empty_i             (sq_empty),
     .drain_req_i            (drain_req),
     .drain_addr_i           (drain_addr),
     .drain_data_i           (drain_data),

@@ -1,7 +1,7 @@
 # 单发射乱序执行（Single-Issue OoO）设计文档
 
 > 分支：`OoO_pre`  
-> 状态：与 `vsrc/` 实现同步（Tier1 起）；Tier2/3 路线见文末。
+> 状态：与 `vsrc/` 实现同步（Tier1+Tier2 完成）；Tier3 路线见文末。
 
 ## 1. 目标与原则
 
@@ -25,10 +25,11 @@
 ```
 IFU → idu → rename_stage → issue_queue → ┬→ exu  ── complete1 ──┐
                                          │                      ├→ ROB → commit
-                                         └→ lsu  ── complete2 ──┘      ├→ AMT / freelist
+                                         └→ lsu/SQ ─ complete2 ─┘      ├→ AMT / freelist
                                                                        ├→ CSR / trap / fence.i
+                                                                       ├→ SQ drain（store AXI）
                                                                        └→ redirect / icache_inval
-                              physical_regfile ← complete 写回 + CSR 提交写 rd
+                              physical_regfile ← complete(EXU/LD) + commit(CSR) 写
                               wakeup ×2 → rename busy_table + IQ
 ```
 
@@ -36,6 +37,7 @@ IFU → idu → rename_stage → issue_queue → ┬→ exu  ── complete1 �
 |------|----|------|
 | ROB_SIZE | 32 | 重排序缓冲 |
 | IQ_SIZE | 8 | 发射队列 |
+| SQ_DEPTH | 8 | Store Queue |
 | NUM_PHYS_REGS | 64 | 物理寄存器（p0= x0 恒 0） |
 | NUM_ARCH_REGS | 32 | RV32I |
 | FETCH/DECODE/ISSUE/COMMIT_WIDTH | 1 | 单发射 |
@@ -57,15 +59,16 @@ IFU → idu → rename_stage → issue_queue → ┬→ exu  ── complete1 �
 ### 4.1 ROB（`rob.sv`）
 
 - 循环队列；双路 complete（EXU / LSU 可同拍）。  
-- `commit_valid = head.valid & complete & !exception`。  
-- 分支误预测：head 仍可 commit（如 JAL 写链路），同时 `flush_o` 清 younger。  
-- `flush_pc`：redirect 用 `redirect_addr`，异常用 `pc+4` 占位（顶层 ecall/mret 覆盖为 mtvec/mepc）。  
+- store head：无异常时等 `store_commit_ready`（SQ drain 完成）才退休。  
+- `commit_valid = head_ready & ~head_trap`；trap/redirect → `flush_o`。  
+- 译码期 illegal：alloc 即 complete+exception，到 head 走 trap。  
+- `exc_commit_*`：异常提交观测（cause/pc）；顶层写 CSR trap。  
 - `head_idx_o`：IQ 年龄与 sys-at-head。
 
 ### 4.2 Issue Queue（`issue_queue.sv`）
 
 - 年龄：`(rob_idx - rob_head) mod 32`，选最小。  
-- **访存序（保守）**：存在更老 mem 时不可发 mem（无 LSQ 时的正确性保险丝）。  
+- **访存序（保守）**：存在更老 mem 时不可发 mem。  
 - **系统指令**：CSR / ecall / mret / fence.i 仅 `rob_idx == head` 可发。  
 - 双路 wakeup 广播。
 
@@ -76,31 +79,58 @@ IFU → idu → rename_stage → issue_queue → ┬→ exu  ── complete1 �
 - 误预测 / fence.i / priv：complete 打 `redirect_valid`；目标 ecall/mret 在 commit 覆盖。  
 - BPU 更新：valid/type/taken/**pc**/target（pc 必须为指令 PC）。
 
-### 4.4 LSU（`lsu.sv`）— Tier1
+### 4.4 LSU + Store Queue（Tier2）
 
-- 阻塞 IDLE/WAIT_RESP；锁存字段；flush 丢弃 complete。  
-- load complete → PRF + wakeup；store 当前仍可能在 issue 后走 AXI（**Tier2 改为 SQ + commit drain**）。
+**不变量**：
+
+1. store 不得在 commit 前进入 AXI。  
+2. SQ 非空时不得发 load（无 STLF；与 IQ mem 序一起保证读到提交后内存）。  
+3. `axi4_full_master` 的 AXADDR/AXSIZE/WSTRB/WDATA **全程直通、不锁存** → LSU 必须在 inflight 期用稳定源驱动。
+
+**Store Queue（`store_queue.sv`，FIFO SQ_DEPTH=8）**：
+
+- issue alloc：addr / **rs2 原值** / strb / size / rob_idx。  
+- commit drain：ROB head store 匹配队头 → `drain_req`；fire 后 `committed`；done 后 `commit_ready` → ROB 退休 pop。  
+- flush：丢弃未 committed 项；已发起 AXI 的队头跑完。  
+- `empty_o`：供 LSU 挡 load。
+
+**LSU（`lsu.sv`）状态 `S_IDLE / S_LOAD / S_DRAIN`**：
+
+| 路径 | 行为 |
+|------|------|
+| ST issue | 算 addr，入 SQ，同拍 complete；**不** AWVALID |
+| LD issue | 仅 `sq_empty & idle & ~drain_req`；阻塞 AXI 读 |
+| ST commit drain | 接受 SQ drain；AXI 写完 → `drain_done`（fault→store access fault） |
+
+**master 直通约束（实测必要）**：
+
+- `S_LOAD`：`raddr/rsize` 用 `hold_mem_*`（OoO 下 LSU busy 时 EXU 仍可 issue，`data_i` 会变）。  
+- `S_DRAIN`：`size` 在 `drain_accept|state_drain` 整段选 `drain_size_i`（`wen` 仅 fire 一拍；若只在 wen 选 wsize，下一拍 AWSIZE 掉成 0 → 字写变字节写）。  
+- store data 存 **rs2 原值**，字节摆放只在 master 做一次（禁止 LSU 预对齐后再交给 master）。
 
 ### 4.5 提交点系统语义（顶层 + `CSR.sv`）
 
 对齐五级 `WBU.sv`：
 
-- CSR 读写、ecall（mepc/mcause/mtvec）、mret、fence.i inval 均在 **commit**。  
+- CSR 读写、ecall/trap（mepc/mcause/mtvec）、mret、fence.i inval 均在 **commit**。  
+- `CSR`：`trap_i` + `trap_pc_i` + `trap_cause_i` 通用 trap（illegal / load-store bus fault / ecall）。  
 - `commit_result_arch`：CSR 指令为旧 csr_rdata，供 DiffTest。  
-- PRF：port1=EXU 普通完成；port2=CSR 提交优先否则 LSU load（Tier2 将加 port3）。
+- 异常 cause：`ILLEGAL=2`，`LOAD_AF=5`，`STORE_AF=7`，`ECALL_M=11`。
 
 ### 4.6 物理寄存器堆（`physical_regfile.sv`）
 
-- 2R2W（Tier2→2R3W）；p0 硬 0；同拍双写 port2 优先。
+- **2R3W**：port1=EXU complete；port2=LSU load complete；port3=CSR 提交写 rd（port3 优先覆盖）。  
+- p0 硬 0。
 
 ## 5. flush / 恢复
 
 ```
 rob_flush
-  → IFU redirect（redirect_pc_final）
+  → IFU redirect（redirect_pc_final：trap→mtvec，mret→mepc，else rob_flush_pc）
   → rename：RAT ← next_amt；freelist 重建；busy 清零
   → IQ 清空
-  → LSU in-flight 标记 flushed（不 complete）
+  → LSU in-flight load 标记 flushed（不 complete）
+  → SQ：丢弃未 committed；in-flight drain 跑完
 ```
 
 ## 6. 与五级流水对照
@@ -108,39 +138,42 @@ rob_flush
 | 能力 | 五级 | OoO 现状 |
 |------|------|----------|
 | ALU/分支/跳转 | ✅ | ✅ |
-| Load/Store | ✅ 顺序 | ✅ 阻塞 + IQ mem 序 |
+| Load/Store | ✅ 顺序 | ✅ SQ + commit drain；load 等 SQ 空 |
 | CSR/ecall/mret/fence.i | ✅ WBU | ✅ commit 点 |
-| 精确异常 | 弱/少 | 通道有，生产者 Tier2 补 |
+| 精确异常 | 弱/少 | ✅ illegal + bus fault + ecall |
 | 分支预测训练 | ✅ | ✅（pc 已接线） |
-| 遗留源码 | — | `vsrc/legacy/`（不编译） |
+| 遗留源码 | — | `vsrc/legacy/`（不编译；`pip_reg` 仍供 icache） |
 
 ## 7. 文件布局
 
 | 路径 | 说明 |
 |------|------|
 | `vsrc/ysyx_24110011.sv` | OoO 顶层 |
-| `vsrc/{idu,exu,lsu,rob,issue_queue,rename_* ,freelist,busy_table,physical_regfile}.sv` | OoO 后端 |
+| `vsrc/store_queue.sv` | Store Queue |
+| `vsrc/{idu,exu,lsu,rob,issue_queue,rename_* ,freelist,busy_table,physical_regfile,CSR}.sv` | OoO 后端 |
 | `vsrc/legacy/` | 五级遗留，勿例化 |
-| `vsrc/include/pipeline_pkt_pkg.sv` | 包；含 legacy 五级 pkt 标注 |
+| `vsrc/include/pipeline_pkt_pkg.sv` | 包；含 exception/is_store |
 | `csrc/src/cpu_exec.cpp` | commit 驱动仿真 / DiffTest |
 
 ## 8. 验证
 
 ```bash
 make -C npc test
-# 经典集（除 bitrev）
+# 经典集（除 bitrev）+ fence-i；每测建议 timeout，避免逻辑死循环拖死
 for img in am-kernels/tests/cpu-tests/build/*-riscv32-npc.bin; do
   [[ $img == *bitrev* ]] && continue
-  build/obj-npc/Vysyx -b -d ./libnemu.so "$img"
+  timeout 60 build/obj-npc/Vysyx -b -d ./libnemu.so "$img"
 done
 ```
+
+回归基线（Tier2）：**25/25 + fence-i PASS**（2026-08-17）。
 
 ## 9. 路线图
 
 | 档 | 内容 | 状态 |
 |----|------|------|
 | **Tier1** | BPU pc、文档、legacy 隔离、定向 TB、回归 | ✅ 完成 |
-| **Tier2** | 精确异常；**Store Queue**（commit 后 AXI 写）；PRF 3W | 待做 |
+| **Tier2** | 精确异常；**Store Queue**（commit 后 AXI 写）；PRF 3W；load 等 SQ 空 | ✅ 完成 |
 | **Tier3** | 非阻塞 load；地址不重叠越过；STLF；可选 checkpoint | 待做 |
 
 明确不做（本阶段）：双发射、复杂 mem 预测、多 ALU。

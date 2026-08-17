@@ -1,7 +1,10 @@
 // lsu (Load-Store Unit) — Tier2
-// Load：阻塞 AXI 读，complete → ROB/PRF
-// Store：issue 只算地址入 SQ，立即 complete；AXI 写仅由 commit drain 发起
-// 不变量：store 不得在 commit 前进入 AXI
+// Load：SQ 空时阻塞 AXI 读，complete → ROB/PRF
+// Store：issue 只算地址入 SQ（data=rs2 原值），立即 complete；AXI 写仅 commit drain
+// 不变量：
+//   1. store 不得在 commit 前进入 AXI
+//   2. SQ 非空时不得发 load（无 STLF；与 IQ mem 序一起保证读到提交后的内存）
+//   3. 子字摆放只在 axi4_full_master 做一次，SQ 存 rs2 原值
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -35,6 +38,7 @@ import pipeline_pkt_pkg::*;
     output logic [3:0]  sq_alloc_strb_o,
     output logic [1:0]  sq_alloc_size_o,
     input               sq_alloc_ready_i,
+    input               sq_empty_i,         // 1 = 无未完成 store，允许 load
 
     // ── SQ drain（commit 后写）──
     input               drain_req_i,
@@ -116,39 +120,32 @@ logic [31:0] hold_mem_addr /* verilator public_flat_rd */;
 logic        hold_flushed;
 
 wire [31:0] req_mem_addr   = data_i.rs1_data + data_i.imm;
-wire [31:0] req_store_data = data_i.rs2_data;
+wire [31:0] req_store_data = data_i.rs2_data;   // 原值；master 按 addr/size 摆放
 wire [2:0]  req_mem_type   = data_i.inst[14:12];
 wire [1:0]  req_size       = req_mem_type[1:0];
 
-// store strb（按地址低位 + size）
+// strb 仅记录（STLF/调试）；写通道 WSTRB 由 master 生成
 logic [3:0] req_strb;
 always_comb begin
     unique case (req_size)
-        2'b00: req_strb = 4'b0001 << req_mem_addr[1:0];
-        2'b01: req_strb = 4'b0011 << {req_mem_addr[1], 1'b0};
+        2'b00:   req_strb = 4'b0001 << req_mem_addr[1:0];
+        2'b01:   req_strb = 4'b0011 << {req_mem_addr[1], 1'b0};
         default: req_strb = 4'b1111;
     endcase
 end
 
-// store 对齐数据到 lane（master 内部也会处理，这里给出完整字）
-logic [31:0] req_store_aligned;
-always_comb begin
-    unique case (req_size)
-        2'b00: req_store_aligned = {24'b0, req_store_data[7:0]}  << (8 * req_mem_addr[1:0]);
-        2'b01: req_store_aligned = {16'b0, req_store_data[15:0]} << (16 * req_mem_addr[1]);
-        default: req_store_aligned = req_store_data;
-    endcase
-end
+// store：idle + SQ 有槽 + 本拍无 drain（commit 写优先）
+wire store_issue_ok = state_idle & mem_valid & is_store
+                    & sq_alloc_ready_i & ~flush_i & ~drain_req_i;
 
-// store issue：SQ 有空且 idle 且无更高优先 drain
-wire store_issue_ok = state_idle & mem_valid & is_store & sq_alloc_ready_i & ~flush_i & ~drain_req_i;
-// load issue：idle 且无 drain 抢总线
-wire load_issue_ok  = state_idle & mem_valid & is_load & ~flush_i & ~drain_req_i;
+// load：idle + SQ 空（无更老未退休 store）+ 本拍无 drain
+wire load_issue_ok  = state_idle & mem_valid & is_load
+                    & sq_empty_i & ~flush_i & ~drain_req_i;
 
 wire load_req_fire  /* verilator public_flat_rd */ = load_issue_ok;
 wire load_resp_fire /* verilator public_flat_rd */ = state_load & axi_done;
 
-// drain：idle 时接受；load 进行中不抢（commit store 优先于新 load，已在 issue 侧挡）
+// drain：idle 接受；与 load/store issue 互斥（drain_req 优先）
 wire drain_accept = state_idle & drain_req_i & ~flush_i;
 assign drain_fire_o = drain_accept;
 
@@ -156,16 +153,16 @@ wire drain_resp_fire = state_drain & axi_done;
 assign drain_done_o  = drain_resp_fire;
 assign drain_fault_o = drain_resp_fire & (axi_wresp != 2'b00);
 
-// SQ alloc 组合
+// SQ alloc
 assign sq_alloc_en_o      = store_issue_ok;
 assign sq_alloc_rob_idx_o = data_i.rob_idx;
 assign sq_alloc_addr_o    = req_mem_addr;
-assign sq_alloc_data_o    = req_store_aligned;
+assign sq_alloc_data_o    = req_store_data;
 assign sq_alloc_strb_o    = req_strb;
 assign sq_alloc_size_o    = req_size;
 
-// ready：非 mem / store 入队成功 / load 完成 / flush
-// drain 占用时不接受新 mem
+// ready：非 mem 直通；store 入队成功；load 完成；flush
+// load 因 SQ 非空 / drain 占用而停在 issue 口时 ready=0，IQ 保持该项
 assign ready_o = flush_i
                | (state_idle & ~mem_valid)
                | store_issue_ok
@@ -219,17 +216,16 @@ always_ff @(posedge clk) begin
     end
 end
 
-// 仿真 mtrace / difftest：load 用锁存地址，drain 用 SQ 地址
+// 仿真 mtrace / difftest
 wire [31:0] mem_addr /* verilator public_flat_rd */ =
     state_load  ? hold_mem_addr :
     state_drain ? drain_addr_i  :
                   req_mem_addr;
 wire input_is_load /* verilator public_flat_rd */ =
     state_load ? 1'b1 : (state_drain ? 1'b0 : is_load);
-// 供 cpu_exec 识别“本拍有 AXI 访存完成”
 wire axi_activity_done /* verilator public_flat_rd */ = load_resp_fire | drain_resp_fire;
 
-// load 数据扩展
+// load 数据扩展（master 已按 addr 将目标字节归到低位）
 typedef enum logic [2:0] {
     LOAD_TYPE_LB  = 3'b000,
     LOAD_TYPE_LH  = 3'b001,
@@ -262,17 +258,20 @@ assign complete_rd_wen_o    = store_issue_ok ? 1'b0 : (hold_rd_wen & hold_is_loa
 assign complete_phys_rd_o   = store_issue_ok ? data_i.phys_rd : hold_phys_rd;
 
 // AXI master：load 用 ren；drain 用 wen；store issue 不写总线
+// master 的 AXADDR/AXSIZE/WSTRB/WDATA 全程直通、不锁存：
+//   - S_LOAD：raddr/rsize 必须用 hold_*（OoO 下 data_i 会被 EXU issue 覆盖）
+//   - S_DRAIN：wsize 不能只在 wen 脉冲拍有效；wen 仅 fire 一拍，
+//     之后 drain_req 也会因 committed 拉低，但 SQ 队头数据仍稳定，
+//     故 size 在 drain_accept|state_drain 整段选 drain_size_i
 wire ren = load_req_fire;
 wire wen = drain_accept;
+wire drain_active = drain_accept | state_drain;
 
 wire [31:0] axi_waddr = drain_addr_i;
 wire [31:0] axi_wdata = drain_data_i;
-wire [1:0]  axi_wsize = drain_size_i;
-wire [31:0] axi_raddr = req_mem_addr;
-wire [1:0]  axi_rsize = req_size;
-
-// 注意：axi4_full_master 的 size 在 fire 拍采样；drain/load 互斥
-wire [1:0] axi_size = wen ? axi_wsize : axi_rsize;
+wire [31:0] axi_raddr = state_load ? hold_mem_addr : req_mem_addr;
+wire [1:0]  axi_rsize = state_load ? hold_mem_type[1:0] : req_size;
+wire [1:0]  axi_size  = drain_active ? drain_size_i : axi_rsize;
 
 axi4_full_master u_axi4_full_master (
     .clk            (clk),
@@ -322,7 +321,6 @@ axi4_full_master u_axi4_full_master (
     .BREADY         (BREADY)
 );
 
-// master 按 size+addr 生成 WSTRB；drain_strb 供 SQ/STLF（Tier3）记录
 wire _unused_drain_strb = |drain_strb_i;
 
 endmodule
