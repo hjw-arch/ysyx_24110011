@@ -1,16 +1,7 @@
-// lsu (Load-Store Unit)
-// 功能：处理访存指令，与 AXI 总线交互，完成后通知 ROB
-//
-// OoO 变化：
-// 1. 使用 ROB index 标识指令，而不是架构寄存器
-// 2. 完成信号发送到 ROB，而非直接写回
-// 3. 不处理分支预测更新（已在 EXU 完成）
-// 4. 初期保持阻塞访存：一次只处理一条访存指令
-// 5. WAIT_RESP 期间锁存关键字段，避免依赖 IQ 输入保持稳定
-//
-// 握手参考经典五级 LSU.sv：
-//   ready = idle 且当前非访存（可透传） | 访存响应完成
-//   访存发出后 ready=0，反压上游直到 resp_fire
+// lsu (Load-Store Unit) — Tier2
+// Load：阻塞 AXI 读，complete → ROB/PRF
+// Store：issue 只算地址入 SQ，立即 complete；AXI 写仅由 commit drain 发起
+// 不变量：store 不得在 commit 前进入 AXI
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -20,26 +11,42 @@ import pipeline_pkt_pkg::*;
     input               clk,
     input               rst,
 
-    // 来自 issue_queue 的输入
+    // 来自 issue_queue
     input               valid_i,
     input   issue2ex_pkt_t data_i,
     output              ready_o,
 
-    // flush：丢弃 in-flight 完成（AXI 事务仍跑完，但不向 ROB 报告）
     input               flush_i,
 
-    // 完成信号 → ROB
+    // 完成 → ROB（load 等 AXI；store 入 SQ 后同拍 complete）
     output logic        complete_en_o,
-    output logic [4:0]  complete_idx_o,      // ROB index
-    output logic [31:0] complete_data_o,     // load 数据；store 为 0
+    output logic [4:0]  complete_idx_o,
+    output logic [31:0] complete_data_o,
     output logic        complete_exception_o,
     output logic [3:0]  complete_cause_o,
-
-    // 写回物理寄存器信息（供顶层 PRF / wakeup）
     output logic        complete_rd_wen_o,
     output logic [5:0]  complete_phys_rd_o,
 
-    // AXI 读通道
+    // ── SQ alloc（store issue）──
+    output logic        sq_alloc_en_o,
+    output logic [4:0]  sq_alloc_rob_idx_o,
+    output logic [31:0] sq_alloc_addr_o,
+    output logic [31:0] sq_alloc_data_o,
+    output logic [3:0]  sq_alloc_strb_o,
+    output logic [1:0]  sq_alloc_size_o,
+    input               sq_alloc_ready_i,
+
+    // ── SQ drain（commit 后写）──
+    input               drain_req_i,
+    input       [31:0]  drain_addr_i,
+    input       [31:0]  drain_data_i,
+    input       [3:0]   drain_strb_i,
+    input       [1:0]   drain_size_i,
+    output logic        drain_fire_o,
+    output logic        drain_done_o,
+    output logic        drain_fault_o,
+
+    // AXI 读
     output logic [31:0] ARADDR,
     output logic [3:0]  ARID,
     output logic [7:0]  ARLEN,
@@ -55,7 +62,7 @@ import pipeline_pkt_pkg::*;
     input               RLAST,
     output logic        RREADY,
 
-    // AXI 写通道
+    // AXI 写
     output logic [31:0] AWADDR,
     output logic [7:0]  AWLEN,
     output logic [2:0]  AWSIZE,
@@ -76,124 +83,153 @@ import pipeline_pkt_pkg::*;
     output logic        BREADY
 );
 
-// ──────────────────────────────────────────────────
-// 状态机：IDLE → WAIT_RESP → IDLE
-// ──────────────────────────────────────────────────
-typedef enum logic {
+// 状态：空闲 / load 等响应 / store drain 等 B
+typedef enum logic [1:0] {
     S_IDLE,
-    S_WAIT_RESP
+    S_LOAD,
+    S_DRAIN
 } state_t;
 
 state_t state, nstate;
 
-// ──────────────────────────────────────────────────
-// 访存类型判断（组合，仅在 IDLE 接受时使用）
-// ──────────────────────────────────────────────────
 wire is_load  = (data_i.mem.cmd == MEM_LOAD);
 wire is_store = (data_i.mem.cmd == MEM_STORE);
 wire is_mem   = is_load | is_store;
-
 wire mem_valid = valid_i & is_mem;
 
-// ──────────────────────────────────────────────────
-// 状态相关信号
-// ──────────────────────────────────────────────────
-wire state_idle      = (state == S_IDLE);
-wire state_wait_resp /* verilator public_flat_rd */ = (state == S_WAIT_RESP);
+wire state_idle  = (state == S_IDLE);
+wire state_load  /* verilator public_flat_rd */ = (state == S_LOAD);
+wire state_drain = (state == S_DRAIN);
 
-// AXI 交互信号
 logic        axi_done;
 logic [31:0] axi_rdata /* verilator public_flat_rd */;
+logic [1:0]  axi_rresp;
+logic [1:0]  axi_wresp;
 
-// 锁存：请求发出后保存关键字段，不依赖上游保持 valid/data
+// load 锁存
 logic        hold_is_load /* verilator public_flat_rd */;
 logic [4:0]  hold_rob_idx;
 logic [5:0]  hold_phys_rd;
 logic        hold_rd_wen;
 logic [2:0]  hold_mem_type;
 logic [31:0] hold_mem_addr /* verilator public_flat_rd */;
-logic [31:0] hold_store_data;
-logic        hold_flushed;   // 请求发出后若 flush，完成时不报告 ROB
+logic        hold_flushed;
 
-// 访存请求发出
-wire mem_req_fire  /* verilator public_flat_rd */ = state_idle & mem_valid & ~flush_i;
-wire mem_resp_fire /* verilator public_flat_rd */ = state_wait_resp & axi_done;
+wire [31:0] req_mem_addr   = data_i.rs1_data + data_i.imm;
+wire [31:0] req_store_data = data_i.rs2_data;
+wire [2:0]  req_mem_type   = data_i.inst[14:12];
+wire [1:0]  req_size       = req_mem_type[1:0];
 
-// 非访存指令：LSU 不处理，ready 放开让 EXU 路径处理
-// （顶层保证只有 mem 指令才拉 valid_i）
-
-// ──────────────────────────────────────────────────
-// 流水线控制（参考 LSU.sv）
-// ──────────────────────────────────────────────────
-// LSU 接受新输入：
-// 1. 空闲且当前不是访存请求
-// 2. 访存响应完成（释放流水线）
-// flush 时也 ready，避免卡死上游
-assign ready_o = flush_i | (state_idle & ~mem_valid) | mem_resp_fire;
-
-// ──────────────────────────────────────────────────
-// 状态转移
-// ──────────────────────────────────────────────────
+// store strb（按地址低位 + size）
+logic [3:0] req_strb;
 always_comb begin
-    case (state)
-        S_IDLE:      nstate = mem_req_fire  ? S_WAIT_RESP : S_IDLE;
-        S_WAIT_RESP: nstate = mem_resp_fire ? S_IDLE      : S_WAIT_RESP;
-        default:     nstate = S_IDLE;
+    unique case (req_size)
+        2'b00: req_strb = 4'b0001 << req_mem_addr[1:0];
+        2'b01: req_strb = 4'b0011 << {req_mem_addr[1], 1'b0};
+        default: req_strb = 4'b1111;
+    endcase
+end
+
+// store 对齐数据到 lane（master 内部也会处理，这里给出完整字）
+logic [31:0] req_store_aligned;
+always_comb begin
+    unique case (req_size)
+        2'b00: req_store_aligned = {24'b0, req_store_data[7:0]}  << (8 * req_mem_addr[1:0]);
+        2'b01: req_store_aligned = {16'b0, req_store_data[15:0]} << (16 * req_mem_addr[1]);
+        default: req_store_aligned = req_store_data;
+    endcase
+end
+
+// store issue：SQ 有空且 idle 且无更高优先 drain
+wire store_issue_ok = state_idle & mem_valid & is_store & sq_alloc_ready_i & ~flush_i & ~drain_req_i;
+// load issue：idle 且无 drain 抢总线
+wire load_issue_ok  = state_idle & mem_valid & is_load & ~flush_i & ~drain_req_i;
+
+wire load_req_fire  /* verilator public_flat_rd */ = load_issue_ok;
+wire load_resp_fire /* verilator public_flat_rd */ = state_load & axi_done;
+
+// drain：idle 时接受；load 进行中不抢（commit store 优先于新 load，已在 issue 侧挡）
+wire drain_accept = state_idle & drain_req_i & ~flush_i;
+assign drain_fire_o = drain_accept;
+
+wire drain_resp_fire = state_drain & axi_done;
+assign drain_done_o  = drain_resp_fire;
+assign drain_fault_o = drain_resp_fire & (axi_wresp != 2'b00);
+
+// SQ alloc 组合
+assign sq_alloc_en_o      = store_issue_ok;
+assign sq_alloc_rob_idx_o = data_i.rob_idx;
+assign sq_alloc_addr_o    = req_mem_addr;
+assign sq_alloc_data_o    = req_store_aligned;
+assign sq_alloc_strb_o    = req_strb;
+assign sq_alloc_size_o    = req_size;
+
+// ready：非 mem / store 入队成功 / load 完成 / flush
+// drain 占用时不接受新 mem
+assign ready_o = flush_i
+               | (state_idle & ~mem_valid)
+               | store_issue_ok
+               | load_resp_fire;
+
+always_comb begin
+    nstate = state;
+    unique case (state)
+        S_IDLE: begin
+            if (drain_accept)
+                nstate = S_DRAIN;
+            else if (load_req_fire)
+                nstate = S_LOAD;
+            else
+                nstate = S_IDLE;
+        end
+        S_LOAD:  nstate = load_resp_fire  ? S_IDLE : S_LOAD;
+        S_DRAIN: nstate = drain_resp_fire ? S_IDLE : S_DRAIN;
+        default: nstate = S_IDLE;
     endcase
 end
 
 always_ff @(posedge clk) begin
-    if (rst) begin
+    if (rst)
         state <= S_IDLE;
-    end else begin
+    else
         state <= nstate;
-    end
 end
-
-// ──────────────────────────────────────────────────
-// 锁存请求字段
-// ──────────────────────────────────────────────────
-wire [31:0] req_mem_addr  = data_i.rs1_data + data_i.imm;
-wire [31:0] req_store_data = data_i.rs2_data;
-wire [2:0]  req_mem_type  = data_i.inst[14:12];
 
 always_ff @(posedge clk) begin
     if (rst) begin
-        hold_is_load    <= 1'b0;
-        hold_rob_idx    <= '0;
-        hold_phys_rd    <= '0;
-        hold_rd_wen     <= 1'b0;
-        hold_mem_type   <= '0;
-        hold_mem_addr   <= '0;
-        hold_store_data <= '0;
-        hold_flushed    <= 1'b0;
+        hold_is_load  <= 1'b0;
+        hold_rob_idx  <= '0;
+        hold_phys_rd  <= '0;
+        hold_rd_wen   <= 1'b0;
+        hold_mem_type <= '0;
+        hold_mem_addr <= '0;
+        hold_flushed  <= 1'b0;
     end else begin
-        if (mem_req_fire) begin
-            hold_is_load    <= is_load;
-            hold_rob_idx    <= data_i.rob_idx;
-            hold_phys_rd    <= data_i.phys_rd;
-            hold_rd_wen     <= data_i.rd_wen;
-            hold_mem_type   <= req_mem_type;
-            hold_mem_addr   <= req_mem_addr;
-            hold_store_data <= req_store_data;
-            hold_flushed    <= 1'b0;
-        end else if (state_wait_resp && flush_i) begin
-            // AXI 事务已发出不可取消，标记完成时丢弃
+        if (load_req_fire) begin
+            hold_is_load  <= 1'b1;
+            hold_rob_idx  <= data_i.rob_idx;
+            hold_phys_rd  <= data_i.phys_rd;
+            hold_rd_wen   <= data_i.rd_wen;
+            hold_mem_type <= req_mem_type;
+            hold_mem_addr <= req_mem_addr;
+            hold_flushed  <= 1'b0;
+        end else if (state_load && flush_i) begin
             hold_flushed <= 1'b1;
         end
     end
 end
 
-// 对外暴露当前有效地址（仿真 mtrace / difftest skip）
-// 请求拍用组合地址，等待响应拍用锁存地址
+// 仿真 mtrace / difftest：load 用锁存地址，drain 用 SQ 地址
 wire [31:0] mem_addr /* verilator public_flat_rd */ =
-    state_wait_resp ? hold_mem_addr : req_mem_addr;
+    state_load  ? hold_mem_addr :
+    state_drain ? drain_addr_i  :
+                  req_mem_addr;
 wire input_is_load /* verilator public_flat_rd */ =
-    state_wait_resp ? hold_is_load : is_load;
+    state_load ? 1'b1 : (state_drain ? 1'b0 : is_load);
+// 供 cpu_exec 识别“本拍有 AXI 访存完成”
+wire axi_activity_done /* verilator public_flat_rd */ = load_resp_fire | drain_resp_fire;
 
-// ──────────────────────────────────────────────────
-// Load 数据扩展
-// ──────────────────────────────────────────────────
+// load 数据扩展
 typedef enum logic [2:0] {
     LOAD_TYPE_LB  = 3'b000,
     LOAD_TYPE_LH  = 3'b001,
@@ -203,7 +239,6 @@ typedef enum logic [2:0] {
 } load_type_e;
 
 logic [31:0] load_data;
-
 always_comb begin
     case (load_type_e'(hold_mem_type))
         LOAD_TYPE_LB:  load_data = {{24{axi_rdata[7]}},  axi_rdata[7:0]};
@@ -215,25 +250,29 @@ always_comb begin
     endcase
 end
 
-// ──────────────────────────────────────────────────
-// 完成信号 → ROB / PRF
-// ──────────────────────────────────────────────────
-// flush 后完成的 in-flight 访存不再报告
-assign complete_en_o        = mem_resp_fire & ~hold_flushed;
-assign complete_idx_o       = hold_rob_idx;
-assign complete_data_o      = hold_is_load ? load_data : 32'b0;
-assign complete_exception_o = 1'b0;
-assign complete_cause_o     = 4'b0;
-assign complete_rd_wen_o    = hold_rd_wen & hold_is_load; // store 不写寄存器
-assign complete_phys_rd_o   = hold_phys_rd;
+wire load_fault = load_resp_fire & (axi_rresp != 2'b00);
 
-// ──────────────────────────────────────────────────
-// AXI Master
-// ──────────────────────────────────────────────────
-// wen/ren 是启动脉冲：在 mem_req_fire 时拉高一个周期
-// 地址/数据在 fire 拍用组合值；master 内部会锁存
-wire wen = mem_req_fire & is_store;
-wire ren = mem_req_fire & is_load;
+// complete：store 入队即完成；load 等 AXI
+assign complete_en_o        = store_issue_ok | (load_resp_fire & ~hold_flushed);
+assign complete_idx_o       = store_issue_ok ? data_i.rob_idx : hold_rob_idx;
+assign complete_data_o      = store_issue_ok ? 32'b0 : load_data;
+assign complete_exception_o = store_issue_ok ? 1'b0 : load_fault;
+assign complete_cause_o     = load_fault ? CAUSE_LOAD_ACCESS_FAULT : 4'b0;
+assign complete_rd_wen_o    = store_issue_ok ? 1'b0 : (hold_rd_wen & hold_is_load & ~load_fault);
+assign complete_phys_rd_o   = store_issue_ok ? data_i.phys_rd : hold_phys_rd;
+
+// AXI master：load 用 ren；drain 用 wen；store issue 不写总线
+wire ren = load_req_fire;
+wire wen = drain_accept;
+
+wire [31:0] axi_waddr = drain_addr_i;
+wire [31:0] axi_wdata = drain_data_i;
+wire [1:0]  axi_wsize = drain_size_i;
+wire [31:0] axi_raddr = req_mem_addr;
+wire [1:0]  axi_rsize = req_size;
+
+// 注意：axi4_full_master 的 size 在 fire 拍采样；drain/load 互斥
+wire [1:0] axi_size = wen ? axi_wsize : axi_rsize;
 
 axi4_full_master u_axi4_full_master (
     .clk            (clk),
@@ -241,15 +280,15 @@ axi4_full_master u_axi4_full_master (
     .wen            (wen),
     .ren            (ren),
     .user_ready     (1'b1),
-    .size           (req_mem_type[1:0]),
+    .size           (axi_size),
     .len            (8'b0),
-    .waddr          (req_mem_addr),
-    .wdata          (req_store_data),
-    .raddr          (req_mem_addr),
+    .waddr          (axi_waddr),
+    .wdata          (axi_wdata),
+    .raddr          (axi_raddr),
     .rdata          (axi_rdata),
     .rdata_valid    (),
-    .rresp          (),
-    .wresp          (),
+    .rresp          (axi_rresp),
+    .wresp          (axi_wresp),
     .done           (axi_done),
 
     .ARREADY        (ARREADY),
@@ -282,5 +321,8 @@ axi4_full_master u_axi4_full_master (
     .BID            (BID),
     .BREADY         (BREADY)
 );
+
+// master 按 size+addr 生成 WSTRB；drain_strb 供 SQ/STLF（Tier3）记录
+wire _unused_drain_strb = |drain_strb_i;
 
 endmodule

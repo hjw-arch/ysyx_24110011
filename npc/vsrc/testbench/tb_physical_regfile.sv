@@ -10,9 +10,9 @@ always #5 clk = ~clk;
 // DUT 信号
 logic [5:0]  read_addr1_i, read_addr2_i;
 logic [31:0] read_data1_o, read_data2_o;
-logic        write_en1_i,  write_en2_i;
-logic [5:0]  write_addr1_i, write_addr2_i;
-logic [31:0] write_data1_i, write_data2_i;
+logic        write_en1_i,  write_en2_i, write_en3_i;
+logic [5:0]  write_addr1_i, write_addr2_i, write_addr3_i;
+logic [31:0] write_data1_i, write_data2_i, write_data3_i;
 
 physical_regfile dut (.*);
 
@@ -34,9 +34,9 @@ task automatic tick; @(posedge clk); #1; endtask
 initial begin
     // 初始状态
     read_addr1_i = 0; read_addr2_i = 0;
-    write_en1_i  = 0; write_en2_i  = 0;
-    write_addr1_i = 0; write_addr2_i = 0;
-    write_data1_i = 0; write_data2_i = 0;
+    write_en1_i  = 0; write_en2_i  = 0; write_en3_i = 0;
+    write_addr1_i = 0; write_addr2_i = 0; write_addr3_i = 0;
+    write_data1_i = 0; write_data2_i = 0; write_data3_i = 0;
 
     tick; tick;          // 复位2拍
     rst = 0; tick;

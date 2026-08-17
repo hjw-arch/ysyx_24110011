@@ -42,7 +42,9 @@
 #define COMMIT_PC()    WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_PC_LO)
 #define COMMIT_INST()  WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_INST_LO)
 #define COMMIT_VALID() CORE_SIG(commit_valid)
-#define LSU_AXI_DONE() CORE_SIG(u_lsu__DOT__mem_resp_fire)
+#define COMMIT_RESULT_ARCH() CORE_SIG(commit_result_arch)
+// Tier2：load 完成或 store drain 完成
+#define LSU_AXI_DONE() CORE_SIG(u_lsu__DOT__axi_activity_done)
 
 typedef struct {
 	uint32_t pc;
@@ -113,13 +115,14 @@ static commit_info_t get_commit_info() {
 // rename_map_table 维护 arch_reg → phys_reg 映射，但 Verilator 不直接暴露其内部数组，
 // 因此利用 ROB commit 时更新的方式：每次 commit rd_wen 时将结果写入 cpu.registerFile。
 // 对于 difftest，这样增量更新等同于完整同步（顺序提交保证）。
-// rob_commit_t 从 LSB 起：inst, pc, redirect(33), sys(5), rd_wen(1), result(32),
-// phys_rd_old(6), phys_rd(6), arch_rd(5), valid(1)
-// result lo = 32(inst)+32(pc)+33(redirect)+5(sys)+1(rd_wen) = 103
-// arch_rd lo = 103+32+6+6 = 147
-#define COMMIT_RESULT_LO  103
-#define COMMIT_RD_WEN_LO  102
-#define COMMIT_ARCH_RD_LO 147
+// rob_commit_t 从 LSB 起：inst, pc, redirect(33), sys(5), is_store(1), rd_wen(1),
+// result(32), phys_rd_old(6), phys_rd(6), arch_rd(5), valid(1)
+// rd_wen lo = 32+32+33+5+1 = 103
+// result lo = 104
+// arch_rd lo = 104+32+6+6 = 148
+#define COMMIT_RESULT_LO  104
+#define COMMIT_RD_WEN_LO  103
+#define COMMIT_ARCH_RD_LO 148
 
 static uint32_t commit_result_u32() {
 	return WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_RESULT_LO);
@@ -134,12 +137,12 @@ static bool commit_rd_wen_b() {
 }
 
 static void sync_arch_state_on_commit() {
-	// 顺序提交：用 commit 结果增量更新架构寄存器镜像，供 ebreak/difftest
+	// 顺序提交：用架构可见结果更新镜像（CSR 为旧 CSR 值，见 commit_result_arch）
 	cpu.pc = COMMIT_PC();
 	if (commit_rd_wen_b()) {
 		uint32_t rd = commit_arch_rd_u32();
 		if (rd != 0) {
-			cpu.registerFile[rd] = commit_result_u32();
+			cpu.registerFile[rd] = COMMIT_RESULT_ARCH();
 		}
 	}
 }

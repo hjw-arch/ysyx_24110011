@@ -75,6 +75,15 @@ wire is_sysop    = is_system & func3_is_sys;
 wire is_ecall = is_sysop & (inst[31:20] == 12'h000);
 wire is_mret  = is_sysop & (inst[31:20] == 12'h302);
 
+// 合法 opcode 集合；未识别或 SYSTEM 保留编码 → illegal（cause=2）
+// ebreak 由仿真层在 commit 识别，RTL 不 trap
+wire is_ebreak = is_sysop & (inst[31:20] == 12'h001);
+wire is_known_opc = is_lui | is_auipc | is_jal | is_jalr | is_branch |
+                    is_load | is_store | is_cal_i | is_cal_r |
+                    is_fence_i | is_csr | is_ecall | is_mret | is_ebreak |
+                    (is_misc_mem & (func3 == 3'b000)); // fence 当作 nop
+wire illegal = valid_i & ~is_known_opc;
+
 // SRAI/SUB/SRA 需要设置 ALU op[3]
 wire is_srai  = is_cal_i & (func3 == 3'b101) & inst[30];
 wire calc_op3 = is_srai | (is_cal_r & inst[30]);
@@ -112,8 +121,10 @@ wire rs1_used = (is_jalr | is_branch | is_load | is_store | is_cal_i | is_cal_r 
 wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
 
 // ── 目的寄存器写使能 ──
-// rd_wen 在 ID 阶段顺手屏蔽 x0。后级如需原始 rd 字段，直接从随流水携带的 inst 中切片。
-wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) & |rd_addr_raw;
+// rd_wen 在 ID 阶段顺手屏蔽 x0。非法指令不写 rd。
+wire rd_wen = ~illegal &
+              (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) &
+              |rd_addr_raw;
 
 // ── 输出：decode_pkt_t ──
 assign data_o.pc         = pc;
@@ -125,6 +136,8 @@ assign data_o.rd_arch   = rd_addr_raw;
 assign data_o.rs1_used  = rs1_used;
 assign data_o.rs2_used  = rs2_used;
 assign data_o.rd_wen    = rd_wen;
+assign data_o.exception = illegal;
+assign data_o.exception_cause = illegal ? CAUSE_ILLEGAL_INST : 4'd0;
 assign data_o.imm       = imm;
 
 // ── EX 控制信号 ──
@@ -162,19 +175,18 @@ assign data_o.ex.fwd_rs1_sel = FWD_SEL_RF;
 assign data_o.ex.fwd_rs2_sel = FWD_SEL_RF;
 
 // ── MEM 控制信号 ──
-// mem.cmd 只告诉 LSU 是否为 load/store。访存宽度和符号扩展信息是 inst[14:12]
-// 的直接切片，留到 LSU 本地解码，不重复进入流水寄存器。
-assign data_o.mem.cmd = {is_store, is_load};
+// mem.cmd 只告诉 LSU 是否为 load/store。非法指令清零，避免进 LSU。
+assign data_o.mem.cmd = illegal ? MEM_NONE : {is_store, is_load};
 
 // ── SYS 控制信号 ──
 // CSR/系统控制：
 //   csr_cmd    : NONE/WRITE/SET/CLEAR，由 CSR funct3[1:0] 压缩得到
 //   priv_redir : ECALL/MRET 提交点重定向，编码上天然互斥
 //   fence_i    : 与特权重定向分开，贴近 Rocket/Ibex 的语义分层
-// CSR 地址、zimm、rd、访存宽度都能从随流水携带的 inst 直接切片，因此不额外传。
-assign data_o.sys.csr_cmd    = {2{is_csr}} & func3[1:0];
-assign data_o.sys.priv_redir = {is_mret, is_ecall};
-assign data_o.sys.fence_i    = is_fence_i;
+// 非法指令清零 sys，避免误走 ecall/CSR 提交路径。
+assign data_o.sys.csr_cmd    = illegal ? CSR_CMD_NONE : ({2{is_csr}} & func3[1:0]);
+assign data_o.sys.priv_redir = illegal ? PRIV_REDIR_NONE : {is_mret, is_ecall};
+assign data_o.sys.fence_i    = illegal ? 1'b0 : is_fence_i;
 
 // ── 流水线握手 ──
 assign valid_o = valid_i;

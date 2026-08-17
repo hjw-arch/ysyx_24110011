@@ -86,6 +86,7 @@ int main(int argc, char** argv) {
     check_u32("redirect_addr",  0x80001100, dut->redirect_addr_o);
     check_bit("bpu_update_valid", true,     dut->bpu_update_valid_o);
     check_bit("bpu_update_taken", true,     dut->bpu_update_taken_o);
+    check_u32("bpu_update_pc",   0x80001000, dut->bpu_update_pc_o);
 
     // ========== 测试5: BEQ not taken ==========
     std::cout << "\n[测试5] BEQ not taken: 100 != 200，预测跳 → redirect" << std::endl;

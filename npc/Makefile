@@ -55,9 +55,9 @@ endif
 NPC_VDEFINE         = +define+NPC $(ISA_VDEFINE)
 SIM_PKG             = $(shell find $(abspath ./vsrc/include) -name "*.sv")           # pkg 需要被优先编译
 # 排除旧五级流水线模块（OoO 分支不再使用）和 testbench 目录
-SIM_VSRC_EXCLUDES   = IDU.sv EXU.sv WBU.sv hazard_unit.sv pip_reg.sv registerfile.sv
-SIM_VSRC_ALL        = $(shell find $(abspath ./vsrc) -name "*.v" -or \( -name "*.sv" ! -path "*/include/*" ! -path "*/testbench/*" \))
-SIM_VSRC            = $(SIM_PKG) $(filter-out $(addprefix %/, $(SIM_VSRC_EXCLUDES)), $(SIM_VSRC_ALL))
+# 五级遗留源码在 vsrc/legacy/，整目录排除；OoO 使用小写 idu/exu/lsu 等
+SIM_VSRC_ALL        = $(shell find $(abspath ./vsrc) -name "*.v" -or \( -name "*.sv" ! -path "*/include/*" ! -path "*/testbench/*" ! -path "*/legacy/*" \))
+SIM_VSRC            = $(SIM_PKG) $(SIM_VSRC_ALL)
 SIM_VSRC_CORE		= $(filter-out %PC.sv %define_pkg.sv, $(SIM_VSRC))
 SIM_CSRC            = $(shell find $(abspath ./csrc/src) -name "*.c" -or -name "*.cc" -or -name "*.cpp")
 ## LLVM参数

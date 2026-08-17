@@ -103,13 +103,14 @@ wire [31:0] exu_redirect_addr  /* verilator public_flat_rd */;
 wire        rob_flush          /* verilator public_flat_rd */;
 wire [31:0] rob_flush_pc;
 
-wire        pipeline_flush  = rob_flush;
-wire [31:0] redirect_pc     = rob_flush_pc;
+// flush 仅以 ROB 为准；redirect 目标见下方 redirect_pc_final（含 ecall/mret）
+wire        pipeline_flush = rob_flush;
 
 // ─── BPU 更新（来自 exu）──────────────────────────────────
 wire        bpu_update_valid;
 wire        bpu_update_btb_type;
 wire        bpu_update_taken;
+wire [31:0] bpu_update_pc;
 wire [31:0] bpu_update_target;
 
 // ─── IF → DEC ─────────────────────────────────────────────
@@ -140,7 +141,7 @@ wire              iq_issue_ready;
 wire [5:0]        iq_phys_rs1;
 wire [5:0]        iq_phys_rs2;
 
-// ─── 物理寄存器堆 ──────────────────────────────────────────
+// ─── 物理寄存器堆（3 写口）────────────────────────────────
 wire [31:0] prf_rs1_data;
 wire [31:0] prf_rs2_data;
 wire        prf_wen1;
@@ -149,10 +150,15 @@ wire [31:0] prf_wdata1;
 wire        prf_wen2;
 wire [5:0]  prf_waddr2;
 wire [31:0] prf_wdata2;
+wire        prf_wen3;
+wire [5:0]  prf_waddr3;
+wire [31:0] prf_wdata3;
 
-// ─── 唤醒信号 ─────────────────────────────────────────────
-wire        wakeup_en;
-wire [5:0]  wakeup_preg;
+// ─── 唤醒信号（双路：EXU/LSU 与 CSR 提交）────────────────
+wire        wakeup_en1;
+wire [5:0]  wakeup_preg1;
+wire        wakeup_en2;
+wire [5:0]  wakeup_preg2;
 
 // ─── EXU 完成信号 ──────────────────────────────────────────
 wire        exu_complete_en;
@@ -175,26 +181,72 @@ wire [3:0]  lsu_complete_cause;
 wire        lsu_complete_rd_wen;
 wire [5:0]  lsu_complete_phys_rd;
 
-// ─── 合并后的 ROB complete ────────────────────────────────
-wire        rob_complete_en;
-wire [4:0]  rob_complete_idx;
-wire [31:0] rob_complete_data;
-wire        rob_complete_exc;
-wire [3:0]  rob_complete_cause;
-wire        rob_complete_redir_valid;
-wire [31:0] rob_complete_redir_addr;
 
 // ─── ROB commit ────────────────────────────────────────────
 wire        commit_valid /* verilator public_flat_rd */;
 rob_commit_t commit_pkt  /* verilator public_flat_rd */;
 wire [4:0]  rob_head_idx;
 
-// ─── icache invalidate（fence.i 由 ROB flush/commit 触发）──
-// fence.i 走 redirect 路径产生 flush；同时在 flush 当拍 inval
+// ─── 提交点系统语义（对齐五级 WBU）────────────────────────
+// CSR/ecall/mret/fence.i 仅在 ROB head 发射，complete 后下一拍提交。
+// 真正的 CSR 读写、特权跳转目标、icache inval 都在 commit 完成。
+// 精确异常（illegal / bus fault）走 exc_commit，写 mepc/mcause → mtvec。
+wire        commit_is_csr   = commit_valid & (commit_pkt.sys.csr_cmd != CSR_CMD_NONE);
+wire        commit_is_ecall = commit_valid & (commit_pkt.sys.priv_redir == PRIV_REDIR_ECALL);
+wire        commit_is_mret  = commit_valid & (commit_pkt.sys.priv_redir == PRIV_REDIR_MRET);
+wire        commit_is_fence_i = commit_valid & commit_pkt.sys.fence_i;
+
+wire        exc_commit_valid /* verilator public_flat_rd */;
+wire [3:0]  exc_commit_cause;
+wire [31:0] exc_commit_pc;
+
+wire [11:0] commit_csr_addr = commit_pkt.inst[31:20];
+wire [31:0] commit_csr_src  = commit_pkt.result; // EXU 放入的 csr_src
+// CSRRW 无条件写；CSRRS/CSRRC 的 rs1/zimm==0 时只读不写
+wire        commit_csr_wen  = commit_is_csr &
+                              ((commit_pkt.sys.csr_cmd == CSR_CMD_WRITE) | (|commit_pkt.inst[19:15]));
+
+wire [31:0] csr_rdata;
+wire [31:0] csr_mtvec;
+wire [31:0] csr_mepc;
+
+// trap：ecall 或精确异常
+wire        csr_trap = commit_is_ecall | exc_commit_valid;
+wire [31:0] csr_trap_pc = exc_commit_valid ? exc_commit_pc : commit_pkt.pc;
+wire [31:0] csr_trap_cause = exc_commit_valid ? {28'b0, exc_commit_cause} : 32'd11;
+
+// 架构可见提交结果：CSR 指令写回旧 CSR 值，其余用 ROB.result
+wire [31:0] commit_result_arch /* verilator public_flat_rd */;
+assign commit_result_arch = commit_is_csr ? csr_rdata : commit_pkt.result;
+
+// fence.i 仅在提交点失效 icache（对齐五级，不做“任意 flush 都 inval”）
 wire        icache_inval;
-assign icache_inval = rob_flush;  // 保守：任何 flush 都 inval（含 fence.i / mispredict）
-// 更精确可改为：commit 时 fence_i 或 flush 且 head 是 fence
-// 当前单发射 + flush 清空前端，全量 inval 语义正确且简单
+assign icache_inval = commit_is_fence_i;
+
+// ecall/mret/精确异常的 flush 目标
+wire [31:0] redirect_pc_final =
+    (commit_is_ecall | exc_commit_valid) ? csr_mtvec :
+    commit_is_mret                        ? csr_mepc  :
+                                            rob_flush_pc;
+
+// ─── Store Queue / drain 握手 ─────────────────────────────
+wire        sq_alloc_en;
+wire [4:0]  sq_alloc_rob_idx;
+wire [31:0] sq_alloc_addr, sq_alloc_data;
+wire [3:0]  sq_alloc_strb;
+wire [1:0]  sq_alloc_size;
+wire        sq_alloc_ready;
+
+wire        sq_commit_req;
+wire [4:0]  sq_commit_rob_idx;
+wire        sq_commit_ready;
+wire        sq_commit_fault;
+
+wire        drain_req;
+wire [31:0] drain_addr, drain_data;
+wire [3:0]  drain_strb;
+wire [1:0]  drain_size;
+wire        drain_fire, drain_done, drain_fault;
 
 // ================================================================
 //  IFU
@@ -216,11 +268,11 @@ IFU u_ifu (
     .RREADY             (IFU_RREADY),
     .icache_inval_i     (icache_inval),
     .redirect_valid_i   (pipeline_flush),
-    .redirect_pc_i      (redirect_pc),
+    .redirect_pc_i      (redirect_pc_final),
     .bpu_update_valid_i (bpu_update_valid),
     .bpu_update_type_i  (bpu_update_btb_type),
     .bpu_update_taken_i (bpu_update_taken),
-    .bpu_update_pc_i    (32'b0),
+    .bpu_update_pc_i    (bpu_update_pc),
     .bpu_update_target_i(bpu_update_target),
     .valid_o            (if2dec_valid),
     .data_o             (if2dec_data),
@@ -237,6 +289,25 @@ idu u_idu (
     .valid_o  (dec2ren_valid),
     .data_o   (dec2ren_data),
     .ready_i  (dec2ren_ready)
+);
+
+
+// ================================================================
+//  CSR（仅在 commit 点读写，对齐 WBU）
+// ================================================================
+CSR u_csr (
+    .clk           (clock),
+    .rst           (reset),
+    .wen           (commit_csr_wen & ~exc_commit_valid),
+    .cmd           (commit_pkt.sys.csr_cmd),
+    .addr          (commit_csr_addr),
+    .wdata         (commit_csr_src),
+    .trap_i        (csr_trap),
+    .trap_pc_i     (csr_trap_pc),
+    .trap_cause_i  (csr_trap_cause),
+    .rdata_o       (csr_rdata),
+    .mtvec_o       (csr_mtvec),
+    .mepc_o        (csr_mepc)
 );
 
 // ================================================================
@@ -260,25 +331,15 @@ rename_stage u_rename (
     .commit_phys_rd_i   (commit_pkt.phys_rd),
     .commit_preg_old_i  (commit_pkt.phys_rd_old),
     .commit_rd_wen_i    (commit_pkt.rd_wen),
-    .wakeup_en_i        (wakeup_en),
-    .wakeup_preg_i      (wakeup_preg),
+    .wakeup_en1_i       (wakeup_en1),
+    .wakeup_preg1_i     (wakeup_preg1),
+    .wakeup_en2_i       (wakeup_en2),
+    .wakeup_preg2_i     (wakeup_preg2),
     .flush_i            (pipeline_flush)
 );
 
 // ================================================================
-//  ROB complete 合并（EXU 优先；单发射保证不同时 complete）
-// ================================================================
-// 单发射 + LSU 阻塞：同一拍最多一个 complete。仍用优先级 mux 防御。
-assign rob_complete_en          = exu_complete_en | lsu_complete_en;
-assign rob_complete_idx         = exu_complete_en ? exu_complete_idx  : lsu_complete_idx;
-assign rob_complete_data        = exu_complete_en ? exu_complete_data : lsu_complete_data;
-assign rob_complete_exc         = exu_complete_en ? exu_complete_exc  : lsu_complete_exc;
-assign rob_complete_cause       = exu_complete_en ? exu_complete_cause: lsu_complete_cause;
-assign rob_complete_redir_valid = exu_complete_en ? exu_complete_redir_valid : 1'b0;
-assign rob_complete_redir_addr  = exu_complete_en ? exu_complete_redir_addr  : 32'b0;
-
-// ================================================================
-//  ROB
+//  ROB（双路 complete：EXU + LSU 可同拍；store 等 SQ drain）
 // ================================================================
 rob u_rob (
     .clk                        (clock),
@@ -287,18 +348,60 @@ rob u_rob (
     .alloc_pkt_i                (rob_alloc_pkt),
     .alloc_idx_o                (rob_alloc_idx),
     .alloc_ready_o              (rob_alloc_ready),
-    .complete_en_i              (rob_complete_en),
-    .complete_idx_i             (rob_complete_idx),
-    .complete_data_i            (rob_complete_data),
-    .complete_exception_i       (rob_complete_exc),
-    .complete_cause_i           (rob_complete_cause),
-    .complete_redirect_valid_i  (rob_complete_redir_valid),
-    .complete_redirect_addr_i   (rob_complete_redir_addr),
+    .complete_en1_i             (exu_complete_en),
+    .complete_idx1_i            (exu_complete_idx),
+    .complete_data1_i           (exu_complete_data),
+    .complete_exception1_i      (exu_complete_exc),
+    .complete_cause1_i          (exu_complete_cause),
+    .complete_redirect_valid1_i (exu_complete_redir_valid),
+    .complete_redirect_addr1_i  (exu_complete_redir_addr),
+    .complete_en2_i             (lsu_complete_en),
+    .complete_idx2_i            (lsu_complete_idx),
+    .complete_data2_i           (lsu_complete_data),
+    .complete_exception2_i      (lsu_complete_exc),
+    .complete_cause2_i          (lsu_complete_cause),
+    .complete_redirect_valid2_i (1'b0),
+    .complete_redirect_addr2_i  (32'b0),
+    .store_commit_ready_i       (sq_commit_ready),
+    .store_commit_fault_i       (sq_commit_fault),
+    .store_commit_req_o         (sq_commit_req),
+    .store_commit_rob_idx_o     (sq_commit_rob_idx),
     .commit_valid_o             (commit_valid),
     .commit_pkt_o               (commit_pkt),
+    .exc_commit_valid_o         (exc_commit_valid),
+    .exc_commit_cause_o         (exc_commit_cause),
+    .exc_commit_pc_o            (exc_commit_pc),
     .flush_o                    (rob_flush),
     .flush_pc_o                 (rob_flush_pc),
     .head_idx_o                 (rob_head_idx)
+);
+
+// ================================================================
+//  Store Queue（commit 后 AXI 写）
+// ================================================================
+store_queue u_sq (
+    .clk                (clock),
+    .rst                (reset),
+    .flush_i            (pipeline_flush),
+    .alloc_en_i         (sq_alloc_en),
+    .alloc_rob_idx_i    (sq_alloc_rob_idx),
+    .alloc_addr_i       (sq_alloc_addr),
+    .alloc_data_i       (sq_alloc_data),
+    .alloc_strb_i       (sq_alloc_strb),
+    .alloc_size_i       (sq_alloc_size),
+    .alloc_ready_o      (sq_alloc_ready),
+    .commit_req_i       (sq_commit_req),
+    .commit_rob_idx_i   (sq_commit_rob_idx),
+    .commit_ready_o     (sq_commit_ready),
+    .commit_fault_o     (sq_commit_fault),
+    .drain_req_o        (drain_req),
+    .drain_addr_o       (drain_addr),
+    .drain_data_o       (drain_data),
+    .drain_strb_o       (drain_strb),
+    .drain_size_o       (drain_size),
+    .drain_fire_i       (drain_fire),
+    .drain_done_i       (drain_done),
+    .drain_fault_i      (drain_fault)
 );
 
 // ================================================================
@@ -315,18 +418,18 @@ issue_queue u_iq (
     .issue_ready_i      (iq_issue_ready),
     .issue_phys_rs1_o   (iq_phys_rs1),
     .issue_phys_rs2_o   (iq_phys_rs2),
-    .wakeup_en_i        (wakeup_en),
-    .wakeup_preg_i      (wakeup_preg),
+    .wakeup_en1_i       (wakeup_en1),
+    .wakeup_preg1_i     (wakeup_preg1),
+    .wakeup_en2_i       (wakeup_en2),
+    .wakeup_preg2_i     (wakeup_preg2),
     .rob_head_i         (rob_head_idx),
     .flush_i            (pipeline_flush)
 );
 
 // ================================================================
-//  Physical Register File
+//  Physical Register File（2R3W）
 // ================================================================
-// 写端口1：EXU complete
-// 写端口2：LSU complete（load）
-// commit 不写 PRF，只回收 freelist + 更新 AMT
+// port1=EXU 普通完成；port2=LSU load；port3=CSR 提交旧值
 physical_regfile u_prf (
     .clk          (clock),
     .rst          (reset),
@@ -339,22 +442,37 @@ physical_regfile u_prf (
     .write_data1_i(prf_wdata1),
     .write_en2_i  (prf_wen2),
     .write_addr2_i(prf_waddr2),
-    .write_data2_i(prf_wdata2)
+    .write_data2_i(prf_wdata2),
+    .write_en3_i  (prf_wen3),
+    .write_addr3_i(prf_waddr3),
+    .write_data3_i(prf_wdata3)
 );
 
-// EXU 完成写 phys_rd
-assign prf_wen1   = exu_complete_en & iq_issue_pkt.rd_wen;
+wire        exu_prf_wen = exu_complete_en & iq_issue_pkt.rd_wen
+                        & (iq_issue_pkt.sys.csr_cmd == CSR_CMD_NONE)
+                        & ~iq_issue_pkt.exception;
+wire        lsu_prf_wen = lsu_complete_en & lsu_complete_rd_wen;
+wire        csr_prf_wen = commit_is_csr & commit_pkt.rd_wen;
+
+assign prf_wen1   = exu_prf_wen;
 assign prf_waddr1 = iq_issue_pkt.phys_rd;
 assign prf_wdata1 = exu_complete_data;
 
-// LSU 完成写 phys_rd（仅 load）
-assign prf_wen2   = lsu_complete_en & lsu_complete_rd_wen;
+assign prf_wen2   = lsu_prf_wen;
 assign prf_waddr2 = lsu_complete_phys_rd;
 assign prf_wdata2 = lsu_complete_data;
 
-// 唤醒合并：EXU / LSU
-assign wakeup_en   = exu_wakeup_en | (lsu_complete_en & lsu_complete_rd_wen);
-assign wakeup_preg = exu_wakeup_en ? exu_wakeup_preg : lsu_complete_phys_rd;
+assign prf_wen3   = csr_prf_wen;
+assign prf_waddr3 = commit_pkt.phys_rd;
+assign prf_wdata3 = csr_rdata;
+
+// 唤醒双路：path1=EXU；path2=CSR 提交优先否则 LSU load
+wire        lsu_wakeup_en = lsu_prf_wen;
+wire        csr_wakeup_en = csr_prf_wen;
+assign wakeup_en1   = exu_wakeup_en;
+assign wakeup_preg1 = exu_wakeup_preg;
+assign wakeup_en2   = csr_wakeup_en | lsu_wakeup_en;
+assign wakeup_preg2 = csr_wakeup_en ? commit_pkt.phys_rd : lsu_complete_phys_rd;
 
 // ================================================================
 //  分流：IQ → EXU / LSU
@@ -395,6 +513,7 @@ exu u_exu (
     .bpu_update_valid_o         (bpu_update_valid),
     .bpu_update_btb_type_o      (bpu_update_btb_type),
     .bpu_update_taken_o         (bpu_update_taken),
+    .bpu_update_pc_o            (bpu_update_pc),
     .bpu_update_target_o        (bpu_update_target)
 );
 
@@ -423,6 +542,21 @@ lsu u_lsu (
     .complete_cause_o       (lsu_complete_cause),
     .complete_rd_wen_o      (lsu_complete_rd_wen),
     .complete_phys_rd_o     (lsu_complete_phys_rd),
+    .sq_alloc_en_o          (sq_alloc_en),
+    .sq_alloc_rob_idx_o     (sq_alloc_rob_idx),
+    .sq_alloc_addr_o        (sq_alloc_addr),
+    .sq_alloc_data_o        (sq_alloc_data),
+    .sq_alloc_strb_o        (sq_alloc_strb),
+    .sq_alloc_size_o        (sq_alloc_size),
+    .sq_alloc_ready_i       (sq_alloc_ready),
+    .drain_req_i            (drain_req),
+    .drain_addr_i           (drain_addr),
+    .drain_data_i           (drain_data),
+    .drain_strb_i           (drain_strb),
+    .drain_size_i           (drain_size),
+    .drain_fire_o           (drain_fire),
+    .drain_done_o           (drain_done),
+    .drain_fault_o          (drain_fault),
     .ARADDR  (LSU_ARADDR),  .ARID    (LSU_ARID),    .ARLEN   (LSU_ARLEN),
     .ARSIZE  (LSU_ARSIZE),  .ARBURST (LSU_ARBURST), .ARVALID (LSU_ARVALID),
     .ARREADY (LSU_ARREADY), .RID     (LSU_RID),     .RDATA   (LSU_RDATA),

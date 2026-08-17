@@ -1,5 +1,5 @@
 // ROB 功能测试
-// 覆盖：分配、乱序完成、顺序提交、ROB 满、flush
+// 覆盖：分配、乱序完成、顺序提交、ROB 满、flush、双路 complete
 
 `include "../include/pipeline_pkt_pkg.sv"
 
@@ -15,16 +15,32 @@ rob_alloc_pkt_t  alloc_pkt_i;
 logic [4:0]      alloc_idx_o;
 logic            alloc_ready_o;
 
-logic            complete_en_i;
-logic [4:0]      complete_idx_i;
-logic [31:0]     complete_data_i;
-logic            complete_exception_i;
-logic [3:0]      complete_cause_i;
-logic            complete_redirect_valid_i;
-logic [31:0]     complete_redirect_addr_i;
+logic            complete_en1_i;
+logic [4:0]      complete_idx1_i;
+logic [31:0]     complete_data1_i;
+logic            complete_exception1_i;
+logic [3:0]      complete_cause1_i;
+logic            complete_redirect_valid1_i;
+logic [31:0]     complete_redirect_addr1_i;
+
+logic            complete_en2_i;
+logic [4:0]      complete_idx2_i;
+logic [31:0]     complete_data2_i;
+logic            complete_exception2_i;
+logic [3:0]      complete_cause2_i;
+logic            complete_redirect_valid2_i;
+logic [31:0]     complete_redirect_addr2_i;
+
+logic            store_commit_ready_i = 1'b1;
+logic            store_commit_fault_i = 1'b0;
+logic            store_commit_req_o;
+logic [4:0]      store_commit_rob_idx_o;
 
 logic            commit_valid_o;
 rob_commit_t     commit_pkt_o;
+logic            exc_commit_valid_o;
+logic [3:0]      exc_commit_cause_o;
+logic [31:0]     exc_commit_pc_o;
 logic            flush_o;
 logic [31:0]     flush_pc_o;
 logic [4:0]      head_idx_o;
@@ -32,7 +48,6 @@ logic [4:0]      head_idx_o;
 rob dut (.*);
 
 int pass_cnt = 0, fail_cnt = 0;
-// 在 initial 块外声明，避免中途声明变量
 logic [4:0] idx0, idxA, idxB;
 
 task automatic chk(input string name, input logic exp, act);
@@ -55,33 +70,40 @@ task automatic alloc_instr(
 );
     alloc_en_i = 1;
     alloc_pkt_i.pc          = pc;
-    alloc_pkt_i.inst        = 32'h0000_0013; // addi x0,x0,0 (NOP)
+    alloc_pkt_i.inst        = 32'h0000_0013;
     alloc_pkt_i.arch_rd     = arch_rd;
     alloc_pkt_i.phys_rd     = phys_rd;
     alloc_pkt_i.phys_rd_old = phys_old;
     alloc_pkt_i.rd_wen      = rd_wen;
+    alloc_pkt_i.is_store    = 1'b0;
+    alloc_pkt_i.exception   = 1'b0;
+    alloc_pkt_i.exception_cause = '0;
     alloc_pkt_i.sys         = '0;
     tick;
     alloc_en_i = 0;
 endtask
 
+// 默认走 complete 口 1
 task automatic complete_instr(input [4:0] idx, input [31:0] data, input expt = 0);
-    complete_en_i              = 1;
-    complete_idx_i             = idx;
-    complete_data_i            = data;
-    complete_exception_i       = expt;
-    complete_cause_i           = 4'd0;
-    complete_redirect_valid_i  = 0;
-    complete_redirect_addr_i   = 0;
+    complete_en1_i              = 1;
+    complete_idx1_i             = idx;
+    complete_data1_i            = data;
+    complete_exception1_i       = expt;
+    complete_cause1_i           = 4'd0;
+    complete_redirect_valid1_i  = 0;
+    complete_redirect_addr1_i   = 0;
     tick;
-    complete_en_i = 0;
+    complete_en1_i = 0;
 endtask
 
 initial begin
     alloc_en_i = 0; alloc_pkt_i = '0;
-    complete_en_i = 0; complete_idx_i = 0; complete_data_i = 0;
-    complete_exception_i = 0; complete_cause_i = 0;
-    complete_redirect_valid_i = 0; complete_redirect_addr_i = 0;
+    complete_en1_i = 0; complete_idx1_i = 0; complete_data1_i = 0;
+    complete_exception1_i = 0; complete_cause1_i = 0;
+    complete_redirect_valid1_i = 0; complete_redirect_addr1_i = 0;
+    complete_en2_i = 0; complete_idx2_i = 0; complete_data2_i = 0;
+    complete_exception2_i = 0; complete_cause2_i = 0;
+    complete_redirect_valid2_i = 0; complete_redirect_addr2_i = 0;
     tick; tick; rst = 0; tick;
 
     // ── 测试1：基本分配→完成→提交 ──
@@ -89,7 +111,6 @@ initial begin
     chk("初始 alloc_ready=1", 1'b1, alloc_ready_o);
     chk("初始 commit_valid=0", 1'b0, commit_valid_o);
 
-    // 分配，记住分配到的 idx（分配后 tick 内 alloc_idx_o 已更新）
     alloc_en_i = 1;
     alloc_pkt_i.pc          = 32'h1000;
     alloc_pkt_i.inst        = 32'h0;
@@ -98,8 +119,8 @@ initial begin
     alloc_pkt_i.phys_rd_old = 6'd1;
     alloc_pkt_i.rd_wen      = 1'b1;
     alloc_pkt_i.sys         = '0;
-    #1; // 组合采样
-    idx0 = alloc_idx_o;  // 应为 5'd0
+    #1;
+    idx0 = alloc_idx_o;
     tick; alloc_en_i = 0;
 
     chk("分配后 commit_valid=0（未完成）", 1'b0, commit_valid_o);
@@ -107,40 +128,39 @@ initial begin
     complete_instr(idx0, 32'hABCD_0001);
     chk("完成后 commit_valid=1", 1'b1, commit_valid_o);
     chk32("提交结果正确", 32'hABCD_0001, commit_pkt_o.result);
-    tick;  // 等待提交实际发生
+    tick;
     chk("提交后 commit_valid=0", 1'b0, commit_valid_o);
 
     // ── 测试2：乱序完成→顺序提交 ──
     $display("\n[TEST2] 乱序完成→顺序提交");
-    // 分配 A
     alloc_en_i = 1;
     alloc_pkt_i.pc = 32'h1004; alloc_pkt_i.arch_rd = 5'd2;
     alloc_pkt_i.phys_rd = 6'd33; alloc_pkt_i.phys_rd_old = 6'd2;
     alloc_pkt_i.rd_wen = 1'b1;
     #1; idxA = alloc_idx_o; tick; alloc_en_i = 0;
-    // 分配 B
     alloc_en_i = 1;
     alloc_pkt_i.pc = 32'h1008; alloc_pkt_i.arch_rd = 5'd3;
     alloc_pkt_i.phys_rd = 6'd34; alloc_pkt_i.phys_rd_old = 6'd3;
     alloc_pkt_i.rd_wen = 1'b1;
     #1; idxB = alloc_idx_o; tick; alloc_en_i = 0;
 
-    // B 先完成
-    complete_instr(idxB, 32'hBBBB_BBBB);
+    // B 走口2、A 走口1，同拍也可
+    complete_en2_i = 1;
+    complete_idx2_i = idxB;
+    complete_data2_i = 32'hBBBB_BBBB;
+    tick; complete_en2_i = 0;
     chk("B先完成，头部A未完成，commit=0", 1'b0, commit_valid_o);
 
-    // A 再完成
     complete_instr(idxA, 32'hAAAA_AAAA);
     chk("A完成后头部就绪 commit=1", 1'b1, commit_valid_o);
     chk32("先提交A的结果", 32'hAAAA_AAAA, commit_pkt_o.result);
-    tick;  // 提交 A
+    tick;
     chk("A提交后B轮到头部 commit=1", 1'b1, commit_valid_o);
     chk32("B的结果正确", 32'hBBBB_BBBB, commit_pkt_o.result);
-    tick;  // 提交 B
+    tick;
 
     // ── 测试3：ROB 满时 alloc_ready=0 ──
     $display("\n[TEST3] ROB 满后拒绝分配");
-    // 目前 ROB 已有 3 个提交完的条目（head已前进），填满32项
     for (int i = 0; i < 32; i++) begin
         if (alloc_ready_o)
             alloc_instr(32'h2000 + i*4, 5'd0, 6'd0, 6'd0, 1'b0);
@@ -151,16 +171,15 @@ initial begin
 
     // ── 测试4：flush 清空 ROB ──
     $display("\n[TEST4] flush 清空 ROB");
-    // 完成头部并标记 exception 触发 flush
-    complete_en_i = 1;
-    complete_idx_i = dut.rob_head;
-    complete_exception_i = 1;
-    complete_cause_i = 4'd2;
-    complete_data_i = 32'h0;
-    complete_redirect_valid_i = 0;
-    tick; complete_en_i = 0; complete_exception_i = 0;
+    complete_en1_i = 1;
+    complete_idx1_i = dut.rob_head;
+    complete_exception1_i = 1;
+    complete_cause1_i = 4'd2;
+    complete_data1_i = 32'h0;
+    complete_redirect_valid1_i = 0;
+    tick; complete_en1_i = 0; complete_exception1_i = 0;
     chk("异常导致 flush_o=1", 1'b1, flush_o);
-    tick;  // flush 发生
+    tick;
     chk("flush后 alloc_ready=1", 1'b1, alloc_ready_o);
     chk("flush后 commit_valid=0", 1'b0, commit_valid_o);
     chk("flush后 flush_o=0", 1'b0, flush_o);

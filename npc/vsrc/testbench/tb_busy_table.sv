@@ -11,8 +11,10 @@ logic [5:0] query_preg1_i, query_preg2_i;
 logic       ready1_o, ready2_o;
 logic       set_busy_en_i;
 logic [5:0] set_busy_preg_i;
-logic       clear_busy_en_i;
-logic [5:0] clear_busy_preg_i;
+logic       clear_busy_en1_i;
+logic [5:0] clear_busy_preg1_i;
+logic       clear_busy_en2_i;
+logic [5:0] clear_busy_preg2_i;
 logic       flush_i;
 
 busy_table dut (.*);
@@ -29,7 +31,8 @@ task automatic tick; @(posedge clk); #1; endtask
 initial begin
     query_preg1_i = 0; query_preg2_i = 0;
     set_busy_en_i = 0; set_busy_preg_i = 0;
-    clear_busy_en_i = 0; clear_busy_preg_i = 0;
+    clear_busy_en1_i = 0; clear_busy_preg1_i = 0;
+    clear_busy_en2_i = 0; clear_busy_preg2_i = 0;
     flush_i = 0;
     tick; tick; rst = 0; tick;
 
@@ -53,17 +56,17 @@ initial begin
 
     // ── 测试3：clear_busy 后恢复就绪 ──
     $display("\n[TEST3] clear_busy 后恢复就绪");
-    clear_busy_en_i = 1; clear_busy_preg_i = 6'd40;
-    tick; clear_busy_en_i = 0;
+    clear_busy_en1_i = 1; clear_busy_preg1_i = 6'd40;
+    tick; clear_busy_en1_i = 0;
     query_preg1_i = 6'd40; #1;
     chk("p40 清除忙碌后就绪", 1'b1, ready1_o);
 
     // ── 测试4：同拍 set 和 clear 同一寄存器，clear 优先 ──
     $display("\n[TEST4] 同拍 set+clear 同一寄存器，clear 优先");
-    set_busy_en_i   = 1; set_busy_preg_i   = 6'd50;
-    clear_busy_en_i = 1; clear_busy_preg_i = 6'd50;
+    set_busy_en_i    = 1; set_busy_preg_i    = 6'd50;
+    clear_busy_en1_i = 1; clear_busy_preg1_i = 6'd50;
     tick;
-    set_busy_en_i = 0; clear_busy_en_i = 0;
+    set_busy_en_i = 0; clear_busy_en1_i = 0;
     query_preg1_i = 6'd50; #1;
     chk("p50 同拍set+clear后就绪（clear优先）", 1'b1, ready1_o);
 

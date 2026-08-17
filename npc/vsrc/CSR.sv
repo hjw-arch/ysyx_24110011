@@ -11,8 +11,10 @@ import pipeline_pkt_pkg::*;
     input   [11:0]      addr,
     input   [31:0]      wdata,
 
-    input               ecall_i,
+    // trap：ecall 或精确异常（illegal / access fault）
+    input               trap_i,
     input   [31:0]      trap_pc_i,
+    input   [31:0]      trap_cause_i,
 
     output  logic [31:0] rdata_o,
     output  [31:0]      mtvec_o,
@@ -39,7 +41,7 @@ wire is_mtvec   = addr == CSR_MTVEC;
 wire is_mepc    = addr == CSR_MEPC;
 wire is_mcause  = addr == CSR_MCAUSE;
 
-// CSR 读是组合逻辑，WBU 用旧值写回 rd；CSR 写在同一个时钟沿提交。
+// CSR 读是组合逻辑，commit 用旧值写回 rd；CSR 写在同一个时钟沿提交。
 always_comb begin
     unique case (addr)
         CSR_MSTATUS:   rdata_o = mstatus_r;
@@ -69,10 +71,9 @@ always_ff @(posedge clk) begin
         mepc_r    <= 32'b0;
         mcause_r  <= 32'b0;
     end else begin
-        if (ecall_i) begin
-            mepc_r   <= trap_pc_i;
-            mcause_r <= 32'd11;
-            // 当前阶段只实现 M-mode，保持一个简单稳定的 mstatus 值即可。
+        if (trap_i) begin
+            mepc_r    <= trap_pc_i;
+            mcause_r  <= trap_cause_i;
             mstatus_r <= 32'h0000_1800;
         end else if (wen) begin
             if (is_mstatus) mstatus_r <= csr_wdata;

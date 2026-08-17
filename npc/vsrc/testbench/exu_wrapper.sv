@@ -51,6 +51,7 @@ import pipeline_pkt_pkg::*;
     output logic        bpu_update_valid_o,
     output logic        bpu_update_btb_type_o,
     output logic        bpu_update_taken_o,
+    output logic [31:0] bpu_update_pc_o,
     output logic [31:0] bpu_update_target_o
 );
 
@@ -106,6 +107,7 @@ exu u_exu (
     .bpu_update_valid_o             (bpu_update_valid_o),
     .bpu_update_btb_type_o          (bpu_update_btb_type_o),
     .bpu_update_taken_o             (bpu_update_taken_o),
+    .bpu_update_pc_o                (bpu_update_pc_o),
     .bpu_update_target_o            (bpu_update_target_o)
 );
 

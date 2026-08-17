@@ -104,15 +104,8 @@ localparam br_cond_t BR_GE = 2'b11;
 
 
 //============================================================
-// Forwarding select
+// Forwarding select（legacy 五级流水用；OoO 走 PRF+wakeup，不用此前递）
 //============================================================
-//
-// ID 阶段产生前递选择，EX 阶段只保留一个很薄的数据 mux。
-// 选择值表示“本条指令到达 EX 阶段时”应该从哪里取操作数：
-//   RF: ID/EX 寄存器中已经带过来的寄存器堆读数
-//   LS: 当前 EX 阶段生产者下一拍会位于 LS，使用 EX/LS packet 的 result
-//   WB: 当前 LS 阶段生产者下一拍会位于 WB，使用 LS/WB packet 的 result
-// 编码保持 one-hot：bit0=LS，bit1=WB，00=RF。
 typedef logic [1:0] fwd_sel_t;
 
 localparam fwd_sel_t FWD_SEL_RF = 2'b00;
@@ -151,6 +144,16 @@ typedef logic [1:0] priv_redir_t;
 localparam priv_redir_t PRIV_REDIR_NONE  = 2'b00;
 localparam priv_redir_t PRIV_REDIR_ECALL = 2'b01;
 localparam priv_redir_t PRIV_REDIR_MRET  = 2'b10;
+
+//============================================================
+// 异常 cause（与 RISC-V mcause 异常码对齐的子集）
+//============================================================
+typedef logic [3:0] exc_cause_t;
+
+localparam exc_cause_t CAUSE_ILLEGAL_INST    = 4'd2;
+localparam exc_cause_t CAUSE_LOAD_ACCESS_FAULT  = 4'd5;
+localparam exc_cause_t CAUSE_STORE_ACCESS_FAULT = 4'd7;
+localparam exc_cause_t CAUSE_ECALL_M          = 4'd11;
 
 //============================================================
 // Stage control structs
@@ -200,49 +203,37 @@ typedef struct packed {
 // Pipeline packets
 //============================================================
 
-
 typedef pipe_meta_t if2id_pkt_t;
 
+// ---- legacy 五级顺序流水包（仅 vsrc/legacy 与对照；OoO 用下方 rename/issue/rob 包）----
 
 typedef struct packed {
     pipe_meta_t     meta;
-
-    // 顺序下一条 PC。分支预测失败且实际 not-taken 时，EXU 可以直接用它恢复，
-    // 避免把 branch_taken 串到 redirect 加法器输入选择上。
     logic   [31:0]  seq_pc;
-
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     wb_ctrl_t       wb;
     sys_ctrl_t      sys;
-
     logic   [31:0]  rs1_data;
     logic   [31:0]  rs2_data;
     logic   [31:0]  imm;
 } id2ex_pkt_t;
 
-
 typedef struct packed {
     pipe_meta_t     meta;
-
     mem_ctrl_t      mem;
     wb_ctrl_t       wb;
     sys_ctrl_t      sys;
-
     redirect_t      redirect;
     bpu_update_t    bpu_update;
-
     logic   [31:0]  result;
     logic   [31:0]  store_data;
 } ex2ls_pkt_t;
 
-
 typedef struct packed {
     pipe_meta_t     meta;
-
     wb_ctrl_t       wb;
     sys_ctrl_t      sys;
-
     logic   [31:0]  result;
 } ls2wb_pkt_t;
 
@@ -281,6 +272,9 @@ typedef struct packed {
     phys_reg_t      phys_rd;
     phys_reg_t      phys_rd_old;
     logic           rd_wen;
+    logic           is_store;       // 提交时需 SQ drain
+    logic           exception;      // 译码期异常（如 illegal），分配时即可 complete
+    exc_cause_t     exception_cause;
     sys_ctrl_t      sys;
 } rob_alloc_pkt_t;
 
@@ -292,6 +286,7 @@ typedef struct packed {
     phys_reg_t      phys_rd_old;    // 提交时释放的旧物理寄存器
     logic   [31:0]  result;
     logic           rd_wen;
+    logic           is_store;
     sys_ctrl_t      sys;
     redirect_t      redirect;
     logic   [31:0]  pc;
@@ -309,6 +304,8 @@ typedef struct packed {
     logic           rs1_used;
     logic           rs2_used;
     logic           rd_wen;
+    logic           exception;
+    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;
@@ -327,6 +324,8 @@ typedef struct packed {
     logic           rd_wen;
     logic           rs1_ready;
     logic           rs2_ready;
+    logic           exception;
+    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;
@@ -343,6 +342,8 @@ typedef struct packed {
     logic   [31:0]  rs2_data;
     logic           pred_taken;     // 分支预测结果（用于误预测检测）
     logic           rd_wen;         // 目的寄存器写使能（用于唤醒判断）
+    logic           exception;
+    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;

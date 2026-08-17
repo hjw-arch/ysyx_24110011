@@ -18,8 +18,10 @@ issue2ex_pkt_t     issue_pkt_o;
 logic              issue_ready_i;
 logic [5:0]        issue_phys_rs1_o;
 logic [5:0]        issue_phys_rs2_o;
-logic              wakeup_en_i;
-logic [5:0]        wakeup_preg_i;
+logic              wakeup_en1_i;
+logic [5:0]        wakeup_preg1_i;
+logic              wakeup_en2_i;
+logic [5:0]        wakeup_preg2_i;
 logic [4:0]        rob_head_i;
 logic              flush_i;
 
@@ -82,7 +84,8 @@ task automatic tick; @(posedge clk); #1; endtask
 initial begin
     dispatch_en_i = 0; dispatch_pkt_i = '0;
     issue_ready_i = 1;
-    wakeup_en_i = 0; wakeup_preg_i = 0;
+    wakeup_en1_i = 0; wakeup_preg1_i = 0;
+    wakeup_en2_i = 0; wakeup_preg2_i = 0;
     rob_head_i = 5'd0;
     flush_i = 0;
     tick; tick; rst = 0; tick;
@@ -102,8 +105,8 @@ initial begin
     dispatch_waiting_instr(5'd5, 6'd40, 6'd33); // rs1=p40 不就绪
     chk("rs1 不就绪时 issue_valid=0", 1'b0, issue_valid_o);
     // 唤醒 p40
-    wakeup_en_i = 1; wakeup_preg_i = 6'd40;
-    tick; wakeup_en_i = 0; #1;
+    wakeup_en1_i = 1; wakeup_preg1_i = 6'd40;
+    tick; wakeup_en1_i = 0; #1;
     chk("唤醒后 issue_valid=1", 1'b1, issue_valid_o);
     tick; // 发射
 
@@ -166,7 +169,68 @@ initial begin
     end
     #1;
     chk("队列满后 dispatch_ready=0", 1'b0, dispatch_ready_o);
-    issue_ready_i = 1;  // 恢复发射
+    // 清空：flush
+    flush_i = 1; tick; flush_i = 0; #1;
+    issue_ready_i = 1;
+
+    // ── 测试7：访存序——更老 store 未发时幼 load 不可发 ──
+    $display("\n[TEST7] 访存序：老 store 阻塞幼 load");
+    rob_head_i = 5'd0;
+    issue_ready_i = 0;
+    // 老 store rob=1，操作数就绪
+    dispatch_en_i = 1;
+    dispatch_pkt_i = '0;
+    dispatch_pkt_i.rob_idx = 5'd1;
+    dispatch_pkt_i.phys_rd = 6'd40;
+    dispatch_pkt_i.rs1_ready = 1'b1;
+    dispatch_pkt_i.rs2_ready = 1'b1;
+    dispatch_pkt_i.mem.cmd = MEM_STORE;
+    @(posedge clk); #1; dispatch_en_i = 0;
+    // 幼 load rob=2，就绪
+    dispatch_en_i = 1;
+    dispatch_pkt_i = '0;
+    dispatch_pkt_i.rob_idx = 5'd2;
+    dispatch_pkt_i.phys_rd = 6'd41;
+    dispatch_pkt_i.rs1_ready = 1'b1;
+    dispatch_pkt_i.rs2_ready = 1'b1;
+    dispatch_pkt_i.mem.cmd = MEM_LOAD;
+    @(posedge clk); #1; dispatch_en_i = 0;
+    // 再塞一条更老的 ALU rob=0，就绪，应优先于 store
+    dispatch_en_i = 1;
+    dispatch_pkt_i = '0;
+    dispatch_pkt_i.rob_idx = 5'd0;
+    dispatch_pkt_i.phys_rd = 6'd42;
+    dispatch_pkt_i.rs1_ready = 1'b1;
+    dispatch_pkt_i.rs2_ready = 1'b1;
+    dispatch_pkt_i.mem.cmd = MEM_NONE;
+    @(posedge clk); #1; dispatch_en_i = 0;
+    issue_ready_i = 0; #1;
+    chk5("先选 ALU rob=0", 5'd0, issue_pkt_o.rob_idx);
+    issue_ready_i = 1; tick; // 发 ALU
+    #1;
+    chk5("再选 store rob=1（load 仍被挡）", 5'd1, issue_pkt_o.rob_idx);
+    tick; // 发 store
+    #1;
+    chk5("store 走后才发 load rob=2", 5'd2, issue_pkt_o.rob_idx);
+    tick;
+
+    // ── 测试8：系统指令仅 head 可发 ──
+    $display("\n[TEST8] 系统指令仅 rob_head 可发射");
+    rob_head_i = 5'd5;
+    issue_ready_i = 0;
+    dispatch_en_i = 1;
+    dispatch_pkt_i = '0;
+    dispatch_pkt_i.rob_idx = 5'd7; // 非 head
+    dispatch_pkt_i.phys_rd = 6'd43;
+    dispatch_pkt_i.rs1_ready = 1'b1;
+    dispatch_pkt_i.rs2_ready = 1'b1;
+    dispatch_pkt_i.sys.csr_cmd = CSR_CMD_WRITE;
+    @(posedge clk); #1; dispatch_en_i = 0;
+    issue_ready_i = 0; #1;
+    chk("非 head 的 CSR issue_valid=0", 1'b0, issue_valid_o);
+    rob_head_i = 5'd7; #1;
+    chk("变为 head 后 CSR 可发", 1'b1, issue_valid_o);
+    issue_ready_i = 1; tick;
 
     tick;
     $display("\n===== issue_queue: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

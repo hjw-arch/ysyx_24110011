@@ -1,4 +1,4 @@
-// LSU_ooo Wrapper - 将 packed struct 展平为独立信号，便于测试
+// LSU wrapper — 展平 issue 包 + SQ 口，便于 C++ TB
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -8,7 +8,6 @@ import pipeline_pkt_pkg::*;
     input               clk,
     input               rst,
 
-    // 展平的输入信号
     input               valid_i,
     input   [31:0]      pc_i,
     input   [31:0]      inst_i,
@@ -21,8 +20,8 @@ import pipeline_pkt_pkg::*;
     input   [3:0]       alu_op_i,
     input   [1:0]       alu_src_i,
     input   [1:0]       cfi_type_i,
-    input   [2:0]       br_cond_i,
-    input   [2:0]       mem_cmd_i,
+    input   [1:0]       br_cond_i,
+    input   [1:0]       mem_cmd_i,
     input   [1:0]       csr_cmd_i,
     input   [1:0]       priv_redir_i,
     input               fence_i_i,
@@ -31,7 +30,6 @@ import pipeline_pkt_pkg::*;
     input               flush_i,
     output              ready_o,
 
-    // 输出信号
     output logic        complete_en_o,
     output logic [4:0]  complete_idx_o,
     output logic [31:0] complete_data_o,
@@ -40,7 +38,25 @@ import pipeline_pkt_pkg::*;
     output logic        complete_rd_wen_o,
     output logic [5:0]  complete_phys_rd_o,
 
-    // AXI 接口
+    // SQ alloc
+    output logic        sq_alloc_en_o,
+    output logic [4:0]  sq_alloc_rob_idx_o,
+    output logic [31:0] sq_alloc_addr_o,
+    output logic [31:0] sq_alloc_data_o,
+    output logic [3:0]  sq_alloc_strb_o,
+    output logic [1:0]  sq_alloc_size_o,
+    input               sq_alloc_ready_i,
+
+    // drain
+    input               drain_req_i,
+    input   [31:0]      drain_addr_i,
+    input   [31:0]      drain_data_i,
+    input   [3:0]       drain_strb_i,
+    input   [1:0]       drain_size_i,
+    output logic        drain_fire_o,
+    output logic        drain_done_o,
+    output logic        drain_fault_o,
+
     output logic [31:0] ARADDR,
     output logic [3:0]  ARID,
     output logic [7:0]  ARLEN,
@@ -76,10 +92,10 @@ import pipeline_pkt_pkg::*;
     output logic        BREADY
 );
 
-// 组装 issue2ex_pkt_t
 issue2ex_pkt_t data_packed;
 
 always_comb begin
+    data_packed = '0;
     data_packed.pc          = pc_i;
     data_packed.inst        = inst_i;
     data_packed.rob_idx     = rob_idx_i;
@@ -89,25 +105,16 @@ always_comb begin
     data_packed.pred_taken  = pred_taken_i;
     data_packed.rd_wen      = rd_wen_i;
     data_packed.imm         = imm_i;
-
-    // ex_ctrl_t
-    data_packed.ex.alu_op       = alu_op_i;
-    data_packed.ex.alu_src      = alu_src_i;
-    data_packed.ex.cfi_type     = cfi_type_i;
-    data_packed.ex.br_cond      = br_cond_i;
-    data_packed.ex.fwd_rs1_sel  = 2'b00;
-    data_packed.ex.fwd_rs2_sel  = 2'b00;
-
-    // mem_ctrl_t
-    data_packed.mem.cmd         = mem_cmd_i;
-
-    // sys_ctrl_t
-    data_packed.sys.csr_cmd     = csr_cmd_i;
-    data_packed.sys.priv_redir  = priv_redir_i;
-    data_packed.sys.fence_i     = fence_i_i;
+    data_packed.ex.alu_op   = alu_op_i;
+    data_packed.ex.alu_src  = alu_src_i;
+    data_packed.ex.cfi_type = cfi_type_i;
+    data_packed.ex.br_cond  = br_cond_i;
+    data_packed.mem.cmd     = mem_cmd_i;
+    data_packed.sys.csr_cmd = csr_cmd_i;
+    data_packed.sys.priv_redir = priv_redir_i;
+    data_packed.sys.fence_i = fence_i_i;
 end
 
-// 实例化真正的 LSU_ooo
 lsu u_lsu (
     .clk                    (clk),
     .rst                    (rst),
@@ -122,6 +129,21 @@ lsu u_lsu (
     .complete_cause_o       (complete_cause_o),
     .complete_rd_wen_o      (complete_rd_wen_o),
     .complete_phys_rd_o     (complete_phys_rd_o),
+    .sq_alloc_en_o          (sq_alloc_en_o),
+    .sq_alloc_rob_idx_o     (sq_alloc_rob_idx_o),
+    .sq_alloc_addr_o        (sq_alloc_addr_o),
+    .sq_alloc_data_o        (sq_alloc_data_o),
+    .sq_alloc_strb_o        (sq_alloc_strb_o),
+    .sq_alloc_size_o        (sq_alloc_size_o),
+    .sq_alloc_ready_i       (sq_alloc_ready_i),
+    .drain_req_i            (drain_req_i),
+    .drain_addr_i           (drain_addr_i),
+    .drain_data_i           (drain_data_i),
+    .drain_strb_i           (drain_strb_i),
+    .drain_size_i           (drain_size_i),
+    .drain_fire_o           (drain_fire_o),
+    .drain_done_o           (drain_done_o),
+    .drain_fault_o          (drain_fault_o),
     .ARADDR                 (ARADDR),
     .ARID                   (ARID),
     .ARLEN                  (ARLEN),

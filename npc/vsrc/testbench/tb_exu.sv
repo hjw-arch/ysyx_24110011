@@ -31,6 +31,7 @@ logic [31:0] redirect_addr_o;
 logic        bpu_update_valid_o;
 logic        bpu_update_btb_type_o;
 logic        bpu_update_taken_o;
+logic [31:0] bpu_update_pc_o;
 logic [31:0] bpu_update_target_o;
 
 exu dut (
@@ -53,6 +54,7 @@ exu dut (
     .bpu_update_valid_o(bpu_update_valid_o),
     .bpu_update_btb_type_o(bpu_update_btb_type_o),
     .bpu_update_taken_o(bpu_update_taken_o),
+    .bpu_update_pc_o(bpu_update_pc_o),
     .bpu_update_target_o(bpu_update_target_o)
 );
 int pass_cnt = 0, fail_cnt = 0;
@@ -166,7 +168,8 @@ initial begin
     chk("wakeup_en = 0 (branch不写寄存器)", 1'b0, wakeup_en_o);
     chk("bpu_update_valid = 1", 1'b1, bpu_update_valid_o);
     chk("bpu_update_taken = 1", 1'b1, bpu_update_taken_o);
-    
+    chk32("bpu_update_pc = 0x2000", 32'h2000, bpu_update_pc_o);
+
     // ── 测试6：分支 BEQ not-taken (rs1 != rs2) ──
     $display("\n[TEST6] BEQ not-taken: rs1=100, rs2=50, pred_taken=0");
     data_i.rs1_data = 32'd100;
