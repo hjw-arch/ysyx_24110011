@@ -18,7 +18,8 @@ NPC_HOME := $(abspath .)
 # 本地仿真环境参数
 TOP_NAME            ?= ysyx
 SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include) $(NPC_HOME)/include)
-SIM_VINC            = $(abspath ./vsrc) $(abspath ./vsrc/include) $(abspath ./vsrc/axi4_lite)
+# axi4_lite 未接入当前仿真网表，不进 include，避免与 AXI4-full 双轨混淆
+SIM_VINC            = $(abspath ./vsrc) $(abspath ./vsrc/include)
 SIM_CFLAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -ldl
 
@@ -191,7 +192,7 @@ TB_WNO      = --Wno-UNUSEDSIGNAL --Wno-DECLFILENAME --Wno-UNUSEDPARAM \
 # 不依赖 pipeline_pkt_pkg 的独立模块（SV testbench）
 TB_SIMPLE = physical_regfile freelist rename_map_table busy_table
 # 依赖 pipeline_pkt_pkg 的模块（SV testbench）
-TB_PKG    = rob issue_queue
+TB_PKG    = rob issue_queue store_queue
 # C++ testbench（使用 wrapper 展平 packed struct）
 TB_CPP    = exu lsu
 

@@ -1,4 +1,4 @@
-// LSU wrapper — 展平 issue 包 + SQ 口，便于 C++ TB
+// LSU wrapper — 展平 issue 包 + SQ/CAM 口，便于 C++ TB
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -46,7 +46,13 @@ import pipeline_pkt_pkg::*;
     output logic [3:0]  sq_alloc_strb_o,
     output logic [1:0]  sq_alloc_size_o,
     input               sq_alloc_ready_i,
-    input               sq_empty_i,
+
+    // CAM
+    output logic [31:0] cam_addr_o,
+    output logic [1:0]  cam_size_o,
+    input               cam_hit_i,
+    input               cam_stall_i,
+    input   [31:0]      cam_data_i,
 
     // drain
     input               drain_req_i,
@@ -137,7 +143,11 @@ lsu u_lsu (
     .sq_alloc_strb_o        (sq_alloc_strb_o),
     .sq_alloc_size_o        (sq_alloc_size_o),
     .sq_alloc_ready_i       (sq_alloc_ready_i),
-    .sq_empty_i             (sq_empty_i),
+    .cam_addr_o             (cam_addr_o),
+    .cam_size_o             (cam_size_o),
+    .cam_hit_i              (cam_hit_i),
+    .cam_stall_i            (cam_stall_i),
+    .cam_data_i             (cam_data_i),
     .drain_req_i            (drain_req_i),
     .drain_addr_i           (drain_addr_i),
     .drain_data_i           (drain_data_i),

@@ -1,13 +1,15 @@
 // ysyx_24110011.sv  —  单发射乱序执行处理器顶层
 //
-// 流水线结构：
-//   IFU → idu → rename_stage → issue_queue → exu / lsu → rob → 物理寄存器堆
+// 流水线：
+//   IFU → idu → rename_stage → issue_queue → exu / lsu(+SQ) → rob → PRF/AMT/CSR
 //
-// 关键语义：
-//   1. RAW 由重命名消除；WAW/WAR 由物理寄存器堆消除
-//   2. flush 仅以 rob.flush_o 为准（精确异常 / 顺序恢复）
-//   3. EXU/LSU 在 complete 时写 phys_rd 并 wakeup；commit 只回收 phys_rd_old + 更新 AMT
-//   4. 访存与非访存共享 IQ 单发射口，由 mem.cmd 分流；LSU ready 反压 IQ
+// 不变量：
+//   1. 架构状态（AMT / CSR / 内存）只在 ROB commit 对外不可回滚
+//   2. flush 仅 rob.flush_o；RAT/freelist 用 next_amt 恢复
+//   3. store 不得在 commit 前进入 AXI；issue 只入 SQ，commit 后 drain
+//   4. load：SQ CAM 全覆盖 STLF / 部分重叠 stall / 无重叠 AXI；IQ 仍 older_mem 序
+//   5. 单发射：dispatch/issue/commit 宽均为 1；EXU/LSU 双 complete + 双 wakeup
+//   6. 仿真可见信号见 ROB commit 段「仿真契约」；改展平口须同步 cpu_exec.cpp
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -96,14 +98,13 @@ assign io_slave_rlast   = 1'b0;
 assign io_slave_rid     = 4'b0;
 
 // ─── 全局 flush / redirect ────────────────────────────────
-// 第一阶段：仅 ROB 顺序 flush（精确异常 / 分支误预测到达 head）
-// EXU 的 redirect 只写入 ROB complete 标记，不直接冲刷前端
+// EXU redirect 只写入 ROB complete；冲刷前端仅在 head 提交时 rob_flush
 wire        exu_redirect_valid /* verilator public_flat_rd */;
 wire [31:0] exu_redirect_addr  /* verilator public_flat_rd */;
 wire        rob_flush          /* verilator public_flat_rd */;
 wire [31:0] rob_flush_pc;
 
-// flush 仅以 ROB 为准；redirect 目标见下方 redirect_pc_final（含 ecall/mret）
+// flush 仅以 ROB 为准；redirect 目标见 redirect_pc_final（trap/mret/其它）
 wire        pipeline_flush = rob_flush;
 
 // ─── BPU 更新（来自 exu）──────────────────────────────────
@@ -183,9 +184,15 @@ wire [5:0]  lsu_complete_phys_rd;
 
 
 // ─── ROB commit ────────────────────────────────────────────
+// 仿真契约：cpu_exec / DiffTest 只读下列展平信号，禁止再拆 commit_pkt 位域
 wire        commit_valid /* verilator public_flat_rd */;
-rob_commit_t commit_pkt  /* verilator public_flat_rd */;
+rob_commit_t commit_pkt;
 wire [4:0]  rob_head_idx;
+
+wire [31:0] commit_pc      /* verilator public_flat_rd */ = commit_pkt.pc;
+wire [31:0] commit_inst    /* verilator public_flat_rd */ = commit_pkt.inst;
+wire [4:0]  commit_arch_rd /* verilator public_flat_rd */ = commit_pkt.arch_rd;
+wire        commit_rd_wen  /* verilator public_flat_rd */ = commit_pkt.rd_wen;
 
 // ─── 提交点系统语义（对齐五级 WBU）────────────────────────
 // CSR/ecall/mret/fence.i 仅在 ROB head 发射，complete 后下一拍提交。
@@ -229,14 +236,18 @@ wire [31:0] redirect_pc_final =
     commit_is_mret                        ? csr_mepc  :
                                             rob_flush_pc;
 
-// ─── Store Queue / drain 握手 ─────────────────────────────
+// ─── Store Queue / drain / CAM 握手 ───────────────────────
 wire        sq_alloc_en;
 wire [4:0]  sq_alloc_rob_idx;
 wire [31:0] sq_alloc_addr, sq_alloc_data;
 wire [3:0]  sq_alloc_strb;
 wire [1:0]  sq_alloc_size;
 wire        sq_alloc_ready;
-wire        sq_empty;
+
+wire [31:0] sq_cam_addr;
+wire [1:0]  sq_cam_size;
+wire        sq_cam_hit, sq_cam_stall;
+wire [31:0] sq_cam_data;
 
 wire        sq_commit_req;
 wire [4:0]  sq_commit_rob_idx;
@@ -391,7 +402,13 @@ store_queue u_sq (
     .alloc_strb_i       (sq_alloc_strb),
     .alloc_size_i       (sq_alloc_size),
     .alloc_ready_o      (sq_alloc_ready),
-    .empty_o            (sq_empty),
+    // empty 仅调试/TB；load 门控已由 CAM 取代
+    .empty_o            (),
+    .cam_addr_i         (sq_cam_addr),
+    .cam_size_i         (sq_cam_size),
+    .cam_hit_o          (sq_cam_hit),
+    .cam_stall_o        (sq_cam_stall),
+    .cam_data_o         (sq_cam_data),
     .commit_req_i       (sq_commit_req),
     .commit_rob_idx_i   (sq_commit_rob_idx),
     .commit_ready_o     (sq_commit_ready),
@@ -551,7 +568,11 @@ lsu u_lsu (
     .sq_alloc_strb_o        (sq_alloc_strb),
     .sq_alloc_size_o        (sq_alloc_size),
     .sq_alloc_ready_i       (sq_alloc_ready),
-    .sq_empty_i             (sq_empty),
+    .cam_addr_o             (sq_cam_addr),
+    .cam_size_o             (sq_cam_size),
+    .cam_hit_i              (sq_cam_hit),
+    .cam_stall_i            (sq_cam_stall),
+    .cam_data_i             (sq_cam_data),
     .drain_req_i            (drain_req),
     .drain_addr_i           (drain_addr),
     .drain_data_i           (drain_data),

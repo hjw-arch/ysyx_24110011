@@ -19,32 +19,22 @@
 #define EBREAK_INST 0x00100073u
 #define MIN_NUM_TO_DISASM 10
 
-// rob_commit_t 字段在 VlWide<5> 中的低位偏移（packed struct，最低位 = 最后声明字段）
-// inst: [31:0]  lo=0
-// pc:   [63:32] lo=32
-#define COMMIT_INST_LO  0
-#define COMMIT_PC_LO   32
-
-#define WIDE_U32(data, lo) \
-	({ \
-		const WData *const words = (data); \
-		const int low = (lo); \
-		(uint32_t)((((uint64_t)words[low / 32 + 1] << 32) | words[low / 32]) >> (low % 32)); \
-	})
-
+// 仿真契约：只读顶层展平信号（ysyx_24110011 中 public_flat_rd）
+// 禁止再对 rob_commit_t / VlWide 做手算位域偏移；改字段请改 RTL 展平口
 #ifdef SOC
 #define CORE_SIG(name) dut.rootp->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__##name
 #else
 #define CORE_SIG(name) dut.rootp->ysyx__DOT__u_cpu__DOT__##name
 #endif
 
-// OoO 版本：通过 ROB commit 包获取提交的 pc/inst
-#define COMMIT_PC()    WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_PC_LO)
-#define COMMIT_INST()  WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_INST_LO)
-#define COMMIT_VALID() CORE_SIG(commit_valid)
+#define COMMIT_PC()          CORE_SIG(commit_pc)
+#define COMMIT_INST()        CORE_SIG(commit_inst)
+#define COMMIT_VALID()       CORE_SIG(commit_valid)
+#define COMMIT_RD_WEN()      CORE_SIG(commit_rd_wen)
+#define COMMIT_ARCH_RD()     CORE_SIG(commit_arch_rd)
 #define COMMIT_RESULT_ARCH() CORE_SIG(commit_result_arch)
-// Tier2：load 完成或 store drain 完成
-#define LSU_AXI_DONE() CORE_SIG(u_lsu__DOT__axi_activity_done)
+// load AXI 完成或 store drain 完成（mtrace / difftest skip）
+#define LSU_AXI_DONE()       CORE_SIG(u_lsu__DOT__axi_activity_done)
 
 typedef struct {
 	uint32_t pc;
@@ -111,36 +101,12 @@ static commit_info_t get_commit_info() {
 	};
 }
 
-// OoO 版本：架构寄存器状态从 physical_regfile 中读取。
-// rename_map_table 维护 arch_reg → phys_reg 映射，但 Verilator 不直接暴露其内部数组，
-// 因此利用 ROB commit 时更新的方式：每次 commit rd_wen 时将结果写入 cpu.registerFile。
-// 对于 difftest，这样增量更新等同于完整同步（顺序提交保证）。
-// rob_commit_t 从 LSB 起：inst, pc, redirect(33), sys(5), is_store(1), rd_wen(1),
-// result(32), phys_rd_old(6), phys_rd(6), arch_rd(5), valid(1)
-// rd_wen lo = 32+32+33+5+1 = 103
-// result lo = 104
-// arch_rd lo = 104+32+6+6 = 148
-#define COMMIT_RESULT_LO  104
-#define COMMIT_RD_WEN_LO  103
-#define COMMIT_ARCH_RD_LO 148
-
-static uint32_t commit_result_u32() {
-	return WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_RESULT_LO);
-}
-
-static uint32_t commit_arch_rd_u32() {
-	return WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_ARCH_RD_LO) & 0x1fu;
-}
-
-static bool commit_rd_wen_b() {
-	return (WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_RD_WEN_LO) & 0x1u) != 0;
-}
-
+// 架构寄存器镜像：顺序 commit 时增量更新（DiffTest 等价全量同步）
+// CSR 写回用 commit_result_arch（旧 CSR 值），普通指令用 ROB.result
 static void sync_arch_state_on_commit() {
-	// 顺序提交：用架构可见结果更新镜像（CSR 为旧 CSR 值，见 commit_result_arch）
 	cpu.pc = COMMIT_PC();
-	if (commit_rd_wen_b()) {
-		uint32_t rd = commit_arch_rd_u32();
+	if (COMMIT_RD_WEN()) {
+		uint32_t rd = (uint32_t)COMMIT_ARCH_RD() & 0x1fu;
 		if (rd != 0) {
 			cpu.registerFile[rd] = COMMIT_RESULT_ARCH();
 		}
@@ -178,13 +144,31 @@ static commit_info_t cpu_exec_one() {
 				"[OoO TIMEOUT] no commit for %llu cycles\n"
 				"  cycle_times=%llu dynamic_insts=%llu\n"
 				"  rob_flush=%d exu_redirect_valid=%d\n"
-				"  last cpu.pc=0x%08x\n",
+				"  last cpu.pc=0x%08x\n"
+				"  ROB head=%u count=%u head_ready=%d\n"
+				"  IQ valid=0x%02x issuable=0x%02x\n"
+				"  LSU st=%u cam_stall=%d hold_flush=%d hold_addr=0x%08x hold_rob=%u\n"
+				"  SQ cnt=%u commit_req=%d drain_req=%d ifu_pc=0x%08x\n",
 				(unsigned long long)retire_cycles,
 				(unsigned long long)cycle_times,
 				(unsigned long long)dynamic_insts,
 				(int)CORE_SIG(rob_flush),
 				(int)CORE_SIG(exu_redirect_valid),
-				cpu.pc);
+				cpu.pc,
+				(unsigned)CORE_SIG(u_rob__DOT__rob_head),
+				(unsigned)CORE_SIG(u_rob__DOT__rob_count),
+				(int)CORE_SIG(u_rob__DOT__head_ready),
+				(unsigned)CORE_SIG(u_iq__DOT__ent_valid),
+				(unsigned)CORE_SIG(u_iq__DOT__ent_issuable),
+				(unsigned)CORE_SIG(u_lsu__DOT__state),
+				(int)CORE_SIG(u_lsu__DOT__cam_stall_block),
+				(int)CORE_SIG(u_lsu__DOT__hold_flushed),
+				(unsigned)CORE_SIG(u_lsu__DOT__hold_mem_addr),
+				(unsigned)CORE_SIG(u_lsu__DOT__hold_rob_idx),
+				(unsigned)CORE_SIG(u_sq__DOT__count),
+				(int)CORE_SIG(sq_commit_req),
+				(int)CORE_SIG(drain_req),
+				(unsigned)CORE_SIG(u_ifu__DOT__pc_r));
 			npc_set_state(NPC_ABORT, cpu.pc, -1);
 			return {.pc = cpu.pc, .inst = 0, .skip_ref = false};
 		}

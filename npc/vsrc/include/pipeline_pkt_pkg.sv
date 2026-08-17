@@ -279,6 +279,8 @@ typedef struct packed {
 } rob_alloc_pkt_t;
 
 // ROB 提交包
+// 仿真：cpu_exec 不拆本结构位域；顶层展平 commit_pc/inst/arch_rd/rd_wen/result_arch
+// 改字段顺序或宽度时，必须同步 ysyx_24110011 展平口（若仍有 VlWide 读者）
 typedef struct packed {
     logic           valid;
     logic   [4:0]   arch_rd;

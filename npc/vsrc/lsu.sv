@@ -1,10 +1,12 @@
-// lsu (Load-Store Unit) — Tier2
-// Load：SQ 空时阻塞 AXI 读，complete → ROB/PRF
-// Store：issue 只算地址入 SQ（data=rs2 原值），立即 complete；AXI 写仅 commit drain
+// lsu — Load/Store
+// Load：CAM 全覆盖 → STLF 同拍 complete；部分重叠 → stall；无重叠 → 阻塞 AXI 读
+// Store：issue 入 SQ（data=rs2 原值）同拍 complete；AXI 写仅 commit drain
 // 不变量：
 //   1. store 不得在 commit 前进入 AXI
-//   2. SQ 非空时不得发 load（无 STLF；与 IQ mem 序一起保证读到提交后的内存）
-//   3. 子字摆放只在 axi4_full_master 做一次，SQ 存 rs2 原值
+//   2. 子字摆放只在 master / SQ CAM；SQ 存 rs2 原值
+//   3. drain 优先占 AXI；STLF 不占 AXI，可与 drain 同拍 complete
+//   4. sq_alloc_strb 仅供 CAM；写通道 WSTRB 由 master 按 addr/size 生成
+//   5. drain_strb 不驱动总线（同上）；保留口便于调试/对齐 SQ
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -21,7 +23,7 @@ import pipeline_pkt_pkg::*;
 
     input               flush_i,
 
-    // 完成 → ROB（load 等 AXI；store 入 SQ 后同拍 complete）
+    // 完成 → ROB（load AXI/STLF；store 入 SQ 后同拍 complete）
     output logic        complete_en_o,
     output logic [4:0]  complete_idx_o,
     output logic [31:0] complete_data_o,
@@ -38,7 +40,13 @@ import pipeline_pkt_pkg::*;
     output logic [3:0]  sq_alloc_strb_o,
     output logic [1:0]  sq_alloc_size_o,
     input               sq_alloc_ready_i,
-    input               sq_empty_i,         // 1 = 无未完成 store，允许 load
+
+    // ── SQ CAM（load）──
+    output logic [31:0] cam_addr_o,
+    output logic [1:0]  cam_size_o,
+    input               cam_hit_i,
+    input               cam_stall_i,
+    input       [31:0]  cam_data_i,
 
     // ── SQ drain（commit 后写）──
     input               drain_req_i,
@@ -103,14 +111,14 @@ wire mem_valid = valid_i & is_mem;
 
 wire state_idle  = (state == S_IDLE);
 wire state_load  /* verilator public_flat_rd */ = (state == S_LOAD);
-wire state_drain = (state == S_DRAIN);
+wire state_drain /* verilator public_flat_rd */ = (state == S_DRAIN);
 
 logic        axi_done;
 logic [31:0] axi_rdata /* verilator public_flat_rd */;
 logic [1:0]  axi_rresp;
 logic [1:0]  axi_wresp;
 
-// load 锁存
+// load 锁存（仅 AXI 路径）
 logic        hold_is_load /* verilator public_flat_rd */;
 logic [4:0]  hold_rob_idx;
 logic [5:0]  hold_phys_rd;
@@ -124,7 +132,11 @@ wire [31:0] req_store_data = data_i.rs2_data;   // 原值；master 按 addr/size
 wire [2:0]  req_mem_type   = data_i.inst[14:12];
 wire [1:0]  req_size       = req_mem_type[1:0];
 
-// strb 仅记录（STLF/调试）；写通道 WSTRB 由 master 生成
+// CAM 查询口（组合）
+assign cam_addr_o = req_mem_addr;
+assign cam_size_o = req_size;
+
+// strb：入 SQ 供 CAM；不驱动 AXI WSTRB
 logic [3:0] req_strb;
 always_comb begin
     unique case (req_size)
@@ -138,14 +150,19 @@ end
 wire store_issue_ok = state_idle & mem_valid & is_store
                     & sq_alloc_ready_i & ~flush_i & ~drain_req_i;
 
-// load：idle + SQ 空（无更老未退休 store）+ 本拍无 drain
-wire load_issue_ok  = state_idle & mem_valid & is_load
-                    & sq_empty_i & ~flush_i & ~drain_req_i;
+// STLF：全覆盖命中；不占 AXI，idle/drain 均可同拍 complete
+wire load_stlf_ok = mem_valid & is_load & cam_hit_i & ~flush_i
+                  & (state_idle | state_drain);
 
-wire load_req_fire  /* verilator public_flat_rd */ = load_issue_ok;
+// AXI load：无重叠、idle、无 drain
+wire load_axi_ok  = state_idle & mem_valid & is_load
+                  & ~cam_hit_i & ~cam_stall_i
+                  & ~flush_i & ~drain_req_i;
+
+wire load_req_fire  /* verilator public_flat_rd */ = load_axi_ok;
 wire load_resp_fire /* verilator public_flat_rd */ = state_load & axi_done;
 
-// drain：idle 接受；与 load/store issue 互斥（drain_req 优先）
+// drain：idle 接受；与 AXI load/store issue 互斥
 wire drain_accept = state_idle & drain_req_i & ~flush_i;
 assign drain_fire_o = drain_accept;
 
@@ -161,12 +178,17 @@ assign sq_alloc_data_o    = req_store_data;
 assign sq_alloc_strb_o    = req_strb;
 assign sq_alloc_size_o    = req_size;
 
-// ready：非 mem 直通；store 入队成功；load 完成；flush
-// load 因 SQ 非空 / drain 占用而停在 issue 口时 ready=0，IQ 保持该项
+// ready：只在真正「接受」当前 IQ 项时为 1
+//   store/STLF 同拍 complete + 出队
+//   AXI load 在 load_req_fire 拍出队，hold_* 接管；等 resp 期间 ready=0
+//   resp 拍只 complete(hold)，不再 ready（顶层非 mem 不看 lsu_ready）
+// cam_stall 时 ready=0，IQ 保持该项
+// flush 后 in-flight load 只收尾 AXI（hold_flushed），不得 ready/complete
 assign ready_o = flush_i
                | (state_idle & ~mem_valid)
                | store_issue_ok
-               | load_resp_fire;
+               | load_stlf_ok
+               | load_req_fire;
 
 always_comb begin
     nstate = state;
@@ -225,7 +247,7 @@ wire input_is_load /* verilator public_flat_rd */ =
     state_load ? 1'b1 : (state_drain ? 1'b0 : is_load);
 wire axi_activity_done /* verilator public_flat_rd */ = load_resp_fire | drain_resp_fire;
 
-// load 数据扩展（master 已按 addr 将目标字节归到低位）
+// load 数据扩展（master/CAM 已将目标字节归到低位）
 typedef enum logic [2:0] {
     LOAD_TYPE_LB  = 3'b000,
     LOAD_TYPE_LH  = 3'b001,
@@ -234,35 +256,51 @@ typedef enum logic [2:0] {
     LOAD_TYPE_LHU = 3'b101
 } load_type_e;
 
-logic [31:0] load_data;
+logic [31:0] load_data_axi;
 always_comb begin
     case (load_type_e'(hold_mem_type))
-        LOAD_TYPE_LB:  load_data = {{24{axi_rdata[7]}},  axi_rdata[7:0]};
-        LOAD_TYPE_LH:  load_data = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
-        LOAD_TYPE_LW:  load_data = axi_rdata;
-        LOAD_TYPE_LBU: load_data = {24'b0, axi_rdata[7:0]};
-        LOAD_TYPE_LHU: load_data = {16'b0, axi_rdata[15:0]};
-        default:       load_data = 32'b0;
+        LOAD_TYPE_LB:  load_data_axi = {{24{axi_rdata[7]}},  axi_rdata[7:0]};
+        LOAD_TYPE_LH:  load_data_axi = {{16{axi_rdata[15]}}, axi_rdata[15:0]};
+        LOAD_TYPE_LW:  load_data_axi = axi_rdata;
+        LOAD_TYPE_LBU: load_data_axi = {24'b0, axi_rdata[7:0]};
+        LOAD_TYPE_LHU: load_data_axi = {16'b0, axi_rdata[15:0]};
+        default:       load_data_axi = 32'b0;
+    endcase
+end
+
+logic [31:0] load_data_stlf;
+always_comb begin
+    case (load_type_e'(req_mem_type))
+        LOAD_TYPE_LB:  load_data_stlf = {{24{cam_data_i[7]}},  cam_data_i[7:0]};
+        LOAD_TYPE_LH:  load_data_stlf = {{16{cam_data_i[15]}}, cam_data_i[15:0]};
+        LOAD_TYPE_LW:  load_data_stlf = cam_data_i;
+        LOAD_TYPE_LBU: load_data_stlf = {24'b0, cam_data_i[7:0]};
+        LOAD_TYPE_LHU: load_data_stlf = {16'b0, cam_data_i[15:0]};
+        default:       load_data_stlf = 32'b0;
     endcase
 end
 
 wire load_fault = load_resp_fire & (axi_rresp != 2'b00);
 
-// complete：store 入队即完成；load 等 AXI
-assign complete_en_o        = store_issue_ok | (load_resp_fire & ~hold_flushed);
-assign complete_idx_o       = store_issue_ok ? data_i.rob_idx : hold_rob_idx;
-assign complete_data_o      = store_issue_ok ? 32'b0 : load_data;
-assign complete_exception_o = store_issue_ok ? 1'b0 : load_fault;
-assign complete_cause_o     = load_fault ? CAUSE_LOAD_ACCESS_FAULT : 4'b0;
-assign complete_rd_wen_o    = store_issue_ok ? 1'b0 : (hold_rd_wen & hold_is_load & ~load_fault);
-assign complete_phys_rd_o   = store_issue_ok ? data_i.phys_rd : hold_phys_rd;
+// complete：store / STLF 同拍；AXI load 等响应
+wire axi_load_complete = load_resp_fire & ~hold_flushed;
 
-// AXI master：load 用 ren；drain 用 wen；store issue 不写总线
+assign complete_en_o        = store_issue_ok | load_stlf_ok | axi_load_complete;
+assign complete_idx_o       = (store_issue_ok | load_stlf_ok) ? data_i.rob_idx : hold_rob_idx;
+assign complete_data_o      = store_issue_ok ? 32'b0 :
+                              load_stlf_ok   ? load_data_stlf : load_data_axi;
+assign complete_exception_o = store_issue_ok ? 1'b0 :
+                              load_stlf_ok   ? 1'b0 : load_fault;
+assign complete_cause_o     = load_fault ? CAUSE_LOAD_ACCESS_FAULT : 4'b0;
+assign complete_rd_wen_o    = store_issue_ok ? 1'b0 :
+                              load_stlf_ok   ? data_i.rd_wen :
+                                               (hold_rd_wen & hold_is_load & ~load_fault);
+assign complete_phys_rd_o   = (store_issue_ok | load_stlf_ok) ? data_i.phys_rd : hold_phys_rd;
+
+// AXI master：load 用 ren；drain 用 wen；store/STLF 不写总线
 // master 的 AXADDR/AXSIZE/WSTRB/WDATA 全程直通、不锁存：
-//   - S_LOAD：raddr/rsize 必须用 hold_*（OoO 下 data_i 会被 EXU issue 覆盖）
-//   - S_DRAIN：wsize 不能只在 wen 脉冲拍有效；wen 仅 fire 一拍，
-//     之后 drain_req 也会因 committed 拉低，但 SQ 队头数据仍稳定，
-//     故 size 在 drain_accept|state_drain 整段选 drain_size_i
+//   - S_LOAD：raddr/rsize 必须用 hold_*
+//   - S_DRAIN：size 在 drain_accept|state_drain 整段选 drain_size_i
 wire ren = load_req_fire;
 wire wen = drain_accept;
 wire drain_active = drain_accept | state_drain;
@@ -321,6 +359,13 @@ axi4_full_master u_axi4_full_master (
     .BREADY         (BREADY)
 );
 
+// drain_strb 与 SQ 队头 strb 同源，总线侧不用
 wire _unused_drain_strb = |drain_strb_i;
+
+// 轻量观测（PMC / 调试）
+wire stlf_fire_o /* verilator public_flat_rd */ = load_stlf_ok;
+wire cam_stall_block /* verilator public_flat_rd */ =
+    mem_valid & is_load & cam_stall_i & ~flush_i;
+wire load_axi_issue /* verilator public_flat_rd */ = load_req_fire;
 
 endmodule
