@@ -1,16 +1,13 @@
 // ysyx_24110011.sv  —  单发射乱序执行处理器顶层
 //
 // 流水线结构：
-//   IFU → idu → rename_stage → issue_queue → exu / lsu → rob → 写回物理寄存器堆
+//   IFU → idu → rename_stage → issue_queue → exu / lsu → rob → 物理寄存器堆
 //
-// 与旧五级流水线的主要区别：
-//   1. 不再有 hazard_unit / 前递网络：RAW 由重命名消除，WAW/WAR 不可能发生
-//   2. 不再有 pip_reg 级间寄存器 + flush：ROB 是顺序提交点，flush 以 rob.flush_o 为准
-//   3. 寄存器堆换成 physical_regfile（64 物理寄存器）；旧 registerfile 不再使用
-//   4. exu / lsu 完成后写 ROB，commit 时才写物理寄存器堆
-//   5. lsu 的 bpu_update / redirect 信号合并到 exu 输出（EXU 已处理分支）
-//
-// AXI 互联结构与旧版相同：IFU(m0) + LSU(m1) → arbiter → Xbar → io_master / CLINT
+// 关键语义：
+//   1. RAW 由重命名消除；WAW/WAR 由物理寄存器堆消除
+//   2. flush 仅以 rob.flush_o 为准（精确异常 / 顺序恢复）
+//   3. EXU/LSU 在 complete 时写 phys_rd 并 wakeup；commit 只回收 phys_rd_old + 更新 AMT
+//   4. 访存与非访存共享 IQ 单发射口，由 mem.cmd 分流；LSU ready 反压 IQ
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -99,17 +96,15 @@ assign io_slave_rlast   = 1'b0;
 assign io_slave_rid     = 4'b0;
 
 // ─── 全局 flush / redirect ────────────────────────────────
-// flush 来源：
-//   1. ROB 检测到异常（ecall/mret/fence.i）→ rob.flush_o
-//   2. exu 检测到分支误预测 → exu.redirect_valid_o
-// 两者均触发 IFU redirect；ROB flush 同时清空整条流水线
+// 第一阶段：仅 ROB 顺序 flush（精确异常 / 分支误预测到达 head）
+// EXU 的 redirect 只写入 ROB complete 标记，不直接冲刷前端
 wire        exu_redirect_valid /* verilator public_flat_rd */;
 wire [31:0] exu_redirect_addr  /* verilator public_flat_rd */;
 wire        rob_flush          /* verilator public_flat_rd */;
 wire [31:0] rob_flush_pc;
 
-wire        pipeline_flush  = rob_flush | exu_redirect_valid;
-wire [31:0] redirect_pc     = rob_flush ? rob_flush_pc : exu_redirect_addr;
+wire        pipeline_flush  = rob_flush;
+wire [31:0] redirect_pc     = rob_flush_pc;
 
 // ─── BPU 更新（来自 exu）──────────────────────────────────
 wire        bpu_update_valid;
@@ -138,18 +133,16 @@ wire              rob_alloc_ready;
 wire              rob_alloc_en;
 rob_alloc_pkt_t   rob_alloc_pkt;
 
-// ─── IQ → EXU ─────────────────────────────────────────────
+// ─── IQ → EXU/LSU ─────────────────────────────────────────
 wire              iq_issue_valid;
 issue2ex_pkt_t    iq_issue_pkt;
-wire              iq_issue_ready;    // exu 总是 ready（纯组合）
-wire [5:0]        iq_phys_rs1;      // 需要从 physical_regfile 读取的物理寄存器
+wire              iq_issue_ready;
+wire [5:0]        iq_phys_rs1;
 wire [5:0]        iq_phys_rs2;
 
 // ─── 物理寄存器堆 ──────────────────────────────────────────
 wire [31:0] prf_rs1_data;
 wire [31:0] prf_rs2_data;
-// 写端口1：EXU 完成时写（ALU/branch/jump 结果）
-// 写端口2：ROB commit 时写（用于确保提交顺序，同时处理 CSR/exception）
 wire        prf_wen1;
 wire [5:0]  prf_waddr1;
 wire [31:0] prf_wdata1;
@@ -157,11 +150,11 @@ wire        prf_wen2;
 wire [5:0]  prf_waddr2;
 wire [31:0] prf_wdata2;
 
-// ─── 唤醒信号（exu/lsu → issue_queue + rename_stage）─────
+// ─── 唤醒信号 ─────────────────────────────────────────────
 wire        wakeup_en;
 wire [5:0]  wakeup_preg;
 
-// ─── EXU 完成信号 → ROB ────────────────────────────────────
+// ─── EXU 完成信号 ──────────────────────────────────────────
 wire        exu_complete_en;
 wire [4:0]  exu_complete_idx;
 wire [31:0] exu_complete_data;
@@ -169,14 +162,39 @@ wire        exu_complete_exc;
 wire [3:0]  exu_complete_cause;
 wire        exu_complete_redir_valid;
 wire [31:0] exu_complete_redir_addr;
+wire        exu_wakeup_en;
+wire [5:0]  exu_wakeup_preg;
+
+// ─── LSU 完成信号 ──────────────────────────────────────────
+wire        lsu_ready;
+wire        lsu_complete_en;
+wire [4:0]  lsu_complete_idx;
+wire [31:0] lsu_complete_data;
+wire        lsu_complete_exc;
+wire [3:0]  lsu_complete_cause;
+wire        lsu_complete_rd_wen;
+wire [5:0]  lsu_complete_phys_rd;
+
+// ─── 合并后的 ROB complete ────────────────────────────────
+wire        rob_complete_en;
+wire [4:0]  rob_complete_idx;
+wire [31:0] rob_complete_data;
+wire        rob_complete_exc;
+wire [3:0]  rob_complete_cause;
+wire        rob_complete_redir_valid;
+wire [31:0] rob_complete_redir_addr;
 
 // ─── ROB commit ────────────────────────────────────────────
 wire        commit_valid /* verilator public_flat_rd */;
 rob_commit_t commit_pkt  /* verilator public_flat_rd */;
+wire [4:0]  rob_head_idx;
 
-// ─── icache invalidate（fence.i 由 ROB commit 触发）────────
+// ─── icache invalidate（fence.i 由 ROB flush/commit 触发）──
+// fence.i 走 redirect 路径产生 flush；同时在 flush 当拍 inval
 wire        icache_inval;
-assign icache_inval = commit_valid & commit_pkt.sys.fence_i;
+assign icache_inval = rob_flush;  // 保守：任何 flush 都 inval（含 fence.i / mispredict）
+// 更精确可改为：commit 时 fence_i 或 flush 且 head 是 fence
+// 当前单发射 + flush 清空前端，全量 inval 语义正确且简单
 
 // ================================================================
 //  IFU
@@ -202,7 +220,7 @@ IFU u_ifu (
     .bpu_update_valid_i (bpu_update_valid),
     .bpu_update_type_i  (bpu_update_btb_type),
     .bpu_update_taken_i (bpu_update_taken),
-    .bpu_update_pc_i    (32'b0),       // exu 未输出 bpu_update_pc，用 redirect_addr 近似
+    .bpu_update_pc_i    (32'b0),
     .bpu_update_target_i(bpu_update_target),
     .valid_o            (if2dec_valid),
     .data_o             (if2dec_data),
@@ -210,7 +228,7 @@ IFU u_ifu (
 );
 
 // ================================================================
-//  IDU（Instruction Decode Unit）
+//  IDU
 // ================================================================
 idu u_idu (
     .valid_i  (if2dec_valid),
@@ -222,90 +240,93 @@ idu u_idu (
 );
 
 // ================================================================
-//  Rename Stage（重命名 + 分发）
+//  Rename Stage
 // ================================================================
 rename_stage u_rename (
     .clk                (clock),
     .rst                (reset),
-    // 上游（来自 IDU）
     .decode_valid_i     (dec2ren_valid),
     .decode_pkt_i       (dec2ren_data),
     .decode_ready_o     (dec2ren_ready),
-    // 下游（到 IQ）
     .dispatch_valid_o   (ren2iq_valid),
     .dispatch_pkt_o     (ren2iq_pkt),
     .dispatch_ready_i   (ren2iq_ready),
-    // ROB 分配
     .rob_alloc_idx_i    (rob_alloc_idx),
     .rob_ready_i        (rob_alloc_ready),
     .rob_alloc_en_o     (rob_alloc_en),
     .rob_alloc_pkt_o    (rob_alloc_pkt),
-    // 提交（释放旧物理寄存器）
     .commit_valid_i     (commit_valid),
+    .commit_arch_rd_i   (commit_pkt.arch_rd),
+    .commit_phys_rd_i   (commit_pkt.phys_rd),
     .commit_preg_old_i  (commit_pkt.phys_rd_old),
-    // 唤醒广播
+    .commit_rd_wen_i    (commit_pkt.rd_wen),
     .wakeup_en_i        (wakeup_en),
     .wakeup_preg_i      (wakeup_preg),
-    // 全局 flush
     .flush_i            (pipeline_flush)
 );
 
 // ================================================================
-//  ROB（Reorder Buffer）
+//  ROB complete 合并（EXU 优先；单发射保证不同时 complete）
+// ================================================================
+// 单发射 + LSU 阻塞：同一拍最多一个 complete。仍用优先级 mux 防御。
+assign rob_complete_en          = exu_complete_en | lsu_complete_en;
+assign rob_complete_idx         = exu_complete_en ? exu_complete_idx  : lsu_complete_idx;
+assign rob_complete_data        = exu_complete_en ? exu_complete_data : lsu_complete_data;
+assign rob_complete_exc         = exu_complete_en ? exu_complete_exc  : lsu_complete_exc;
+assign rob_complete_cause       = exu_complete_en ? exu_complete_cause: lsu_complete_cause;
+assign rob_complete_redir_valid = exu_complete_en ? exu_complete_redir_valid : 1'b0;
+assign rob_complete_redir_addr  = exu_complete_en ? exu_complete_redir_addr  : 32'b0;
+
+// ================================================================
+//  ROB
 // ================================================================
 rob u_rob (
     .clk                        (clock),
     .rst                        (reset),
-    // 分配（来自 rename_stage）
     .alloc_en_i                 (rob_alloc_en),
     .alloc_pkt_i                (rob_alloc_pkt),
     .alloc_idx_o                (rob_alloc_idx),
     .alloc_ready_o              (rob_alloc_ready),
-    // 完成（来自 exu；lsu 完成合并后接入）
-    .complete_en_i              (exu_complete_en),
-    .complete_idx_i             (exu_complete_idx),
-    .complete_data_i            (exu_complete_data),
-    .complete_exception_i       (exu_complete_exc),
-    .complete_cause_i           (exu_complete_cause),
-    .complete_redirect_valid_i  (exu_complete_redir_valid),
-    .complete_redirect_addr_i   (exu_complete_redir_addr),
-    // 提交
+    .complete_en_i              (rob_complete_en),
+    .complete_idx_i             (rob_complete_idx),
+    .complete_data_i            (rob_complete_data),
+    .complete_exception_i       (rob_complete_exc),
+    .complete_cause_i           (rob_complete_cause),
+    .complete_redirect_valid_i  (rob_complete_redir_valid),
+    .complete_redirect_addr_i   (rob_complete_redir_addr),
     .commit_valid_o             (commit_valid),
     .commit_pkt_o               (commit_pkt),
-    // flush
     .flush_o                    (rob_flush),
-    .flush_pc_o                 (rob_flush_pc)
+    .flush_pc_o                 (rob_flush_pc),
+    .head_idx_o                 (rob_head_idx)
 );
 
 // ================================================================
 //  Issue Queue
 // ================================================================
 issue_queue u_iq (
-    .clk            (clock),
-    .rst            (reset),
-    // 分发（来自 rename_stage）
+    .clk                (clock),
+    .rst                (reset),
     .dispatch_en_i      (ren2iq_valid),
     .dispatch_pkt_i     (ren2iq_pkt),
     .dispatch_ready_o   (ren2iq_ready),
-    // 发射（到 physical_regfile 读取 + exu/lsu）
     .issue_valid_o      (iq_issue_valid),
     .issue_pkt_o        (iq_issue_pkt),
     .issue_ready_i      (iq_issue_ready),
     .issue_phys_rs1_o   (iq_phys_rs1),
     .issue_phys_rs2_o   (iq_phys_rs2),
-    // 唤醒
     .wakeup_en_i        (wakeup_en),
     .wakeup_preg_i      (wakeup_preg),
-    // flush
+    .rob_head_i         (rob_head_idx),
     .flush_i            (pipeline_flush)
 );
 
 // ================================================================
 //  Physical Register File
 // ================================================================
-// 读端口：issue_queue 发射时读取 rs1/rs2 数据，填入 issue_pkt.rs1_data/rs2_data
-// 写端口1：exu 完成时写（wakeup_en 同拍即写，无需等 commit）
-// 写端口2：commit 时如有异常/CSR 需要写（此时 phys_rd 是新映射的寄存器）
+// 写端口1：EXU complete
+// 写端口2：LSU complete（load）
+// commit 不写 PRF，只回收 freelist + 更新 AMT
 physical_regfile u_prf (
     .clk          (clock),
     .rst          (reset),
@@ -321,21 +342,23 @@ physical_regfile u_prf (
     .write_data2_i(prf_wdata2)
 );
 
-// EXU 完成时直接写物理寄存器堆（非 CSR/异常结果）
+// EXU 完成写 phys_rd
 assign prf_wen1   = exu_complete_en & iq_issue_pkt.rd_wen;
 assign prf_waddr1 = iq_issue_pkt.phys_rd;
 assign prf_wdata1 = exu_complete_data;
 
-// commit 时写 CSR/异常结果（rd_wen 有效时）
-assign prf_wen2   = commit_valid & commit_pkt.rd_wen;
-assign prf_waddr2 = commit_pkt.phys_rd_old;  // 旧物理寄存器（arch_rd 当前持有的）
-assign prf_wdata2 = commit_pkt.result;
+// LSU 完成写 phys_rd（仅 load）
+assign prf_wen2   = lsu_complete_en & lsu_complete_rd_wen;
+assign prf_waddr2 = lsu_complete_phys_rd;
+assign prf_wdata2 = lsu_complete_data;
+
+// 唤醒合并：EXU / LSU
+assign wakeup_en   = exu_wakeup_en | (lsu_complete_en & lsu_complete_rd_wen);
+assign wakeup_preg = exu_wakeup_en ? exu_wakeup_preg : lsu_complete_phys_rd;
 
 // ================================================================
-//  EXU（Execution Unit）
-//  issue_queue 发射的 pkt 中 rs1_data/rs2_data 需要从 PRF 填入
+//  分流：IQ → EXU / LSU
 // ================================================================
-// 将 PRF 读出的数据填入 issue pkt（issue_queue 输出的 pkt 里 rs1/rs2 是 0）
 issue2ex_pkt_t exu_input_pkt;
 always_comb begin
     exu_input_pkt          = iq_issue_pkt;
@@ -343,15 +366,21 @@ always_comb begin
     exu_input_pkt.rs2_data = prf_rs2_data;
 end
 
-assign iq_issue_ready = 1'b1;  // exu 总是 ready
+wire is_mem_inst = iq_issue_valid & (iq_issue_pkt.mem.cmd != MEM_NONE);
+wire is_exu_inst = iq_issue_valid & (iq_issue_pkt.mem.cmd == MEM_NONE);
 
+// 访存时由 LSU ready 反压；非访存 EXU 永远 ready
+assign iq_issue_ready = is_mem_inst ? lsu_ready : 1'b1;
+
+// ================================================================
+//  EXU
+// ================================================================
 exu u_exu (
     .clk                        (clock),
     .rst                        (reset),
-    .valid_i                    (iq_issue_valid),
+    .valid_i                    (is_exu_inst),
     .data_i                     (exu_input_pkt),
-    .ready_o                    (),  // 总是 ready，忽略
-    // 完成 → ROB
+    .ready_o                    (),
     .complete_en_o              (exu_complete_en),
     .complete_idx_o             (exu_complete_idx),
     .complete_data_o            (exu_complete_data),
@@ -359,13 +388,10 @@ exu u_exu (
     .complete_cause_o           (exu_complete_cause),
     .complete_redirect_valid_o  (exu_complete_redir_valid),
     .complete_redirect_addr_o   (exu_complete_redir_addr),
-    // 唤醒 → issue_queue + rename
-    .wakeup_en_o                (wakeup_en),
-    .wakeup_preg_o              (wakeup_preg),
-    // redirect → IFU
+    .wakeup_en_o                (exu_wakeup_en),
+    .wakeup_preg_o              (exu_wakeup_preg),
     .redirect_valid_o           (exu_redirect_valid),
     .redirect_addr_o            (exu_redirect_addr),
-    // BPU 更新
     .bpu_update_valid_o         (bpu_update_valid),
     .bpu_update_btb_type_o      (bpu_update_btb_type),
     .bpu_update_taken_o         (bpu_update_taken),
@@ -373,8 +399,7 @@ exu u_exu (
 );
 
 // ================================================================
-//  AXI 总线（IFU + LSU → arbiter → Xbar → io_master / CLINT）
-//  结构与旧版完全相同，直接复用
+//  LSU + AXI
 // ================================================================
 logic [31:0] LSU_ARADDR, LSU_AWADDR, LSU_WDATA, LSU_RDATA;
 logic [3:0]  LSU_ARID, LSU_AWID, LSU_RID, LSU_BID, LSU_WSTRB;
@@ -385,27 +410,19 @@ logic        LSU_ARVALID, LSU_ARREADY, LSU_RVALID, LSU_RLAST, LSU_RREADY;
 logic        LSU_AWVALID, LSU_AWREADY, LSU_WLAST, LSU_WVALID, LSU_WREADY;
 logic        LSU_BVALID, LSU_BREADY;
 
-// LSU（访存单元，初期阻塞，访存指令从 IQ 直接发射过来）
-// 注意：当前 issue_queue 只有一个发射端口，exu 和 lsu 复用同一条流水线。
-// 访存指令由 lsu 处理，非访存指令由 exu 处理。
-// 简化：exu 对非访存指令有效，lsu 对访存指令有效；两者共享 IQ 发射端口。
-// TODO: 后续改为 exu/lsu 各自独立发射端口（两条执行流水）
-
-// 访存指令路由到 lsu
-wire is_mem_inst = iq_issue_valid & (iq_issue_pkt.mem.cmd != MEM_NONE);
-
 lsu u_lsu (
     .clk    (clock), .rst    (reset),
     .valid_i(is_mem_inst),
-    .data_i (exu_input_pkt),  // 已填入 PRF 数据
-    .ready_o(),               // 用 rob_alloc_ready 控制整体反压
-    // lsu 完成信号（暂时 OR 进 ROB，后续需要仲裁）
-    .complete_en_o          (),   // TODO: 接入 ROB 第二完成端口
-    .complete_idx_o         (),
-    .complete_data_o        (),
-    .complete_exception_o   (),
-    .complete_cause_o       (),
-    // AXI
+    .data_i (exu_input_pkt),
+    .ready_o(lsu_ready),
+    .flush_i(pipeline_flush),
+    .complete_en_o          (lsu_complete_en),
+    .complete_idx_o         (lsu_complete_idx),
+    .complete_data_o        (lsu_complete_data),
+    .complete_exception_o   (lsu_complete_exc),
+    .complete_cause_o       (lsu_complete_cause),
+    .complete_rd_wen_o      (lsu_complete_rd_wen),
+    .complete_phys_rd_o     (lsu_complete_phys_rd),
     .ARADDR  (LSU_ARADDR),  .ARID    (LSU_ARID),    .ARLEN   (LSU_ARLEN),
     .ARSIZE  (LSU_ARSIZE),  .ARBURST (LSU_ARBURST), .ARVALID (LSU_ARVALID),
     .ARREADY (LSU_ARREADY), .RID     (LSU_RID),     .RDATA   (LSU_RDATA),
@@ -456,7 +473,6 @@ assign m0_rready  = IFU_RREADY;
 assign IFU_ARREADY= m0_arready;  assign IFU_RID    = m0_rid;
 assign IFU_RDATA  = m0_rdata;    assign IFU_RRESP  = m0_rresp;
 assign IFU_RLAST  = m0_rlast;    assign IFU_RVALID = m0_rvalid;
-// m0 写通道 tie-off
 assign m0_awid=4'b0; assign m0_awaddr=32'b0; assign m0_awlen=8'b0;
 assign m0_awsize=3'b0; assign m0_awburst=2'b0; assign m0_awvalid=1'b0;
 assign m0_wdata=32'b0; assign m0_wlast=1'b0;
@@ -542,7 +558,6 @@ logic        m_arvalid,m_arready,m_rvalid,m_rlast,m_rready;
 logic        m_awvalid,m_awready,m_wlast,m_wvalid,m_wready,m_bvalid,m_bready;
 logic [3:0]  m_wstrb;
 
-// arbiter slave → Xbar master（直连）
 assign m_arid=s_arid; assign m_araddr=s_araddr; assign m_arlen=s_arlen;
 assign m_arsize=s_arsize; assign m_arburst=s_arburst; assign m_arvalid=s_arvalid;
 assign s_arready=m_arready;
@@ -556,7 +571,6 @@ assign m_wvalid=s_wvalid; assign s_wready=m_wready;
 assign s_bid=m_bid; assign s_bresp=m_bresp; assign s_bvalid=m_bvalid;
 assign m_bready=s_bready;
 
-// Xbar S0 ↔ io_master
 logic [3:0]  s0_arid,s0_awid,s0_bid;     logic [31:0] s0_araddr,s0_awaddr,s0_wdata;
 logic [7:0]  s0_arlen,s0_awlen;          logic [2:0]  s0_arsize,s0_awsize;
 logic [1:0]  s0_arburst,s0_awburst;      logic [3:0]  s0_wstrb;
@@ -565,7 +579,6 @@ logic        s0_wlast,s0_wvalid,s0_wready,s0_bvalid,s0_bready;
 logic        s0_rready;
 logic [1:0]  s0_bresp;
 
-// Xbar S1 ↔ CLINT
 logic [3:0]  s1_arid,s1_awid,s1_bid,s1_rid;
 logic [31:0] s1_araddr,s1_awaddr,s1_wdata,s1_rdata;
 logic [7:0]  s1_arlen,s1_awlen;  logic [2:0] s1_arsize,s1_awsize;

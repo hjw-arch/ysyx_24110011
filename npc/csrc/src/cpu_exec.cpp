@@ -113,12 +113,35 @@ static commit_info_t get_commit_info() {
 // rename_map_table 维护 arch_reg → phys_reg 映射，但 Verilator 不直接暴露其内部数组，
 // 因此利用 ROB commit 时更新的方式：每次 commit rd_wen 时将结果写入 cpu.registerFile。
 // 对于 difftest，这样增量更新等同于完整同步（顺序提交保证）。
+// rob_commit_t 从 LSB 起：inst, pc, redirect(33), sys(5), rd_wen(1), result(32),
+// phys_rd_old(6), phys_rd(6), arch_rd(5), valid(1)
+// result lo = 32(inst)+32(pc)+33(redirect)+5(sys)+1(rd_wen) = 103
+// arch_rd lo = 103+32+6+6 = 147
+#define COMMIT_RESULT_LO  103
+#define COMMIT_RD_WEN_LO  102
+#define COMMIT_ARCH_RD_LO 147
+
+static uint32_t commit_result_u32() {
+	return WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_RESULT_LO);
+}
+
+static uint32_t commit_arch_rd_u32() {
+	return WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_ARCH_RD_LO) & 0x1fu;
+}
+
+static bool commit_rd_wen_b() {
+	return (WIDE_U32(CORE_SIG(commit_pkt).data(), COMMIT_RD_WEN_LO) & 0x1u) != 0;
+}
+
 static void sync_arch_state_on_commit() {
-	// commit_pkt.arch_rd 在 bits [145:141]，但 C++ 里直接读 commit_pkt 整体位宽较繁琐。
-	// 简化做法：每次 commit 后等一拍让 physical_regfile 写入稳定，再通过读 prf 接口同步。
-	// 实际上 OoO 中完整同步需要遍历 rename_map_table，这里用 commit 增量更新代替。
-	// TODO: 若 difftest 失败，考虑暴露 rename_map_table 接口做完整同步。
+	// 顺序提交：用 commit 结果增量更新架构寄存器镜像，供 ebreak/difftest
 	cpu.pc = COMMIT_PC();
+	if (commit_rd_wen_b()) {
+		uint32_t rd = commit_arch_rd_u32();
+		if (rd != 0) {
+			cpu.registerFile[rd] = commit_result_u32();
+		}
+	}
 }
 
 static void exec_cycle() {
@@ -142,17 +165,34 @@ static void exec_cycle() {
 
 static commit_info_t cpu_exec_one() {
 	uint64_t retire_cycles = 0;
+	const uint64_t TIMEOUT_CYCLES = 100000;
 
 	while (!COMMIT_VALID()) {
 		exec_cycle();
 		retire_cycles++;
+		if (retire_cycles >= TIMEOUT_CYCLES) {
+			fprintf(stderr,
+				"[OoO TIMEOUT] no commit for %llu cycles\n"
+				"  cycle_times=%llu dynamic_insts=%llu\n"
+				"  rob_flush=%d exu_redirect_valid=%d\n"
+				"  last cpu.pc=0x%08x\n",
+				(unsigned long long)retire_cycles,
+				(unsigned long long)cycle_times,
+				(unsigned long long)dynamic_insts,
+				(int)CORE_SIG(rob_flush),
+				(int)CORE_SIG(exu_redirect_valid),
+				cpu.pc);
+			npc_set_state(NPC_ABORT, cpu.pc, -1);
+			return {.pc = cpu.pc, .inst = 0, .skip_ref = false};
+		}
 	}
 
+	// 在消费 commit 拍之前采样 commit 包（同步寄存器镜像）
 	commit_info_t commit = get_commit_info();
 	commit.skip_ref = wbu_skip_ref;
+	sync_arch_state_on_commit();
 	exec_cycle();   // 消费这个 commit 拍
 	retire_cycles++;
-	sync_arch_state_on_commit();
 	dynamic_insts++;
 	IFDEF(CONFIG_PERFORMANCE_COUNTER, PerformanceCounter_record_commit(commit.pc, commit.inst, retire_cycles));
 	return commit;

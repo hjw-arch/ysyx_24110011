@@ -27,6 +27,7 @@ logic            commit_valid_o;
 rob_commit_t     commit_pkt_o;
 logic            flush_o;
 logic [31:0]     flush_pc_o;
+logic [4:0]      head_idx_o;
 
 rob dut (.*);
 

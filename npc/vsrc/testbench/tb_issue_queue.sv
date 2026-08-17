@@ -20,6 +20,7 @@ logic [5:0]        issue_phys_rs1_o;
 logic [5:0]        issue_phys_rs2_o;
 logic              wakeup_en_i;
 logic [5:0]        wakeup_preg_i;
+logic [4:0]        rob_head_i;
 logic              flush_i;
 
 issue_queue dut (.*);
@@ -40,6 +41,7 @@ endtask
 task automatic dispatch_ready_instr(input rob_idx_t rob_idx, input [5:0] phys_rd);
     dispatch_en_i              = 1;
     dispatch_pkt_i.rob_idx     = rob_idx;
+    dispatch_pkt_i.pred_taken = 1'b0;
     dispatch_pkt_i.pc          = 32'h1000 + {27'b0, rob_idx} * 4;
     dispatch_pkt_i.inst        = 32'h0;
     dispatch_pkt_i.phys_rs1    = 6'd0;   // p0 永远就绪
@@ -59,6 +61,7 @@ endtask
 task automatic dispatch_waiting_instr(input rob_idx_t rob_idx, input [5:0] phys_rs1, phys_rd);
     dispatch_en_i              = 1;
     dispatch_pkt_i.rob_idx     = rob_idx;
+    dispatch_pkt_i.pred_taken = 1'b0;
     dispatch_pkt_i.pc          = 32'h2000 + {27'b0, rob_idx} * 4;
     dispatch_pkt_i.inst        = 32'h0;
     dispatch_pkt_i.phys_rs1    = phys_rs1;
@@ -80,6 +83,7 @@ initial begin
     dispatch_en_i = 0; dispatch_pkt_i = '0;
     issue_ready_i = 1;
     wakeup_en_i = 0; wakeup_preg_i = 0;
+    rob_head_i = 5'd0;
     flush_i = 0;
     tick; tick; rst = 0; tick;
 
@@ -128,6 +132,7 @@ initial begin
     dispatch_pkt_i.rs1_ready = 1'b1;
     dispatch_pkt_i.rs2_ready = 1'b1;
     dispatch_pkt_i.phys_rd   = 6'd37;
+    dispatch_pkt_i.pred_taken = 1'b0;
     dispatch_pkt_i.pc        = 32'h3000;
     dispatch_pkt_i.inst      = '0;
     dispatch_pkt_i.ex        = '0;

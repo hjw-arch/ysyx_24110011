@@ -116,9 +116,10 @@ wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
 wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) & |rd_addr_raw;
 
 // ── 输出：decode_pkt_t ──
-assign data_o.pc        = pc;
-assign data_o.inst      = inst;
-assign data_o.rs1_arch  = rs1_addr_raw;
+assign data_o.pc         = pc;
+assign data_o.inst       = inst;
+assign data_o.pred_taken = data_i.pred_taken;
+assign data_o.rs1_arch   = rs1_addr_raw;
 assign data_o.rs2_arch  = rs2_addr_raw;
 assign data_o.rd_arch   = rd_addr_raw;
 assign data_o.rs1_used  = rs1_used;

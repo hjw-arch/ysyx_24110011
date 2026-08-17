@@ -12,9 +12,20 @@ logic [5:0] rs1_phys_o, rs2_phys_o, rd_phys_old_o;
 logic       update_en_i;
 logic [4:0] update_arch_i;
 logic [5:0] update_phys_i;
+logic       commit_en_i;
+logic [4:0] commit_arch_i;
+logic [5:0] commit_phys_i;
 logic       flush_i;
+logic [5:0] amt_snapshot_o [0:31];
 
-rename_map_table dut (.*);
+rename_map_table dut (
+    .clk(clk), .rst(rst),
+    .rs1_arch_i(rs1_arch_i), .rs2_arch_i(rs2_arch_i), .rd_arch_i(rd_arch_i),
+    .rs1_phys_o(rs1_phys_o), .rs2_phys_o(rs2_phys_o), .rd_phys_old_o(rd_phys_old_o),
+    .update_en_i(update_en_i), .update_arch_i(update_arch_i), .update_phys_i(update_phys_i),
+    .commit_en_i(commit_en_i), .commit_arch_i(commit_arch_i), .commit_phys_i(commit_phys_i),
+    .flush_i(flush_i), .amt_snapshot_o(amt_snapshot_o)
+);
 
 int pass_cnt = 0, fail_cnt = 0;
 
@@ -27,7 +38,8 @@ task automatic tick; @(posedge clk); #1; endtask
 
 initial begin
     rs1_arch_i = 0; rs2_arch_i = 0; rd_arch_i = 0;
-    update_en_i = 0; update_arch_i = 0; update_phys_i = 0; flush_i = 0;
+    update_en_i = 0; update_arch_i = 0; update_phys_i = 0;
+    commit_en_i = 0; commit_arch_i = 0; commit_phys_i = 0; flush_i = 0;
     tick; tick; rst = 0; tick;
 
     // ── 测试1：初始恒等映射 ──
@@ -75,12 +87,30 @@ initial begin
     chk6("x10 → p42", 6'd42, rs1_phys_o);
     chk6("x11 → p43", 6'd43, rs2_phys_o);
 
-    // ── 测试5：flush 恢复恒等映射 ──
+    // ── 测试5：无 commit 时 flush 恢复恒等映射（AMT 仍是恒等）──
     $display("\n[TEST5] flush 恢复恒等映射");
     flush_i = 1; tick; flush_i = 0; tick;
     rs1_arch_i = 5'd5; rs2_arch_i = 5'd10; #1;
     chk6("flush后 x5 → p5",  6'd5,  rs1_phys_o);
     chk6("flush后 x10 → p10", 6'd10, rs2_phys_o);
+
+    // ── 测试6：commit 更新 AMT 后 flush 恢复到已提交映射 ──
+    $display("\n[TEST6] commit + flush 恢复 AMT");
+    // 推测更新 x7→p55
+    update_en_i = 1; update_arch_i = 5'd7; update_phys_i = 6'd55;
+    tick; update_en_i = 0;
+    // 提交 x7→p55
+    commit_en_i = 1; commit_arch_i = 5'd7; commit_phys_i = 6'd55;
+    tick; commit_en_i = 0;
+    // 再推测更新 x7→p60
+    update_en_i = 1; update_arch_i = 5'd7; update_phys_i = 6'd60;
+    tick; update_en_i = 0;
+    rs1_arch_i = 5'd7; #1;
+    chk6("推测映射 x7 → p60", 6'd60, rs1_phys_o);
+    // flush 应回到 AMT 的 p55
+    flush_i = 1; tick; flush_i = 0; tick;
+    rs1_arch_i = 5'd7; #1;
+    chk6("flush后 x7 → p55(AMT)", 6'd55, rs1_phys_o);
 
     tick;
     $display("\n===== rename_map_table: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

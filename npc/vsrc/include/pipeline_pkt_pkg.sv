@@ -288,7 +288,8 @@ typedef struct packed {
 typedef struct packed {
     logic           valid;
     logic   [4:0]   arch_rd;
-    phys_reg_t      phys_rd_old;
+    phys_reg_t      phys_rd;        // 提交时 arch_rd 对应的新物理寄存器
+    phys_reg_t      phys_rd_old;    // 提交时释放的旧物理寄存器
     logic   [31:0]  result;
     logic           rd_wen;
     sys_ctrl_t      sys;
@@ -301,6 +302,7 @@ typedef struct packed {
 typedef struct packed {
     logic   [31:0]  pc;
     logic   [31:0]  inst;
+    logic           pred_taken;
     logic   [4:0]   rs1_arch;
     logic   [4:0]   rs2_arch;
     logic   [4:0]   rd_arch;
@@ -317,6 +319,7 @@ typedef struct packed {
 typedef struct packed {
     logic   [31:0]  pc;
     logic   [31:0]  inst;
+    logic           pred_taken;
     rob_idx_t       rob_idx;
     phys_reg_t      phys_rs1;
     phys_reg_t      phys_rs2;

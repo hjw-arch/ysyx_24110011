@@ -28,6 +28,7 @@ import pipeline_pkt_pkg::*;
     input               fence_i_i,
     input   [31:0]      imm_i,
 
+    input               flush_i,
     output              ready_o,
 
     // 输出信号
@@ -36,6 +37,8 @@ import pipeline_pkt_pkg::*;
     output logic [31:0] complete_data_o,
     output logic        complete_exception_o,
     output logic [3:0]  complete_cause_o,
+    output logic        complete_rd_wen_o,
+    output logic [5:0]  complete_phys_rd_o,
 
     // AXI 接口
     output logic [31:0] ARADDR,
@@ -111,11 +114,14 @@ lsu u_lsu (
     .valid_i                (valid_i),
     .data_i                 (data_packed),
     .ready_o                (ready_o),
+    .flush_i                (flush_i),
     .complete_en_o          (complete_en_o),
     .complete_idx_o         (complete_idx_o),
     .complete_data_o        (complete_data_o),
     .complete_exception_o   (complete_exception_o),
     .complete_cause_o       (complete_cause_o),
+    .complete_rd_wen_o      (complete_rd_wen_o),
+    .complete_phys_rd_o     (complete_phys_rd_o),
     .ARADDR                 (ARADDR),
     .ARID                   (ARID),
     .ARLEN                  (ARLEN),

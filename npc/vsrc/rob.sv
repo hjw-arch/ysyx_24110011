@@ -33,7 +33,10 @@ import pipeline_pkt_pkg::*;
 
     // ── 刷新接口（提交时发现异常或分支误预测）──
     output              flush_o,
-    output      [31:0]  flush_pc_o
+    output      [31:0]  flush_pc_o,
+
+    // ── 当前 head（供 IQ 年龄比较）──
+    output      [4:0]   head_idx_o
 );
 
 // ROB 项
@@ -59,21 +62,26 @@ rob_entry_t rob_q [0:ROB_SIZE-1];
 logic [4:0] rob_head, rob_tail;
 logic [5:0] rob_count;  // 多一位，避免满判断溢出
 
+assign head_idx_o = rob_head;
+
 // ── 分配逻辑（组合）──
 assign alloc_ready_o = (rob_count < ROB_SIZE[5:0]);
 assign alloc_idx_o   = rob_tail;
 
 // ── 提交条件（组合）──
-// 头部指令有效、已完成、无异常、无分支误预测
+// 头部指令有效、已完成、无异常即可提交。
+// 分支误预测到达 head 时仍提交该指令本身（JAL 需要写链路寄存器），
+// 同时 flush 冲掉 younger 指令并重定向前端。
 wire head_valid    = rob_q[rob_head].valid;
 wire head_complete = rob_q[rob_head].complete;
 wire head_excpt    = rob_q[rob_head].exception;
 wire head_redir    = rob_q[rob_head].redirect_valid;
 
-assign commit_valid_o = head_valid & head_complete & !head_excpt & !head_redir;
+assign commit_valid_o = head_valid & head_complete & !head_excpt;
 
 assign commit_pkt_o.valid       = commit_valid_o;
 assign commit_pkt_o.arch_rd     = rob_q[rob_head].arch_rd;
+assign commit_pkt_o.phys_rd     = rob_q[rob_head].phys_rd;
 assign commit_pkt_o.phys_rd_old = rob_q[rob_head].phys_rd_old;
 assign commit_pkt_o.result      = rob_q[rob_head].result;
 assign commit_pkt_o.rd_wen      = rob_q[rob_head].rd_wen;
@@ -85,7 +93,7 @@ assign commit_pkt_o.inst        = rob_q[rob_head].inst;
 // ── 刷新：异常或分支误预测到达头部时触发 ──
 assign flush_o  = head_valid & head_complete & (head_excpt | head_redir);
 assign flush_pc_o = head_redir ? rob_q[rob_head].redirect_addr
-                               : rob_q[rob_head].pc + 4; // 异常后续 PC 由 CSR/WBU 提供，此处暂简化
+                               : rob_q[rob_head].pc + 4;
 
 // ── 时序逻辑 ──
 wire alloc_fire  = alloc_en_i & alloc_ready_o;
@@ -100,6 +108,7 @@ always_ff @(posedge clk) begin
             rob_q[i].valid <= 1'b0;
     end else if (flush_o) begin
         // 刷新：清空整个 ROB
+        // 注意：产生 flush 的 head 项本身也不再保留（已在 redirect/exception 路径消费）
         rob_head  <= '0;
         rob_tail  <= '0;
         rob_count <= '0;

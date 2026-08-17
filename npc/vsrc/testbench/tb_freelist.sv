@@ -13,8 +13,18 @@ logic [5:0] alloc_preg_o;
 logic       free_en_i;
 logic [5:0] free_preg_i;
 logic       flush_i;
+logic [5:0] amt_snapshot_i [0:31];
 
-freelist dut (.*);
+freelist dut (
+    .clk(clk), .rst(rst),
+    .alloc_req_i(alloc_req_i),
+    .alloc_valid_o(alloc_valid_o),
+    .alloc_preg_o(alloc_preg_o),
+    .free_en_i(free_en_i),
+    .free_preg_i(free_preg_i),
+    .flush_i(flush_i),
+    .amt_snapshot_i(amt_snapshot_i)
+);
 
 int pass_cnt = 0, fail_cnt = 0;
 
@@ -32,6 +42,7 @@ task automatic tick; @(posedge clk); #1; endtask
 
 initial begin
     alloc_req_i = 0; free_en_i = 0; free_preg_i = 0; flush_i = 0;
+    for (int i = 0; i < 32; i++) amt_snapshot_i[i] = 6'(i);
     tick; tick; rst = 0; tick;
 
     // ── 测试1：初始状态，p32 是第一个可用寄存器 ──
@@ -64,15 +75,16 @@ initial begin
     chk6("释放后分配到 p32", 6'd32, alloc_preg_o);
     @(posedge clk); alloc_req_i = 0; #1;
 
-    // ── 测试4：不释放架构寄存器区域 (p0-p31) ──
-    $display("\n[TEST4] 不能释放 p0-p31");
-    free_en_i = 1; free_preg_i = 6'd5; // 尝试释放 p5（架构区）
+    // ── 测试4：p0 不可释放；p1-p31 首次提交后可回收 ──
+    $display("\n[TEST4] p0 不可释放，p5 可回收");
+    free_en_i = 1; free_preg_i = 6'd0; // p0 必须忽略
     tick; free_en_i = 0;
-    // 空闲列表不应变化；p32 应仍可用（刚才分配了p32，现在再分配应该是p33+）
+    free_en_i = 1; free_preg_i = 6'd5; // 释放原恒等映射 p5
+    tick; free_en_i = 0;
+    // p5 应成为最低空闲号
     alloc_req_i = 1; #1;
-    // 此时已分配了 p32(test1), p33(test1), p34(test2), p32(test3)
-    // 空闲的应从 p35 开始（p32 刚在 test3 被分配掉）
-    chk ("p0-p31释放被忽略后仍有空闲", 1'b1, alloc_valid_o);
+    chk ("释放 p5 后仍有空闲", 1'b1, alloc_valid_o);
+    chk6("释放 p5 后分配到 p5", 6'd5, alloc_preg_o);
     @(posedge clk); alloc_req_i = 0; #1;
 
     // ── 测试5：flush 恢复初始状态 ──
