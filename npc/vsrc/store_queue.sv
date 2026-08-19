@@ -160,36 +160,51 @@ generate
     end
 endgenerate
 
-// 自幼而老：tail-1, tail-2, ...；首个重叠项决定 hit 或 stall
-logic        cam_hit_r, cam_stall_r;
-logic [31:0] cam_data_r;
+// 自幼而老选择首个重叠项。以 tail 为基准计算环形年龄，再用三级树选择，
+// 避免动态下标与串行优先链落到 load→PRF 的关键路径上。
+typedef struct packed {
+    logic             valid;
+    logic [PTR_W-1:0] age;
+    logic             full;
+    logic [31:0]      data;
+} cam_candidate_t;
+
+// ponytail: SQ 固定为 8 项；只有修改 SQ_DEPTH 时才泛化选择树。
+cam_candidate_t cam_l0 [0:7];
+cam_candidate_t cam_l1 [0:3];
+cam_candidate_t cam_l2 [0:1];
+cam_candidate_t cam_l3;
+
+function automatic cam_candidate_t select_younger(
+    input cam_candidate_t lhs,
+    input cam_candidate_t rhs
+);
+    if (!lhs.valid)
+        select_younger = rhs;
+    else if (!rhs.valid || (lhs.age <= rhs.age))
+        select_younger = lhs;
+    else
+        select_younger = rhs;
+endfunction
 
 always_comb begin
-    cam_hit_r   = 1'b0;
-    cam_stall_r = 1'b0;
-    cam_data_r  = 32'b0;
-    for (int k = 0; k < SQ_DEPTH; k++) begin
-        // idx = tail_ptr - 1 - k
-        logic [PTR_W-1:0] idx;
-        logic             in_range;
-        logic             taken;
-        idx      = tail_ptr - PTR_W'(1) - PTR_W'(k);
-        in_range = (k < int'(count));
-        taken    = cam_hit_r | cam_stall_r;
-        if (in_range && !taken && ent_overlap[idx]) begin
-            if (ent_full[idx]) begin
-                cam_hit_r  = 1'b1;
-                cam_data_r = ent_fwd[idx];
-            end else begin
-                cam_stall_r = 1'b1;
-            end
-        end
+    for (int i = 0; i < SQ_DEPTH; i++) begin
+        cam_l0[i].valid = ent_overlap[i];
+        cam_l0[i].age   = tail_ptr - PTR_W'(1) - PTR_W'(i);
+        cam_l0[i].full  = ent_full[i];
+        cam_l0[i].data  = ent_fwd[i];
     end
+
+    for (int i = 0; i < 4; i++)
+        cam_l1[i] = select_younger(cam_l0[2*i], cam_l0[2*i+1]);
+    for (int i = 0; i < 2; i++)
+        cam_l2[i] = select_younger(cam_l1[2*i], cam_l1[2*i+1]);
+    cam_l3 = select_younger(cam_l2[0], cam_l2[1]);
 end
 
-assign cam_hit_o   = cam_hit_r;
-assign cam_stall_o = cam_stall_r;
-assign cam_data_o  = cam_data_r;
+assign cam_hit_o   = cam_l3.valid & cam_l3.full;
+assign cam_stall_o = cam_l3.valid & ~cam_l3.full;
+assign cam_data_o  = cam_l3.data;
 
 always_ff @(posedge clk) begin
     if (rst) begin

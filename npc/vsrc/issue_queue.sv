@@ -47,7 +47,7 @@ typedef struct packed {
     logic           valid;
     rob_idx_t       rob_idx;
     logic   [31:0]  pc;
-    logic   [31:0]  inst;
+    logic   [2:0]   funct3;
     logic           pred_taken;
     phys_reg_t      phys_rs1;
     phys_reg_t      phys_rs2;
@@ -119,19 +119,46 @@ endgenerate
 // ── 发射选择：issuable 中年龄最小 ──
 logic [2:0] selected_idx;
 logic       found_ready;
-logic [4:0] min_age;
+
+typedef struct packed {
+    logic       valid;
+    logic [4:0] age;
+    logic [2:0] idx;
+} select_candidate_t;
+
+// ponytail: IQ 固定为 8 项；只有修改 IQ_SIZE 时才泛化选择树。
+select_candidate_t select_l0 [0:7];
+select_candidate_t select_l1 [0:3];
+select_candidate_t select_l2 [0:1];
+select_candidate_t select_l3;
+
+function automatic select_candidate_t select_older(
+    input select_candidate_t lhs,
+    input select_candidate_t rhs
+);
+    if (!lhs.valid)
+        select_older = rhs;
+    else if (!rhs.valid || (lhs.age <= rhs.age))
+        select_older = lhs;
+    else
+        select_older = rhs;
+endfunction
 
 always_comb begin
-    found_ready  = 1'b0;
-    selected_idx = '0;
-    min_age      = '1;
     for (int i = 0; i < IQ_SIZE; i++) begin
-        if (ent_issuable[i] && (!found_ready || (ent_age[i] < min_age))) begin
-            min_age      = ent_age[i];
-            selected_idx = 3'(i);
-            found_ready  = 1'b1;
-        end
+        select_l0[i].valid = ent_issuable[i];
+        select_l0[i].age   = ent_age[i];
+        select_l0[i].idx   = 3'(i);
     end
+
+    for (int i = 0; i < 4; i++)
+        select_l1[i] = select_older(select_l0[2*i], select_l0[2*i+1]);
+    for (int i = 0; i < 2; i++)
+        select_l2[i] = select_older(select_l1[2*i], select_l1[2*i+1]);
+    select_l3 = select_older(select_l2[0], select_l2[1]);
+
+    found_ready  = select_l3.valid;
+    selected_idx = found_ready ? select_l3.idx : '0;
 end
 
 wire issue_fire    = found_ready & issue_ready_i;
@@ -142,7 +169,8 @@ assign issue_phys_rs1_o = iq[selected_idx].phys_rs1;
 assign issue_phys_rs2_o = iq[selected_idx].phys_rs2;
 
 assign issue_pkt_o.pc         = iq[selected_idx].pc;
-assign issue_pkt_o.inst       = iq[selected_idx].inst;
+// EXU/LSU 只使用 inst[14:12]；完整指令已在分派时独立写入 ROB。
+assign issue_pkt_o.inst       = {17'b0, iq[selected_idx].funct3, 12'b0};
 assign issue_pkt_o.rob_idx    = iq[selected_idx].rob_idx;
 assign issue_pkt_o.phys_rd    = iq[selected_idx].phys_rd;
 assign issue_pkt_o.rs1_data   = '0;
@@ -156,7 +184,7 @@ assign issue_pkt_o.mem        = iq[selected_idx].mem;
 assign issue_pkt_o.sys        = iq[selected_idx].sys;
 assign issue_pkt_o.imm        = iq[selected_idx].imm;
 
-// ── 空闲槽：优先编码器；同拍 issue 槽可复用 ──
+// ── 空闲槽：仅选择周期开始时已空闲的槽，避免 dispatch_ready 反向依赖 issue ──
 logic [2:0] alloc_idx;
 logic       alloc_has_slot;
 
@@ -164,7 +192,7 @@ always_comb begin
     alloc_has_slot = 1'b0;
     alloc_idx      = '0;
     for (int i = 0; i < IQ_SIZE; i++) begin
-        if ((!iq[i].valid || (3'(i) == selected_idx && issue_fire)) && !alloc_has_slot) begin
+        if (!iq[i].valid && !alloc_has_slot) begin
             alloc_idx      = 3'(i);
             alloc_has_slot = 1'b1;
         end
@@ -198,7 +226,7 @@ always_ff @(posedge clk) begin
             iq[alloc_idx].valid      <= 1'b1;
             iq[alloc_idx].rob_idx    <= dispatch_pkt_i.rob_idx;
             iq[alloc_idx].pc         <= dispatch_pkt_i.pc;
-            iq[alloc_idx].inst       <= dispatch_pkt_i.inst;
+            iq[alloc_idx].funct3     <= dispatch_pkt_i.inst[14:12];
             iq[alloc_idx].pred_taken <= dispatch_pkt_i.pred_taken;
             iq[alloc_idx].phys_rs1   <= dispatch_pkt_i.phys_rs1;
             iq[alloc_idx].phys_rs2   <= dispatch_pkt_i.phys_rs2;

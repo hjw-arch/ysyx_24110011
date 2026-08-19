@@ -1,9 +1,8 @@
-// `define SOC 	1
-
+// `define SOC  1
 
 `ifdef SOC
-	//ifdef
-	
+    //ifdef
+
 `else
 //else
 
@@ -53,11 +52,11 @@ module SRAM(
 
 /*************************************** 回复无关信号 ******************************************/
 // 读通道
-assign RID 		= 		ARID;
-assign RLAST 	= 		1'b1;
+assign RID   = ARID;
+assign RLAST = 1'b1;
 
 // 写通道
-assign BID 		= 		AWID;
+assign BID = AWID;
 
 /**************************************** mtime **************************************************/
 
@@ -82,9 +81,8 @@ end
 import "DPI-C" function int pmem_read(input int addr, input int len);
 import "DPI-C" function void pmem_write(input int addr, input int data, input int len);
 
-
 // 读通道
-typedef enum logic [2 : 0] { 
+typedef enum logic [2 : 0] {
     R_IDLE = 3'b001,
     R_ACTIVE = 3'b010,
     R_WAIT_RREADY = 3'b100
@@ -114,21 +112,19 @@ always_comb begin
 end
 
 assign ARREADY = r_state == R_IDLE;
-assign RVALID = (~is_rcnt_not_zero & r_state == R_ACTIVE) | (r_state == R_WAIT_RREADY); // // 这里的r_state == R_ACTIVE可能没什么必要，除非0周期读数
+assign RVALID  = (~is_rcnt_not_zero & r_state == R_ACTIVE) | (r_state == R_WAIT_RREADY); // // 这里的r_state == R_ACTIVE可能没什么必要，除非0周期读数
 
 reg [31 : 0] raddr_buf;
 always_ff @(posedge clk) begin
     raddr_buf <= ARVALID & ARREADY ? ARADDR : raddr_buf;
 end
 
-
 assign RDATA = ~is_rcnt_not_zero ? pmem_read(raddr_buf, {28'b0, 4'b1111}) : 32'b0;
 assign RRESP = 2'b00;
 
-
 // 写通道
 
-typedef enum logic [4 : 0] { 
+typedef enum logic [4 : 0] {
     W_IDLE = 5'b00001,
     W_WAIT_ADDR = 5'b00010,
     W_WAIT_DATA = 5'b00100,
@@ -176,8 +172,8 @@ always_ff @(posedge clk) begin
 end
 
 assign AWREADY = w_state == W_IDLE | w_state == W_WAIT_ADDR;
-assign WREADY = w_state == W_IDLE | w_state == W_WAIT_DATA;
-assign BVALID = w_state == W_ACTIVE & ~is_wcnt_not_zero | w_state == W_WAIT_BREADY;
+assign WREADY  = w_state == W_IDLE | w_state == W_WAIT_DATA;
+assign BVALID  = w_state == W_ACTIVE & ~is_wcnt_not_zero | w_state == W_WAIT_BREADY;
 
 always_comb begin
     if (~is_wcnt_not_zero && w_state == W_ACTIVE) begin
@@ -187,8 +183,6 @@ end
 
 assign BRESP = 2'b00;
 
-
 endmodule
-
 
 `endif

@@ -161,7 +161,7 @@ initial begin
 
     // ── 测试3：ROB 满时 alloc_ready=0 ──
     $display("\n[TEST3] ROB 满后拒绝分配");
-    for (int i = 0; i < 32; i++) begin
+    for (int i = 0; i < 16; i++) begin
         if (alloc_ready_o)
             alloc_instr(32'h2000 + i*4, 5'd0, 6'd0, 6'd0, 1'b0);
         else

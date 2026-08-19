@@ -1,17 +1,17 @@
 module registerfile #(
     parameter bit RV32E = 1'b1
 )(
-    input 			clk,
-    input 			wen,
-    
-    input	[4:0]	rd_addr,
-    input	[31:0]	rd_data,
+    input           clk,
+    input           wen,
 
-    input	[4:0]	rs1_addr,
-    output	[31:0]	rs1_data,
+    input   [4:0]   rd_addr,
+    input   [31:0]  rd_data,
 
-    input	[4:0]	rs2_addr,
-    output	[31:0]	rs2_data
+    input   [4:0]   rs1_addr,
+    output  [31:0]  rs1_data,
+
+    input   [4:0]   rs2_addr,
+    output  [31:0]  rs2_data
 );
 
 localparam int REG_NUM   = RV32E ? 16 : 32;

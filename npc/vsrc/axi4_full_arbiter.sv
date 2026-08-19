@@ -136,7 +136,7 @@ assign will_done[0] = (s_rvalid & m0_rready & s_rlast) | (s_bvalid & m0_bready);
 assign will_done[1] = (s_rvalid & m1_rready & s_rlast) | (s_bvalid & m1_bready);
 
 // 状态机定义
-typedef enum logic [2:0] { 
+typedef enum logic [2:0] {
     IDLE      = 3'b001,
     M0_ACTIVE = 3'b010,
     M1_ACTIVE = 3'b100
@@ -211,14 +211,12 @@ assign m1_arready = (state == M1_ACTIVE) ? s_arready : 1'b0;
 assign m1_awready = (state == M1_ACTIVE) ? s_awready : 1'b0;
 assign m1_wready  = (state == M1_ACTIVE) ? s_wready  : 1'b0;
 
-
-
 // to slave
 // valid信号生成
 // 要注意时序，对于握手信号，只有仲裁选择之后才能接通，当然，如果能够提前一个周期转换状态，也可以像下面那些信号一样默认一个
 assign s_arvalid = (state == M1_ACTIVE) & m1_arvalid | (state == M0_ACTIVE) & m0_arvalid;
 assign s_awvalid = (state == M1_ACTIVE) & m1_awvalid |  (state == M0_ACTIVE) & m0_awvalid;
-assign s_wvalid = (state == M1_ACTIVE) & m1_wvalid | (state == M0_ACTIVE) & m0_wvalid;
+assign s_wvalid  = (state == M1_ACTIVE) & m1_wvalid | (state == M0_ACTIVE) & m0_wvalid;
 
 // ready信号生成
 assign s_rready = (state == M1_ACTIVE) ? m1_rready : m0_rready;
@@ -240,22 +238,19 @@ assign s_awsize  = (state == M1_ACTIVE) ? m1_awsize  : m0_awsize;
 assign s_awburst = (state == M1_ACTIVE) ? m1_awburst : m0_awburst;
 
 // 写数据通道路由
-assign s_wdata  = (state == M1_ACTIVE) ? m1_wdata  : m0_wdata;
-assign s_wstrb  = (state == M1_ACTIVE) ? m1_wstrb  : m0_wstrb;
-assign s_wlast  = (state == M1_ACTIVE) ? m1_wlast  : m0_wlast;
-
+assign s_wdata = (state == M1_ACTIVE) ? m1_wdata  : m0_wdata;
+assign s_wstrb = (state == M1_ACTIVE) ? m1_wstrb  : m0_wstrb;
+assign s_wlast = (state == M1_ACTIVE) ? m1_wlast  : m0_wlast;
 
 // always_ff @(posedge clk) begin
-// 	if(state == M0_ACTIVE && s_araddr > 32'ha0000000) begin
-// 		$display("AR Channel: ARADDR = 0x%08x\nARLEN = %d\nARSIZE = %d\nARVALID = %d\nARREADY = %d\n", s_araddr, s_arlen, s_arsize, s_arvalid, s_arready);
-// 		$display("R Channel: RDATA = 0x%08x\nRRESP = %d\nRLAST = %d\nRVALID = %d\nRREADY = %d\n", s_rdata, s_rresp, s_rlast, s_rvalid, s_rready);
-// 		$display("AW Channel: AWADDR = 0x%08x\nAWLEN = %d\nAWSIZE = %d\nAWVALID = %d\nAWREADY = %d\n", s_awaddr, s_awlen, s_awsize, s_awvalid, s_awready);
-// 		$display("W Channel: WDATA = 0x%08x\nWSTRB = %d\nWLAST = %d\nWVALID = %d\nWREADY = %d\n", s_wdata, s_wstrb, s_wlast, s_wvalid, s_wready);
-// 		$display("B Channel: BRESP = 0x%08x\nBVALID = %d\nBREADY = %d\n\n\n", s_bresp, s_bvalid, s_bready);
-// 	end
+//  if(state == M0_ACTIVE && s_araddr > 32'ha0000000) begin
+//      $display("AR Channel: ARADDR = 0x%08x\nARLEN = %d\nARSIZE = %d\nARVALID = %d\nARREADY = %d\n", s_araddr, s_arlen, s_arsize, s_arvalid, s_arready);
+//      $display("R Channel: RDATA = 0x%08x\nRRESP = %d\nRLAST = %d\nRVALID = %d\nRREADY = %d\n", s_rdata, s_rresp, s_rlast, s_rvalid, s_rready);
+//      $display("AW Channel: AWADDR = 0x%08x\nAWLEN = %d\nAWSIZE = %d\nAWVALID = %d\nAWREADY = %d\n", s_awaddr, s_awlen, s_awsize, s_awvalid, s_awready);
+//      $display("W Channel: WDATA = 0x%08x\nWSTRB = %d\nWLAST = %d\nWVALID = %d\nWREADY = %d\n", s_wdata, s_wstrb, s_wlast, s_wvalid, s_wready);
+//      $display("B Channel: BRESP = 0x%08x\nBVALID = %d\nBREADY = %d\n\n\n", s_bresp, s_bvalid, s_bready);
+//  end
 // end
-
-
 
 endmodule
 

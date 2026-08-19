@@ -1,5 +1,5 @@
 // 发射队列功能测试
-// 覆盖：分派、唤醒、年龄优先选择、同拍 issue+dispatch 复用槽、flush
+// 覆盖：分派、唤醒、年龄优先选择、同拍 issue+dispatch、满队列气泡、flush
 
 `include "../include/pipeline_pkt_pkg.sv"
 
@@ -45,7 +45,7 @@ task automatic dispatch_ready_instr(input rob_idx_t rob_idx, input [5:0] phys_rd
     dispatch_pkt_i.rob_idx     = rob_idx;
     dispatch_pkt_i.pred_taken = 1'b0;
     dispatch_pkt_i.pc          = 32'h1000 + {27'b0, rob_idx} * 4;
-    dispatch_pkt_i.inst        = 32'h0;
+    dispatch_pkt_i.inst        = 32'h0000_5000;
     dispatch_pkt_i.phys_rs1    = 6'd0;   // p0 永远就绪
     dispatch_pkt_i.phys_rs2    = 6'd0;
     dispatch_pkt_i.phys_rd     = phys_rd;
@@ -96,6 +96,7 @@ initial begin
     dispatch_ready_instr(5'd10, 6'd32);
     chk("分派后 issue_valid=1", 1'b1, issue_valid_o);
     chk5("发射的 rob_idx=10", 5'd10, issue_pkt_o.rob_idx);
+    chk5("仅保存的 funct3 保持不变", 5'b0_0101, {2'b0, issue_pkt_o.inst[14:12]});
     // 等一拍，指令被发射并从队列移除
     issue_ready_i = 1; tick;
     chk("发射后队列为空 issue_valid=0", 1'b0, issue_valid_o);
@@ -121,8 +122,8 @@ initial begin
     chk5("第二条发射 rob_idx=7", 5'd7, issue_pkt_o.rob_idx);
     tick;
 
-    // ── 测试4：同拍 issue + dispatch，队列大小不变（槽复用）──
-    $display("\n[TEST4] 同拍 issue+dispatch 槽复用");
+    // ── 测试4：有空闲槽时，同拍 issue + dispatch，队列大小不变 ──
+    $display("\n[TEST4] 同拍 issue+dispatch");
     // 先填满至1项
     dispatch_ready_instr(5'd1, 6'd36);
     issue_ready_i = 0; #1; // 暂停发射，观察队列有1条
@@ -169,6 +170,11 @@ initial begin
     end
     #1;
     chk("队列满后 dispatch_ready=0", 1'b0, dispatch_ready_o);
+    issue_ready_i = 1;
+    #1;
+    chk("满队列不组合复用当拍 issue 槽", 1'b0, dispatch_ready_o);
+    tick;
+    chk("发射后下一拍恢复 dispatch_ready", 1'b1, dispatch_ready_o);
     // 清空：flush
     flush_i = 1; tick; flush_i = 0; #1;
     issue_ready_i = 1;

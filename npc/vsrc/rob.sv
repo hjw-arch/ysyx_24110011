@@ -1,6 +1,6 @@
 // 重排序缓冲（Reorder Buffer）
 // 维护程序序，支持乱序完成、顺序提交、精确异常和分支误预测恢复
-// 循环队列，32 项，单发射单提交
+// 循环队列，16 项，单发射单提交
 // 双路 complete：EXU 与 LSU 可同拍写回
 // store 提交需 store_commit_ready_i（SQ drain 完成）
 
@@ -9,7 +9,7 @@
 module rob
 import pipeline_pkt_pkg::*;
 #(
-    parameter int ROB_SIZE = 32
+    parameter int ROB_SIZE = 16
 )(
     input               clk,
     input               rst,
@@ -81,8 +81,13 @@ typedef struct packed {
 
 rob_entry_t rob_q [0:ROB_SIZE-1];
 
+localparam int SLOT_WIDTH = $clog2(ROB_SIZE);
+
+// sequence ID 保持 5 位供 IQ 做模 32 年龄比较，低位仅用于寻址 16 个存储槽。
 logic [4:0] rob_head, rob_tail;
 logic [5:0] rob_count;
+wire [SLOT_WIDTH-1:0] rob_head_slot = rob_head[SLOT_WIDTH-1:0];
+wire [SLOT_WIDTH-1:0] rob_tail_slot = rob_tail[SLOT_WIDTH-1:0];
 
 assign head_idx_o = rob_head;
 
@@ -90,11 +95,11 @@ assign alloc_ready_o = (rob_count < ROB_SIZE[5:0]);
 assign alloc_idx_o   = rob_tail;
 
 // ── 提交条件 ──
-wire head_valid    = rob_q[rob_head].valid;
-wire head_complete = rob_q[rob_head].complete;
-wire head_excpt    = rob_q[rob_head].exception;
-wire head_redir    = rob_q[rob_head].redirect_valid;
-wire head_store    = rob_q[rob_head].is_store;
+wire head_valid    = rob_q[rob_head_slot].valid;
+wire head_complete = rob_q[rob_head_slot].complete;
+wire head_excpt    = rob_q[rob_head_slot].exception;
+wire head_redir    = rob_q[rob_head_slot].redirect_valid;
+wire head_store    = rob_q[rob_head_slot].is_store;
 
 // store 无异常：等 SQ drain；有异常则不写内存，直接处理异常
 wire store_block = head_store & ~head_excpt & ~store_commit_ready_i;
@@ -109,31 +114,32 @@ assign store_commit_rob_idx_o = rob_head;
 assign commit_valid_o = head_ready & ~head_trap;
 
 assign commit_pkt_o.valid       = commit_valid_o;
-assign commit_pkt_o.arch_rd     = rob_q[rob_head].arch_rd;
-assign commit_pkt_o.phys_rd     = rob_q[rob_head].phys_rd;
-assign commit_pkt_o.phys_rd_old = rob_q[rob_head].phys_rd_old;
-assign commit_pkt_o.result      = rob_q[rob_head].result;
-assign commit_pkt_o.rd_wen      = rob_q[rob_head].rd_wen;
-assign commit_pkt_o.is_store    = rob_q[rob_head].is_store;
-assign commit_pkt_o.sys         = rob_q[rob_head].sys;
+assign commit_pkt_o.arch_rd     = rob_q[rob_head_slot].arch_rd;
+assign commit_pkt_o.phys_rd     = rob_q[rob_head_slot].phys_rd;
+assign commit_pkt_o.phys_rd_old = rob_q[rob_head_slot].phys_rd_old;
+assign commit_pkt_o.result      = rob_q[rob_head_slot].result;
+assign commit_pkt_o.rd_wen      = rob_q[rob_head_slot].rd_wen;
+assign commit_pkt_o.is_store    = rob_q[rob_head_slot].is_store;
+assign commit_pkt_o.sys         = rob_q[rob_head_slot].sys;
 assign commit_pkt_o.redirect    = '0;
-assign commit_pkt_o.pc          = rob_q[rob_head].pc;
-assign commit_pkt_o.inst        = rob_q[rob_head].inst;
+assign commit_pkt_o.pc          = rob_q[rob_head_slot].pc;
+assign commit_pkt_o.inst        = rob_q[rob_head_slot].inst;
 
 // 异常/误预测 head：flush；trap 目标由顶层用 mtvec 覆盖
 assign flush_o    = head_ready & (head_trap | head_redir);
-assign flush_pc_o = head_redir ? rob_q[rob_head].redirect_addr
-                               : rob_q[rob_head].pc + 4;
+assign flush_pc_o = head_redir ? rob_q[rob_head_slot].redirect_addr
+                               : rob_q[rob_head_slot].pc + 4;
 
 assign exc_commit_valid_o = head_ready & head_trap;
-assign exc_commit_cause_o = head_excpt ? rob_q[rob_head].exception_cause
+assign exc_commit_cause_o = head_excpt ? rob_q[rob_head_slot].exception_cause
                                        : CAUSE_STORE_ACCESS_FAULT;
-assign exc_commit_pc_o    = rob_q[rob_head].pc;
+assign exc_commit_pc_o    = rob_q[rob_head_slot].pc;
 
 // 退休：正常 commit 或 flush（异常/误预测 head 也前进）
 // 注意：flush 时整表清空，head 归零；仅 commit 时 head++
 wire alloc_fire  = alloc_en_i & alloc_ready_o;
 wire commit_fire = commit_valid_o; // flush 走整表清，不单独 head++
+wire retire_fire = commit_fire | flush_o;
 
 always_ff @(posedge clk) begin
     if (rst) begin
@@ -151,48 +157,48 @@ always_ff @(posedge clk) begin
             rob_q[i].valid <= 1'b0;
     end else begin
         if (alloc_fire) begin
-            rob_q[rob_tail].valid           <= 1'b1;
+            rob_q[rob_tail_slot].valid           <= 1'b1;
             // 译码期异常：分配即 complete，到 head 直接 trap
-            rob_q[rob_tail].complete        <= alloc_pkt_i.exception;
-            rob_q[rob_tail].pc              <= alloc_pkt_i.pc;
-            rob_q[rob_tail].inst            <= alloc_pkt_i.inst;
-            rob_q[rob_tail].arch_rd         <= alloc_pkt_i.arch_rd;
-            rob_q[rob_tail].phys_rd         <= alloc_pkt_i.phys_rd;
-            rob_q[rob_tail].phys_rd_old     <= alloc_pkt_i.phys_rd_old;
-            rob_q[rob_tail].rd_wen          <= alloc_pkt_i.rd_wen;
-            rob_q[rob_tail].is_store        <= alloc_pkt_i.is_store;
-            rob_q[rob_tail].exception       <= alloc_pkt_i.exception;
-            rob_q[rob_tail].exception_cause <= alloc_pkt_i.exception_cause;
-            rob_q[rob_tail].redirect_valid  <= 1'b0;
-            rob_q[rob_tail].redirect_addr   <= '0;
-            rob_q[rob_tail].result          <= '0;
-            rob_q[rob_tail].sys             <= alloc_pkt_i.sys;
+            rob_q[rob_tail_slot].complete        <= alloc_pkt_i.exception;
+            rob_q[rob_tail_slot].pc              <= alloc_pkt_i.pc;
+            rob_q[rob_tail_slot].inst            <= alloc_pkt_i.inst;
+            rob_q[rob_tail_slot].arch_rd         <= alloc_pkt_i.arch_rd;
+            rob_q[rob_tail_slot].phys_rd         <= alloc_pkt_i.phys_rd;
+            rob_q[rob_tail_slot].phys_rd_old     <= alloc_pkt_i.phys_rd_old;
+            rob_q[rob_tail_slot].rd_wen          <= alloc_pkt_i.rd_wen;
+            rob_q[rob_tail_slot].is_store        <= alloc_pkt_i.is_store;
+            rob_q[rob_tail_slot].exception       <= alloc_pkt_i.exception;
+            rob_q[rob_tail_slot].exception_cause <= alloc_pkt_i.exception_cause;
+            rob_q[rob_tail_slot].redirect_valid  <= 1'b0;
+            rob_q[rob_tail_slot].redirect_addr   <= '0;
+            rob_q[rob_tail_slot].result          <= '0;
+            rob_q[rob_tail_slot].sys             <= alloc_pkt_i.sys;
             rob_tail <= rob_tail + 5'd1;
         end
 
         if (complete_en1_i) begin
-            rob_q[complete_idx1_i].complete        <= 1'b1;
-            rob_q[complete_idx1_i].result          <= complete_data1_i;
-            rob_q[complete_idx1_i].exception       <= complete_exception1_i;
-            rob_q[complete_idx1_i].exception_cause <= complete_cause1_i;
-            rob_q[complete_idx1_i].redirect_valid  <= complete_redirect_valid1_i;
-            rob_q[complete_idx1_i].redirect_addr   <= complete_redirect_addr1_i;
+            rob_q[complete_idx1_i[SLOT_WIDTH-1:0]].complete        <= 1'b1;
+            rob_q[complete_idx1_i[SLOT_WIDTH-1:0]].result          <= complete_data1_i;
+            rob_q[complete_idx1_i[SLOT_WIDTH-1:0]].exception       <= complete_exception1_i;
+            rob_q[complete_idx1_i[SLOT_WIDTH-1:0]].exception_cause <= complete_cause1_i;
+            rob_q[complete_idx1_i[SLOT_WIDTH-1:0]].redirect_valid  <= complete_redirect_valid1_i;
+            rob_q[complete_idx1_i[SLOT_WIDTH-1:0]].redirect_addr   <= complete_redirect_addr1_i;
         end
         if (complete_en2_i) begin
-            rob_q[complete_idx2_i].complete        <= 1'b1;
-            rob_q[complete_idx2_i].result          <= complete_data2_i;
-            rob_q[complete_idx2_i].exception       <= complete_exception2_i;
-            rob_q[complete_idx2_i].exception_cause <= complete_cause2_i;
-            rob_q[complete_idx2_i].redirect_valid  <= complete_redirect_valid2_i;
-            rob_q[complete_idx2_i].redirect_addr   <= complete_redirect_addr2_i;
+            rob_q[complete_idx2_i[SLOT_WIDTH-1:0]].complete        <= 1'b1;
+            rob_q[complete_idx2_i[SLOT_WIDTH-1:0]].result          <= complete_data2_i;
+            rob_q[complete_idx2_i[SLOT_WIDTH-1:0]].exception       <= complete_exception2_i;
+            rob_q[complete_idx2_i[SLOT_WIDTH-1:0]].exception_cause <= complete_cause2_i;
+            rob_q[complete_idx2_i[SLOT_WIDTH-1:0]].redirect_valid  <= complete_redirect_valid2_i;
+            rob_q[complete_idx2_i[SLOT_WIDTH-1:0]].redirect_addr   <= complete_redirect_addr2_i;
         end
 
         if (commit_valid_o) begin
-            rob_q[rob_head].valid <= 1'b0;
+            rob_q[rob_head_slot].valid <= 1'b0;
             rob_head <= rob_head + 5'd1;
         end
 
-        rob_count <= rob_count + 6'(alloc_fire) - 6'(commit_fire | flush_o);
+        rob_count <= rob_count + 6'(alloc_fire) - 6'(retire_fire);
     end
 end
 

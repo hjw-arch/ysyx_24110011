@@ -39,7 +39,7 @@
 | 档 | 内容 | 状态 |
 |----|------|------|
 | **Tier1** | BPU 真实 PC、legacy 隔离、定向 TB、设计文档 | ✅ |
-| **Tier2** | 精确异常；Store Queue（commit 后 AXI 写）；PRF 3W | ✅ |
+| **Tier2** | 精确异常；Store Queue（commit 后 AXI 写）；PRF 2R2W（CSR 并快写） | ✅ |
 | **Tier3-A** | SQ CAM STLF（全覆盖）；部分重叠 stall；无重叠可 AXI load | ✅ |
 | **工程清理** | commit 仿真契约展平；OoO 轻量 PMC；接口/注释；Makefile 去 axi4_lite include | ✅ |
 
@@ -93,15 +93,19 @@ T3-A 收益来自 **load 不必等 SQ 全空**（同字 STLF / 不同字 AXI）�
 ## 3. 流水线组织
 
 ```
-IFU → idu → rename_stage → issue_queue → ┬→ exu  ── complete1 ──┐
-                                         │                      ├→ ROB → commit
-                                         └→ lsu/SQ ─ complete2 ─┘      ├→ AMT / freelist
-                                                                       ├→ CSR / trap / fence.i
-                                                                       ├→ SQ drain（store AXI）
-                                                                       └→ redirect / icache_inval
+IFU → idu → rename_stage → issue_queue → issue_reg → PRF read → execute_reg
+                                                                    ├→ exu    ─ complete1 ─┐
+                                                                    └→ lsu/SQ ─ complete2 ─┤→ ROB → commit
+                                                                                             ├→ AMT / freelist
+                                                                                             ├→ CSR / trap / fence.i
+                                                                                             ├→ SQ drain（store AXI）
+                                                                                             └→ redirect / icache_inval
                               physical_regfile ← complete(EXU/LD) + commit(CSR) 写
                               wakeup ×2 → rename busy_table + IQ
 ```
+
+`issue_reg` 切断 IQ 选择路径；`execute_reg` 锁存 PRF 读数，切断异步 PRF 读取与
+EXU/LSU/写回路径。两级均使用 ready/valid，在下游阻塞时保持数据，flush 时清 valid。
 
 访存（Tier3-A）：
 
@@ -115,7 +119,7 @@ IQ older_mem 序不变
 
 | 参数 | 值 | 说明 |
 |------|----|------|
-| ROB_SIZE | 32 | 重排序缓冲 |
+| ROB_SIZE | 16 | 重排序缓冲；保留 5-bit sequence ID，低 4 位寻址存储槽 |
 | IQ_SIZE | 8 | 发射队列 |
 | SQ_DEPTH | 8 | Store Queue |
 | NUM_PHYS_REGS | 64 | 物理寄存器（p0 = x0 恒 0） |
@@ -142,7 +146,8 @@ IQ older_mem 序不变
 
 ### 5.1 ROB（`rob.sv`）
 
-- 循环队列；双路 complete（EXU / LSU 可同拍）。  
+- 16 项循环队列；5-bit sequence ID 保持模 32 年龄语义，低 4 位寻址存储槽。
+- 双路 complete（EXU / LSU 可同拍）。
 - store head：无异常时等 `store_commit_ready`（SQ drain 完成）才退休。  
 - `commit_valid = head_ready & ~head_trap`；trap/redirect → `flush_o`。  
 - 译码期 illegal：alloc 即 complete+exception，到 head 走 trap。  
@@ -182,7 +187,7 @@ IQ older_mem 序不变
   - `ld_mask`：B `0001<<addr[1:0]`，H `0011<<{addr[1],0}`，W `1111`；  
   - 全覆盖：`(st_strb & ld_mask) == ld_mask` → `cam_hit` + 低位对齐 `cam_data`；  
   - 部分重叠：`cam_stall`；  
-  - 扫描 **尾→头（幼→老）**，首个重叠项决定 hit/stall。  
+  - 以 tail 为基准计算环形年龄，用三级平衡选择树找 **最幼** 重叠项，决定 hit/stall。
   - IQ mem 序保证 SQ 内均为更老 store，无需 rob_idx 比较。  
   - 前递字节摆放与 master WDATA/rdata 一致。  
 - `empty_o`：仅 TB/调试；**load 门控不再依赖 empty**。
@@ -214,8 +219,14 @@ IQ older_mem 序不变
 
 ### 5.6 物理寄存器堆（`physical_regfile.sv`）
 
-- **2R3W**：port1=EXU complete；port2=LSU load complete；port3=CSR 提交写 rd（port3 优先）。  
-- p0 硬 0。
+- **2R2W**（快、慢写回各占一个写端口，CSR 不单独占口）：
+  - **W1 快写回**：EXU complete 或 CSR commit 写 rd，两者互斥。
+  - **W2 慢写回**：LSU load complete。
+- CSR 提交写 W1 时，`execute_stage_ready` 阻塞非访存指令，保证 `exu_prf_wen` 与
+  `csr_prf_wen` 不会同时有效；访存指令仍可发射并使用 W2。
+- 唤醒信号与实际写端口一一对应：`wakeup_en1` 对应 W1，`wakeup_en2` 对应 W2。
+- 同址优先级：W2 > W1。p0 硬 0。
+- 复位仅清零初始架构映射 p1–p31；p32–p63 分配后先写回再唤醒，不增加复位门控。
 
 ---
 
@@ -355,7 +366,7 @@ timeout 60 npc/build/obj-npc/Vysyx -b -d ./npc/libnemu.so \
 | 档 | 内容 | 状态 |
 |----|------|------|
 | Tier1 | BPU pc、legacy、TB、文档 | ✅ |
-| Tier2 | 异常 + SQ commit 写 + PRF 3W | ✅ |
+| Tier2 | 异常 + SQ commit 写 + PRF 2R2W | ✅ |
 | Tier3-A | CAM STLF + 非空 SQ 下 AXI load | ✅ |
 | 工程清理 | 仿真契约、PMC、注释 | ✅ |
 | Tier3-B（=A1/A2） | 访存 issue 放松 | 📋 推荐下一步 |

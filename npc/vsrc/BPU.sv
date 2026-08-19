@@ -57,45 +57,40 @@ assign btb_update_valid = update_valid_i & (update_type_i | update_taken_i);
 assign bht_update_valid = update_valid_i & ~update_type_i;
 
 BTB #(
-    .PC_WIDTH   (ADDR_WIDTH),
-    .ENTRIES    (BTB_ENTRIES)
+    .PC_WIDTH (ADDR_WIDTH),
+    .ENTRIES  (BTB_ENTRIES)
 ) u_BTB (
-    .clk                (clk),
-    .rst                (rst),
-    .lookup_pc_i        (pc_i),
-    .lookup_hit_o       (btb_lookup_hit),
-    .lookup_target_o    (btb_lookup_target),
-    .lookup_type_o      (btb_lookup_type),
-    .update_valid_i     (btb_update_valid),
-    .update_type_i      (update_type_i),
-    .update_pc_i        (update_pc_i),
-    .update_target_i    (update_target_i),
-    .inval_i            (inval_i)
+    .clk             (clk),
+    .rst             (rst),
+    .lookup_pc_i     (pc_i),
+    .lookup_hit_o    (btb_lookup_hit),
+    .lookup_target_o (btb_lookup_target),
+    .lookup_type_o   (btb_lookup_type),
+    .update_valid_i  (btb_update_valid),
+    .update_type_i   (update_type_i),
+    .update_pc_i     (update_pc_i),
+    .update_target_i (update_target_i),
+    .inval_i         (inval_i)
 );
 
 BHT #(
-    .PC_WIDTH   (ADDR_WIDTH),
-    .ENTRIES    (BHT_ENTRIES)
+    .PC_WIDTH (ADDR_WIDTH),
+    .ENTRIES  (BHT_ENTRIES)
 ) u_BHT (
-    .clk                (clk),
-    .rst                (rst),
-    .lookup_valid_i     (bht_lookup_valid),
-    .lookup_pc_i        (pc_i),
-    .lookup_taken_o     (bht_lookup_taken),
-    .update_valid_i     (bht_update_valid),
-    .update_pc_i        (update_pc_i),
-    .update_taken_i     (update_taken_i)
+    .clk            (clk),
+    .rst            (rst),
+    .lookup_valid_i (bht_lookup_valid),
+    .lookup_pc_i    (pc_i),
+    .lookup_taken_o (bht_lookup_taken),
+    .update_valid_i (bht_update_valid),
+    .update_pc_i    (update_pc_i),
+    .update_taken_i (update_taken_i)
 );
 
 assign pred_taken_o = btb_lookup_hit & (btb_lookup_type | bht_lookup_taken);
 assign pred_pc_o    = btb_lookup_target;
 
-
-
 endmodule
-
-
-
 
 module BTB #(
     parameter   PC_WIDTH    =   32,
@@ -137,9 +132,8 @@ logic   [ENTRIES-1:0]                   rr_ptr_q;           // round-robin repla
 logic   [TAG_WIDTH-1:0]     lookup_tag;
 logic   [TAG_WIDTH-1:0]     update_tag;
 
-assign  lookup_tag  =   lookup_pc_i[PC_WIDTH-1:2];
-assign  update_tag  =   update_pc_i[PC_WIDTH-1:2];
-
+assign lookup_tag = lookup_pc_i[PC_WIDTH-1:2];
+assign update_tag = update_pc_i[PC_WIDTH-1:2];
 
 // ============================================================
 // lookup compare
@@ -147,16 +141,16 @@ assign  update_tag  =   update_pc_i[PC_WIDTH-1:2];
 logic                   lookup_enable;
 logic   [ENTRIES-1:0]   lookup_match;
 
-assign  lookup_enable   =   ~inval_i;
+assign lookup_enable = ~inval_i;
 
 genvar  i;
 generate
     for (i = 0; i < ENTRIES; i = i + 1) begin : gen_lookup_compare
         assign  lookup_match[i] = lookup_enable & valid_q[i] & (tag_q[i] == lookup_tag);
-    end 
+    end
 endgenerate
 
-assign  lookup_hit_o    =   |lookup_match;
+assign lookup_hit_o = |lookup_match;
 
 Mux1H #(
     .WIDTH   (PC_WIDTH),
@@ -167,7 +161,7 @@ Mux1H #(
     .data_o (lookup_target_o)
 );
 
-assign  lookup_type_o   =   |(lookup_match & br_type_q);
+assign lookup_type_o = |(lookup_match & br_type_q);
 
 // ============================================================
 // update compare
@@ -180,7 +174,7 @@ logic               update_en;
 logic [ENTRIES-1:0] update_match;
 logic               update_hit;
 
-assign  update_en   =   update_valid_i & ~inval_i;
+assign update_en = update_valid_i & ~inval_i;
 
 generate
     for (i = 0; i < ENTRIES; i = i + 1) begin : gen_update_match
@@ -189,7 +183,6 @@ generate
 endgenerate
 
 assign update_hit = |update_match;
-
 
 // one-hot round-robin pointer
 logic [ENTRIES-1:0]                 rr_ptr_next;
@@ -205,56 +198,50 @@ endgenerate
 logic                   new_alloc;
 logic [ENTRIES-1:0]     write_oh;
 
-assign  new_alloc   =   update_en & ~update_hit;
-assign  write_oh    =   update_match | ({ENTRIES{new_alloc}} & rr_ptr_q);   // 如果 hit，write_oh = update_match, 如果 miss，write_oh = rr_ptr_q
-
+assign new_alloc = update_en & ~update_hit;
+assign write_oh  = update_match | ({ENTRIES{new_alloc}} & rr_ptr_q);   // 如果 hit，write_oh = update_match, 如果 miss，write_oh = rr_ptr_q
 
 always_ff @(posedge clk) begin
     if (rst | inval_i) begin
         valid_q <= '0;
     end else begin
         valid_q <= write_oh | valid_q;
-    end 
-end 
-
+    end
+end
 
 always_ff @(posedge clk) begin
     for (int k = 0; k < ENTRIES; k = k + 1) begin
         if (write_oh[k]) begin
             tag_q[k] <= update_tag;
-        end 
-    end 
-end 
+        end
+    end
+end
 
 always_ff @(posedge clk) begin
     for (int k = 0; k < ENTRIES; k = k + 1) begin
         if (write_oh[k]) begin
             target_q[k] <= update_target_i;
-        end 
-    end 
-end 
+        end
+    end
+end
 
 always_ff @(posedge clk) begin
     for (int k = 0; k < ENTRIES; k = k + 1) begin
         if (write_oh[k]) begin
             br_type_q[k] <= update_type_i;
-        end 
-    end 
-end 
+        end
+    end
+end
 
 always_ff @(posedge clk) begin
     if (rst | inval_i) begin
         rr_ptr_q <= RR_PTR_INIT;
     end else begin
         rr_ptr_q <= new_alloc ? rr_ptr_next : rr_ptr_q;
-    end 
-end 
-
+    end
+end
 
 endmodule
-
-
-
 
 module BHT # (
     parameter   PC_WIDTH    =   32,
@@ -266,8 +253,7 @@ module BHT # (
     input   logic                       lookup_valid_i,
     input   logic   [PC_WIDTH-1:0]      lookup_pc_i,
     output  logic                       lookup_taken_o,
-    
-    
+
     input   logic                       update_valid_i,
     input   logic   [PC_WIDTH-1:0]      update_pc_i,
     input   logic                       update_taken_i
@@ -276,7 +262,6 @@ module BHT # (
 localparam      INIT_STATE      =   2'b01;
 localparam      INDEX_W         =   $clog2(ENTRIES);
 
-
 logic   [1:0]   bht_q   [0:ENTRIES-1];      // bht 本体
 
 /*****************************************************
@@ -284,23 +269,21 @@ logic   [1:0]   bht_q   [0:ENTRIES-1];      // bht 本体
 ******************************************************/
 
 wire    [INDEX_W-1:0]   lookup_idx;
-assign  lookup_idx  =   lookup_pc_i[2+INDEX_W-1:2];
-
+assign lookup_idx = lookup_pc_i[2+INDEX_W-1:2];
 
 wire    [1:0]   lookup_counter;
-assign  lookup_counter  =   bht_q[lookup_idx];
-assign  lookup_taken_o  =   lookup_counter[1] & lookup_valid_i;         // 几乎没有时序压力
-
+assign lookup_counter = bht_q[lookup_idx];
+assign lookup_taken_o = lookup_counter[1] & lookup_valid_i;         // 几乎没有时序压力
 
 /*****************************************************
 **  更新
 ******************************************************/
 
 wire    [INDEX_W-1:0]   update_idx;
-assign  update_idx  =   update_pc_i[2+INDEX_W-1:2];
+assign update_idx = update_pc_i[2+INDEX_W-1:2];
 
 wire    [1:0]   update_counter_old;
-assign  update_counter_old  =   bht_q[update_idx];
+assign update_counter_old = bht_q[update_idx];
 
 wire    [1:0]   update_counter_next;
 
@@ -313,22 +296,22 @@ wire    [1:0]   update_counter_next;
 
 wire    c1;
 wire    c0;
-assign  c1  =   update_counter_old[1];
-assign  c0  =   update_counter_old[0];
+assign c1 = update_counter_old[1];
+assign c0 = update_counter_old[0];
 
 wire    [1:0]   update_counter_next_taken;
 wire    [1:0]   update_counter_next_not_taken;
 
-assign  update_counter_next_taken[1]    =   c1 | c0;
-assign  update_counter_next_taken[0]    =   c1 | ~c0;
-assign  update_counter_next_not_taken[1]    =   c1 & c0;
-assign  update_counter_next_not_taken[0]    =   c1 & ~c0;
+assign update_counter_next_taken[1]     = c1 | c0;
+assign update_counter_next_taken[0]     = c1 | ~c0;
+assign update_counter_next_not_taken[1] = c1 & c0;
+assign update_counter_next_not_taken[0] = c1 & ~c0;
 
-assign  update_counter_next     =   update_taken_i ? update_counter_next_taken : update_counter_next_not_taken;
+assign update_counter_next = update_taken_i ? update_counter_next_taken : update_counter_next_not_taken;
 
 integer k;
 
-always_ff @(posedge clk) begin 
+always_ff @(posedge clk) begin
     if (rst) begin
         for (k = 0; k < ENTRIES; k = k + 1) begin
             bht_q[k] <= INIT_STATE;
@@ -340,10 +323,7 @@ always_ff @(posedge clk) begin
     end
 end
 
-
 endmodule
-
-
 
 module Mux1H #(
     parameter int WIDTH   = 32,

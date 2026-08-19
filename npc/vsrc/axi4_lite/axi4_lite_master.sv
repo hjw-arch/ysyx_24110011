@@ -45,13 +45,13 @@ module axi4_lite_master (
 );
 
 // 五级流水线的时候可以不需要R_WAIT_ARREADY
-typedef enum logic [2 : 0] { 
+typedef enum logic [2 : 0] {
     R_IDLE,
     R_WAIT_ARREADY,
     R_WAIT_RDATA
 } r_state_t;
 
-typedef enum logic [4 : 0] { 
+typedef enum logic [4 : 0] {
     W_IDLE,
     W_WAIT_ALLREADY,
     W_WAIT_AWREADY,
@@ -63,7 +63,7 @@ r_state_t r_state, next_r_state;
 w_state_t w_state, next_w_state;
 
 always_ff @(posedge clk) begin
-    r_state <= rst ? R_IDLE : next_r_state;    
+    r_state <= rst ? R_IDLE : next_r_state;
 end
 
 always_comb begin
@@ -78,22 +78,21 @@ always_comb begin
             next_r_state = ARREADY ? R_WAIT_RDATA : r_state;
         R_WAIT_RDATA:
             next_r_state = RVALID & RREADY ? R_IDLE : r_state;
-        default: 
+        default:
             next_r_state = r_state;
     endcase
 end
 
 assign ARADDR = raddr;
-assign rdata = RDATA;
-assign rresp = RRESP;
+assign rdata  = RDATA;
+assign rresp  = RRESP;
 
 assign ARVALID = r_state == R_IDLE & ren | r_state == R_WAIT_ARREADY;
-assign RREADY = r_state == R_WAIT_RDATA & user_ready;
-
+assign RREADY  = r_state == R_WAIT_RDATA & user_ready;
 
 // 写通道
 always_ff @(posedge clk) begin
-    w_state <= rst ? W_IDLE : next_w_state;    
+    w_state <= rst ? W_IDLE : next_w_state;
 end
 
 always_comb begin
@@ -119,19 +118,19 @@ always_comb begin
             next_w_state = WREADY ? W_WAIT_BRESP : w_state;
         W_WAIT_BRESP:
             next_w_state = BVALID & BREADY ? W_IDLE : w_state;
-        default: 
+        default:
             next_w_state = w_state;
     endcase
 end
 
 assign AWADDR = waddr;
-assign WDATA = wdata;
-assign WSTRB = wmask;
-assign wresp = BRESP;
+assign WDATA  = wdata;
+assign WSTRB  = wmask;
+assign wresp  = BRESP;
 
 assign AWVALID = w_state == W_IDLE & wen | w_state == W_WAIT_AWREADY | w_state == W_WAIT_ALLREADY;
-assign WVALID = w_state == W_IDLE & wen | w_state == W_WAIT_WREADY | w_state == W_WAIT_ALLREADY;
-assign BREADY = w_state == W_WAIT_BRESP & user_ready;
+assign WVALID  = w_state == W_IDLE & wen | w_state == W_WAIT_WREADY | w_state == W_WAIT_ALLREADY;
+assign BREADY  = w_state == W_WAIT_BRESP & user_ready;
 
 // 这里可能需要修改，根据user的需要，可能需要修改成rdone和wdone
 assign done = RVALID & RREADY | BVALID & BREADY;    // 其实是will done

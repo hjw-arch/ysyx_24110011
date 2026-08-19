@@ -30,16 +30,31 @@ module freelist #(
 logic [NUM_PHYS_REGS-1:0] free_list;
 
 // ── 低位优先编码器：找编号最小的空闲寄存器（p0 永不分配）──
+localparam int GROUP_SIZE  = 8;
+localparam int GROUP_COUNT = NUM_PHYS_REGS / GROUP_SIZE;
+
 logic [5:0] next_free_preg;
 logic       has_free;
+logic [GROUP_COUNT-1:0] group_has_free;
+logic [2:0]             group_first [0:GROUP_COUNT-1];
 
 always_comb begin
+    group_has_free = '0;
+    for (int g = 0; g < GROUP_COUNT; g++) begin
+        group_first[g] = '0;
+        for (int b = 0; b < GROUP_SIZE; b++) begin
+            if (free_list[g * GROUP_SIZE + b] && !group_has_free[g]) begin
+                group_has_free[g] = 1'b1;
+                group_first[g]    = 3'(b);
+            end
+        end
+    end
+
     has_free       = 1'b0;
     next_free_preg = 6'd0;
-    // 从 p1 起扫描；p0 硬连线为 0，永不进入 freelist
-    for (int i = 1; i < NUM_PHYS_REGS; i++) begin
-        if (free_list[i] && !has_free) begin
-            next_free_preg = 6'(i);
+    for (int g = 0; g < GROUP_COUNT; g++) begin
+        if (group_has_free[g] && !has_free) begin
+            next_free_preg = 6'(g * GROUP_SIZE) + 6'(group_first[g]);
             has_free       = 1'b1;
         end
     end

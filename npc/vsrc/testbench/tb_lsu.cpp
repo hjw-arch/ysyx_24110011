@@ -94,7 +94,8 @@ int main(int argc, char** argv) {
     check_u32("complete_data", 0x11223344u, dut->complete_data_o);
     check_bit("complete_rd_wen", true, dut->complete_rd_wen_o);
     check_u32("complete_phys_rd", 40, dut->complete_phys_rd_o);
-    check_bit("ready on complete", true, dut->ready_o);
+    // AXI 请求拍已经接收并移交给 hold_*；响应拍只写回，不重复声明 ready。
+    check_bit("ready stays low on response", false, dut->ready_o);
     dut->RVALID = 0; tick(dut);
 
     // 测试4: flush 丢弃 in-flight load

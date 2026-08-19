@@ -3,7 +3,6 @@
 
 package pipeline_pkt_pkg;
 
-
 //============================================================
 // Common metadata
 //============================================================
@@ -12,7 +11,6 @@ typedef struct packed {
     logic   [31:0]  inst;
     logic           pred_taken;
 } pipe_meta_t;
-
 
 //============================================================
 // ALU control
@@ -50,8 +48,6 @@ localparam alu_src_t ALU_SRC_RS1_IMM = 2'b01;
 localparam alu_src_t ALU_SRC_PC_4    = 2'b10;
 localparam alu_src_t ALU_SRC_PC_IMM  = 2'b11;
 
-
-
 //============================================================
 // Immediate select
 //============================================================
@@ -74,8 +70,6 @@ localparam imm_sel_t IMM_J = 3'b100;
 localparam imm_sel_t IMM_B = 3'b101;
 localparam imm_sel_t IMM_U = 3'b110;
 
-
-
 //============================================================
 // Control-flow control
 //============================================================
@@ -86,7 +80,6 @@ localparam cfi_type_t CFI_NONE   = 2'b00;
 localparam cfi_type_t CFI_BRANCH = 2'b01;
 localparam cfi_type_t CFI_JAL    = 2'b10;
 localparam cfi_type_t CFI_JALR   = 2'b11;
-
 
 //============================================================
 // Branch condition encoding
@@ -102,7 +95,6 @@ localparam br_cond_t BR_NE = 2'b01;
 localparam br_cond_t BR_LT = 2'b10;
 localparam br_cond_t BR_GE = 2'b11;
 
-
 //============================================================
 // Forwarding select（legacy 五级流水用；OoO 走 PRF+wakeup，不用此前递）
 //============================================================
@@ -111,7 +103,6 @@ typedef logic [1:0] fwd_sel_t;
 localparam fwd_sel_t FWD_SEL_RF = 2'b00;
 localparam fwd_sel_t FWD_SEL_LS = 2'b01;
 localparam fwd_sel_t FWD_SEL_WB = 2'b10;
-
 
 //============================================================
 // Memory control
@@ -126,7 +117,6 @@ localparam mem_cmd_t MEM_NONE  = 2'b00;
 localparam mem_cmd_t MEM_LOAD  = 2'b01;
 localparam mem_cmd_t MEM_STORE = 2'b10;
 
-
 //============================================================
 // CSR/System control
 //============================================================
@@ -137,7 +127,6 @@ localparam csr_cmd_t CSR_CMD_NONE  = 2'b00;
 localparam csr_cmd_t CSR_CMD_WRITE = 2'b01;
 localparam csr_cmd_t CSR_CMD_SET   = 2'b10;
 localparam csr_cmd_t CSR_CMD_CLEAR = 2'b11;
-
 
 typedef logic [1:0] priv_redir_t;
 
@@ -170,11 +159,9 @@ typedef struct packed {
     br_cond_t   br_cond;
 } ex_ctrl_t;
 
-
 typedef struct packed {
     mem_cmd_t   cmd;
 } mem_ctrl_t;
-
 
 typedef struct packed {
     logic   rd_wen;
@@ -197,7 +184,6 @@ typedef struct packed {
     logic           taken;
     logic [31:0]    target;
 } bpu_update_t;
-
 
 //============================================================
 // Pipeline packets
@@ -236,7 +222,6 @@ typedef struct packed {
     sys_ctrl_t      sys;
     logic   [31:0]  result;
 } ls2wb_pkt_t;
-
 
 //============================================================
 // OoO 扩展类型（单发射乱序执行）
@@ -352,7 +337,6 @@ typedef struct packed {
     logic   [31:0]  imm;
 } issue2ex_pkt_t;
 
-    
 endpackage
 
 `endif
