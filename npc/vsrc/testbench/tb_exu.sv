@@ -18,8 +18,6 @@ logic              ready_o;
 logic        complete_en_o;
 logic [4:0]  complete_idx_o;
 logic [31:0] complete_data_o;
-logic        complete_exception_o;
-logic [3:0]  complete_cause_o;
 logic        complete_redirect_valid_o;
 logic [31:0] complete_redirect_addr_o;
 
@@ -44,8 +42,6 @@ exu dut (
     .complete_en_o             (complete_en_o),
     .complete_idx_o            (complete_idx_o),
     .complete_data_o           (complete_data_o),
-    .complete_exception_o      (complete_exception_o),
-    .complete_cause_o          (complete_cause_o),
     .complete_redirect_valid_o (complete_redirect_valid_o),
     .complete_redirect_addr_o  (complete_redirect_addr_o),
     .wakeup_en_o               (wakeup_en_o),
@@ -117,7 +113,7 @@ task automatic set_alu(
 );
     valid_i = 1;
     data_i.pc = pc;
-    data_i.inst = 32'h0;
+    data_i.funct3 = 3'b000;
     data_i.rob_idx = rob_idx;
     data_i.phys_rd = phys_rd;
     data_i.rs1_data = rs1_val;
@@ -128,11 +124,6 @@ task automatic set_alu(
     data_i.ex.alu_op = alu_op;
     data_i.ex.alu_src = alu_src;
     data_i.ex.cfi_type = 2'b00;
-    data_i.ex.br_cond = 2'b00;
-    data_i.ex.rs1_used = 0;
-    data_i.ex.rs2_used = 0;
-    data_i.ex.fwd_rs1_sel = 2'b00;
-    data_i.ex.fwd_rs2_sel = 2'b00;
     data_i.mem.cmd = 2'b00;
     data_i.sys.csr_cmd = 2'b00;
     data_i.sys.priv_redir = 2'b00;
@@ -185,7 +176,7 @@ initial begin
     data_i.ex.alu_op = ALU_SUB;
     data_i.ex.alu_src = ALU_SRC_RS1_RS2;
     data_i.ex.cfi_type = 2'b01;  // branch
-    data_i.ex.br_cond = BR_EQ;
+    data_i.funct3 = 3'b000;
     data_i.mem.cmd = 2'b00;
     data_i.sys = '0;
     #1;
@@ -208,7 +199,7 @@ initial begin
 
     // ── 测试7：分支 BNE taken (rs1 != rs2) ──
     $display("\n[TEST7] BNE taken: rs1=100, rs2=50");
-    data_i.ex.br_cond = BR_NE;
+    data_i.funct3 = 3'b001;
     data_i.pred_taken = 0;
     #1;
     chk("branch taken (预测错误)", 1'b1, redirect_valid_o);
@@ -246,7 +237,7 @@ initial begin
     // ── 测试10：CSR 寄存器形式 (CSRRW) ──
     $display("\n[TEST10] CSRRW: rs1_data=0xabcd1234");
     data_i.pc = 32'h6000;
-    data_i.inst = 32'h30011173;  // csrrw x3, mstatus, x2
+    data_i.funct3 = 3'b001;  // csrrw
     data_i.rs1_data = 32'habcd_1234;
     data_i.imm = 32'h300;
     data_i.rd_wen = 1;
@@ -260,7 +251,7 @@ initial begin
 
     // ── 测试11：CSR 立即数形式 (CSRRWI) ──
     $display("\n[TEST11] CSRRWI: zimm=5");
-    data_i.inst = 32'h3002d273;  // csrrwi x4, mstatus, 5
+    data_i.funct3 = 3'b101;  // csrrwi
     data_i.imm = 32'd5;
     #1;
     chk32("result = imm (zimm)", 32'd5, complete_data_o);
@@ -299,7 +290,7 @@ initial begin
     data_i.ex.alu_op = ALU_SLT;
     data_i.ex.alu_src = ALU_SRC_RS1_RS2;
     data_i.ex.cfi_type = 2'b01;
-    data_i.ex.br_cond = BR_LT;
+    data_i.funct3 = 3'b100;
     data_i.sys = '0;
     #1;
     chk("branch taken", 1'b1, redirect_valid_o);
@@ -309,7 +300,7 @@ initial begin
     $display("\n[TEST17] BGE: 10 >= 10, taken");
     data_i.rs1_data = 32'd10;
     data_i.rs2_data = 32'd10;
-    data_i.ex.br_cond = BR_GE;
+    data_i.funct3 = 3'b101;
     #1;
     chk("branch taken", 1'b1, redirect_valid_o);
 

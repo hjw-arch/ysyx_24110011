@@ -82,29 +82,6 @@ localparam cfi_type_t CFI_JAL    = 2'b10;
 localparam cfi_type_t CFI_JALR   = 2'b11;
 
 //============================================================
-// Branch condition encoding
-//
-// Directly matches {funct3[2], funct3[0]} for branches.
-// Signed/unsigned is decided by ALU op: SLT or SLTU.
-//============================================================
-
-typedef logic [1:0] br_cond_t;
-
-localparam br_cond_t BR_EQ = 2'b00;
-localparam br_cond_t BR_NE = 2'b01;
-localparam br_cond_t BR_LT = 2'b10;
-localparam br_cond_t BR_GE = 2'b11;
-
-//============================================================
-// Forwarding select（legacy 五级流水用；OoO 走 PRF+wakeup，不用此前递）
-//============================================================
-typedef logic [1:0] fwd_sel_t;
-
-localparam fwd_sel_t FWD_SEL_RF = 2'b00;
-localparam fwd_sel_t FWD_SEL_LS = 2'b01;
-localparam fwd_sel_t FWD_SEL_WB = 2'b10;
-
-//============================================================
 // Memory control
 //============================================================
 //
@@ -139,33 +116,22 @@ localparam priv_redir_t PRIV_REDIR_MRET  = 2'b10;
 //============================================================
 typedef logic [3:0] exc_cause_t;
 
-localparam exc_cause_t CAUSE_ILLEGAL_INST    = 4'd2;
 localparam exc_cause_t CAUSE_LOAD_ACCESS_FAULT  = 4'd5;
 localparam exc_cause_t CAUSE_STORE_ACCESS_FAULT = 4'd7;
-localparam exc_cause_t CAUSE_ECALL_M          = 4'd11;
 
 //============================================================
 // Stage control structs
 //============================================================
 
 typedef struct packed {
-    logic       rs1_used;
-    logic       rs2_used;
-    fwd_sel_t   fwd_rs1_sel;
-    fwd_sel_t   fwd_rs2_sel;
     alu_op_t    alu_op;
     alu_src_t   alu_src;
     cfi_type_t  cfi_type;
-    br_cond_t   br_cond;
 } ex_ctrl_t;
 
 typedef struct packed {
     mem_cmd_t   cmd;
 } mem_ctrl_t;
-
-typedef struct packed {
-    logic   rd_wen;
-} wb_ctrl_t;
 
 typedef struct packed {
     csr_cmd_t       csr_cmd;
@@ -178,53 +144,14 @@ typedef struct packed {
     logic [31:0]    addr;
 } redirect_t;
 
-typedef struct packed {
-    logic           valid;
-    logic           btb_type;       // 0: branch, 1: jal
-    logic           taken;
-    logic [31:0]    target;
-} bpu_update_t;
-
 //============================================================
 // Pipeline packets
 //============================================================
 
 typedef pipe_meta_t if2id_pkt_t;
 
-// ---- legacy 五级顺序流水包（仅 vsrc/legacy 与对照；OoO 用下方 rename/issue/rob 包）----
-
-typedef struct packed {
-    pipe_meta_t     meta;
-    logic   [31:0]  seq_pc;
-    ex_ctrl_t       ex;
-    mem_ctrl_t      mem;
-    wb_ctrl_t       wb;
-    sys_ctrl_t      sys;
-    logic   [31:0]  rs1_data;
-    logic   [31:0]  rs2_data;
-    logic   [31:0]  imm;
-} id2ex_pkt_t;
-
-typedef struct packed {
-    pipe_meta_t     meta;
-    mem_ctrl_t      mem;
-    wb_ctrl_t       wb;
-    sys_ctrl_t      sys;
-    redirect_t      redirect;
-    bpu_update_t    bpu_update;
-    logic   [31:0]  result;
-    logic   [31:0]  store_data;
-} ex2ls_pkt_t;
-
-typedef struct packed {
-    pipe_meta_t     meta;
-    wb_ctrl_t       wb;
-    sys_ctrl_t      sys;
-    logic   [31:0]  result;
-} ls2wb_pkt_t;
-
 //============================================================
-// OoO 扩展类型（单发射乱序执行）
+// OoO types (single-issue out-of-order execution)
 //============================================================
 
 // 物理寄存器编号（6 位，支持 64 个物理寄存器）
@@ -258,8 +185,6 @@ typedef struct packed {
     phys_reg_t      phys_rd_old;
     logic           rd_wen;
     logic           is_store;       // 提交时需 SQ drain
-    logic           exception;      // 译码期异常（如 illegal），分配时即可 complete
-    exc_cause_t     exception_cause;
     sys_ctrl_t      sys;
 } rob_alloc_pkt_t;
 
@@ -285,14 +210,9 @@ typedef struct packed {
     logic   [31:0]  pc;
     logic   [31:0]  inst;
     logic           pred_taken;
-    logic   [4:0]   rs1_arch;
-    logic   [4:0]   rs2_arch;
-    logic   [4:0]   rd_arch;
     logic           rs1_used;
     logic           rs2_used;
     logic           rd_wen;
-    logic           exception;
-    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;
@@ -302,7 +222,7 @@ typedef struct packed {
 // Rename → Issue Queue
 typedef struct packed {
     logic   [31:0]  pc;
-    logic   [31:0]  inst;
+    logic   [2:0]   funct3;
     logic           pred_taken;
     rob_idx_t       rob_idx;
     phys_reg_t      phys_rs1;
@@ -311,8 +231,6 @@ typedef struct packed {
     logic           rd_wen;
     logic           rs1_ready;
     logic           rs2_ready;
-    logic           exception;
-    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;
@@ -322,15 +240,13 @@ typedef struct packed {
 // Issue Queue → Execute
 typedef struct packed {
     logic   [31:0]  pc;
-    logic   [31:0]  inst;
+    logic   [2:0]   funct3;
     rob_idx_t       rob_idx;
     phys_reg_t      phys_rd;
     logic   [31:0]  rs1_data;
     logic   [31:0]  rs2_data;
     logic           pred_taken;     // 分支预测结果（用于误预测检测）
     logic           rd_wen;         // 目的寄存器写使能（用于唤醒判断）
-    logic           exception;
-    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;

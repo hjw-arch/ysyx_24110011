@@ -56,8 +56,6 @@ typedef struct packed {
     logic           rd_wen;
     logic           rs1_ready;
     logic           rs2_ready;
-    logic           exception;
-    exc_cause_t     exception_cause;
     ex_ctrl_t       ex;
     mem_ctrl_t      mem;
     sys_ctrl_t      sys;
@@ -171,16 +169,13 @@ assign issue_phys_rs1_o = iq[selected_idx].phys_rs1;
 assign issue_phys_rs2_o = iq[selected_idx].phys_rs2;
 
 assign issue_pkt_o.pc         = iq[selected_idx].pc;
-// EXU/LSU 只使用 inst[14:12]；完整指令已在分派时独立写入 ROB。
-assign issue_pkt_o.inst       = {17'b0, iq[selected_idx].funct3, 12'b0};
+assign issue_pkt_o.funct3     = iq[selected_idx].funct3;
 assign issue_pkt_o.rob_idx    = iq[selected_idx].rob_idx;
 assign issue_pkt_o.phys_rd    = iq[selected_idx].phys_rd;
 assign issue_pkt_o.rs1_data   = '0;
 assign issue_pkt_o.rs2_data   = '0;
 assign issue_pkt_o.pred_taken = iq[selected_idx].pred_taken;
 assign issue_pkt_o.rd_wen     = iq[selected_idx].rd_wen;
-assign issue_pkt_o.exception  = iq[selected_idx].exception;
-assign issue_pkt_o.exception_cause = iq[selected_idx].exception_cause;
 assign issue_pkt_o.ex         = iq[selected_idx].ex;
 assign issue_pkt_o.mem        = iq[selected_idx].mem;
 assign issue_pkt_o.sys        = iq[selected_idx].sys;
@@ -239,7 +234,7 @@ always_ff @(posedge clk) begin
             iq[alloc_idx].age        <= dispatch_pkt_i.rob_idx - rob_head_i;
             iq[alloc_idx].rob_idx    <= dispatch_pkt_i.rob_idx;
             iq[alloc_idx].pc         <= dispatch_pkt_i.pc;
-            iq[alloc_idx].funct3     <= dispatch_pkt_i.inst[14:12];
+            iq[alloc_idx].funct3     <= dispatch_pkt_i.funct3;
             iq[alloc_idx].pred_taken <= dispatch_pkt_i.pred_taken;
             iq[alloc_idx].phys_rs1   <= dispatch_pkt_i.phys_rs1;
             iq[alloc_idx].phys_rs2   <= dispatch_pkt_i.phys_rs2;
@@ -247,8 +242,6 @@ always_ff @(posedge clk) begin
             iq[alloc_idx].rd_wen     <= dispatch_pkt_i.rd_wen;
             iq[alloc_idx].rs1_ready  <= dispatch_pkt_i.rs1_ready;
             iq[alloc_idx].rs2_ready  <= dispatch_pkt_i.rs2_ready;
-            iq[alloc_idx].exception  <= dispatch_pkt_i.exception;
-            iq[alloc_idx].exception_cause <= dispatch_pkt_i.exception_cause;
             iq[alloc_idx].ex         <= dispatch_pkt_i.ex;
             iq[alloc_idx].mem        <= dispatch_pkt_i.mem;
             iq[alloc_idx].sys        <= dispatch_pkt_i.sys;

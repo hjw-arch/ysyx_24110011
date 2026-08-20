@@ -158,8 +158,7 @@ always_ff @(posedge clk) begin
     end else begin
         if (alloc_fire) begin
             rob_q[rob_tail_slot].valid           <= 1'b1;
-            // 译码期异常：分配即 complete，到 head 直接 trap
-            rob_q[rob_tail_slot].complete        <= alloc_pkt_i.exception;
+            rob_q[rob_tail_slot].complete        <= 1'b0;
             rob_q[rob_tail_slot].pc              <= alloc_pkt_i.pc;
             rob_q[rob_tail_slot].inst            <= alloc_pkt_i.inst;
             rob_q[rob_tail_slot].arch_rd         <= alloc_pkt_i.arch_rd;
@@ -167,8 +166,8 @@ always_ff @(posedge clk) begin
             rob_q[rob_tail_slot].phys_rd_old     <= alloc_pkt_i.phys_rd_old;
             rob_q[rob_tail_slot].rd_wen          <= alloc_pkt_i.rd_wen;
             rob_q[rob_tail_slot].is_store        <= alloc_pkt_i.is_store;
-            rob_q[rob_tail_slot].exception       <= alloc_pkt_i.exception;
-            rob_q[rob_tail_slot].exception_cause <= alloc_pkt_i.exception_cause;
+            rob_q[rob_tail_slot].exception       <= 1'b0;
+            rob_q[rob_tail_slot].exception_cause <= '0;
             rob_q[rob_tail_slot].redirect_valid  <= 1'b0;
             rob_q[rob_tail_slot].redirect_addr   <= '0;
             rob_q[rob_tail_slot].result          <= '0;

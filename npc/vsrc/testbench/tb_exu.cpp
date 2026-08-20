@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
     dut->pc_i = 0x80001000; dut->rs1_data_i = 100; dut->rs2_data_i = 100; dut->imm_i = 0x100;
     dut->pred_taken_i = 0; dut->rd_wen_i = 0;
     dut->alu_op_i = 0b1000; dut->alu_src_i = 0b00;
-    dut->cfi_type_i = 0b01; dut->br_cond_i = 0b00;   // CFI_BRANCH, BR_EQ
+    dut->cfi_type_i = 0b01; dut->br_cond_i = 0b00;   // CFI_BRANCH, BEQ
     dut->eval(); dut->clk = 1; dut->eval(); dut->clk = 0; dut->eval();
     check_bit("redirect_valid", true,       dut->redirect_valid_o);
     check_u32("redirect_addr",  0x80001100, dut->redirect_addr_o);

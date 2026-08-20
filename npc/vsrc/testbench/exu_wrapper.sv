@@ -22,7 +22,7 @@ import pipeline_pkt_pkg::*;
     input   [3:0]       alu_op_i,
     input   [1:0]       alu_src_i,
     input   [1:0]       cfi_type_i,
-    input   [2:0]       br_cond_i,
+    input   [1:0]       br_cond_i,
     // mem_ctrl_t 字段
     input   [2:0]       mem_cmd_i,
     // sys_ctrl_t 字段
@@ -37,8 +37,6 @@ import pipeline_pkt_pkg::*;
     output logic        complete_en_o,
     output logic [4:0]  complete_idx_o,
     output logic [31:0] complete_data_o,
-    output logic        complete_exception_o,
-    output logic [3:0]  complete_cause_o,
     output logic        complete_redirect_valid_o,
     output logic [31:0] complete_redirect_addr_o,
 
@@ -58,33 +56,24 @@ import pipeline_pkt_pkg::*;
 // 组装 issue2ex_pkt_t
 issue2ex_pkt_t data_packed;
 
-always_comb begin
-    data_packed.pc          = pc_i;
-    data_packed.inst        = inst_i;
-    data_packed.rob_idx     = rob_idx_i;
-    data_packed.phys_rd     = phys_rd_i;
-    data_packed.rs1_data    = rs1_data_i;
-    data_packed.rs2_data    = rs2_data_i;
-    data_packed.pred_taken  = pred_taken_i;
-    data_packed.rd_wen      = rd_wen_i;
-    data_packed.imm         = imm_i;
-
-    // ex_ctrl_t
-    data_packed.ex.alu_op       = alu_op_i;
-    data_packed.ex.alu_src      = alu_src_i;
-    data_packed.ex.cfi_type     = cfi_type_i;
-    data_packed.ex.br_cond      = br_cond_i;
-    data_packed.ex.fwd_rs1_sel  = 2'b00;  // 测试中不使用前递
-    data_packed.ex.fwd_rs2_sel  = 2'b00;
-
-    // mem_ctrl_t
-    data_packed.mem.cmd         = mem_cmd_i;
-
-    // sys_ctrl_t
-    data_packed.sys.csr_cmd     = csr_cmd_i;
-    data_packed.sys.priv_redir  = priv_redir_i;
-    data_packed.sys.fence_i     = fence_i_i;
-end
+assign data_packed.pc                 = pc_i;
+assign data_packed.funct3             = (cfi_type_i == CFI_BRANCH)
+                                     ? {br_cond_i[1], 1'b0, br_cond_i[0]}
+                                     : inst_i[14:12];
+assign data_packed.rob_idx            = rob_idx_i;
+assign data_packed.phys_rd            = phys_rd_i;
+assign data_packed.rs1_data           = rs1_data_i;
+assign data_packed.rs2_data           = rs2_data_i;
+assign data_packed.pred_taken         = pred_taken_i;
+assign data_packed.rd_wen             = rd_wen_i;
+assign data_packed.ex.alu_op          = alu_op_i;
+assign data_packed.ex.alu_src         = alu_src_i;
+assign data_packed.ex.cfi_type        = cfi_type_i;
+assign data_packed.mem.cmd            = mem_cmd_i;
+assign data_packed.sys.csr_cmd        = csr_cmd_i;
+assign data_packed.sys.priv_redir     = priv_redir_i;
+assign data_packed.sys.fence_i        = fence_i_i;
+assign data_packed.imm                = imm_i;
 
 // 实例化真正的 EXU_ooo
 exu u_exu (
@@ -96,8 +85,6 @@ exu u_exu (
     .complete_en_o                  (complete_en_o),
     .complete_idx_o                 (complete_idx_o),
     .complete_data_o                (complete_data_o),
-    .complete_exception_o           (complete_exception_o),
-    .complete_cause_o               (complete_cause_o),
     .complete_redirect_valid_o      (complete_redirect_valid_o),
     .complete_redirect_addr_o       (complete_redirect_addr_o),
     .wakeup_en_o                    (wakeup_en_o),

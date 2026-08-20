@@ -49,16 +49,6 @@ task automatic chk4(input string name, input logic [3:0] exp, act);
     end
 endtask
 
-task automatic chk5(input string name, input logic [4:0] exp, act);
-    if (exp === act) begin
-        $display("  [PASS] %s", name);
-        pass_cnt++;
-    end else begin
-        $display("  [FAIL] %s  期望=%0d  实际=%0d", name, exp, act);
-        fail_cnt++;
-    end
-endtask
-
 task automatic chk32(input string name, input logic [31:0] exp, act);
     if (exp === act) begin
         $display("  [PASS] %s", name);
@@ -84,9 +74,6 @@ initial begin
     // ── 测试1：R 型指令（ADD x5, x3, x4）──
     $display("[TEST1] R型指令 ADD x5,x3,x4");
     set_inst(32'h1000, 32'h004182b3); // add x5, x3, x4
-    chk5("rs1_arch = x3", 5'd3, data_o.rs1_arch);
-    chk5("rs2_arch = x4", 5'd4, data_o.rs2_arch);
-    chk5("rd_arch  = x5", 5'd5, data_o.rd_arch);
     chk("rs1_used = 1", 1'b1, data_o.rs1_used);
     chk("rs2_used = 1", 1'b1, data_o.rs2_used);
     chk("rd_wen   = 1", 1'b1, data_o.rd_wen);
@@ -96,8 +83,6 @@ initial begin
     // ── 测试2：I 型指令（ADDI x2, x1, 100）──
     $display("\n[TEST2] I型指令 ADDI x2,x1,100");
     set_inst(32'h1004, 32'h06408113); // addi x2, x1, 100
-    chk5("rs1_arch = x1", 5'd1, data_o.rs1_arch);
-    chk5("rd_arch  = x2", 5'd2, data_o.rd_arch);
     chk("rs1_used = 1", 1'b1, data_o.rs1_used);
     chk("rs2_used = 0", 1'b0, data_o.rs2_used);
     chk("rd_wen   = 1", 1'b1, data_o.rd_wen);
@@ -107,8 +92,6 @@ initial begin
     // ── 测试3：S 型指令（SW x5, 8(x2)）──
     $display("\n[TEST3] S型指令 SW x5,8(x2)");
     set_inst(32'h1008, 32'h00512423); // sw x5, 8(x2)
-    chk5("rs1_arch = x2 (base)", 5'd2, data_o.rs1_arch);
-    chk5("rs2_arch = x5 (data)", 5'd5, data_o.rs2_arch);
     chk("rs1_used = 1", 1'b1, data_o.rs1_used);
     chk("rs2_used = 1", 1'b1, data_o.rs2_used);
     chk("rd_wen   = 0", 1'b0, data_o.rd_wen);
@@ -118,8 +101,6 @@ initial begin
     // ── 测试4：B 型指令（BEQ x3, x4, offset）──
     $display("\n[TEST4] B型指令 BEQ x3,x4,offset=16");
     set_inst(32'h100c, 32'h00418863); // beq x3, x4, 16
-    chk5("rs1_arch = x3", 5'd3, data_o.rs1_arch);
-    chk5("rs2_arch = x4", 5'd4, data_o.rs2_arch);
     chk("rs1_used = 1", 1'b1, data_o.rs1_used);
     chk("rs2_used = 1", 1'b1, data_o.rs2_used);
     chk("rd_wen   = 0", 1'b0, data_o.rd_wen);
@@ -129,7 +110,6 @@ initial begin
     // ── 测试5：U 型指令（LUI x6, 0x12345）──
     $display("\n[TEST5] U型指令 LUI x6,0x12345");
     set_inst(32'h1010, 32'h12345337); // lui x6, 0x12345
-    chk5("rd_arch = x6", 5'd6, data_o.rd_arch);
     chk("rs1_used = 0", 1'b0, data_o.rs1_used);
     chk("rs2_used = 0", 1'b0, data_o.rs2_used);
     chk("rd_wen   = 1", 1'b1, data_o.rd_wen);
@@ -139,7 +119,6 @@ initial begin
     // ── 测试6：J 型指令（JAL x1, offset）──
     $display("\n[TEST6] J型指令 JAL x1,offset=2048");
     set_inst(32'h1014, 32'h001000ef); // jal x1, 2048
-    chk5("rd_arch = x1 (ra)", 5'd1, data_o.rd_arch);
     chk("rd_wen = 1", 1'b1, data_o.rd_wen);
     chk32("imm = 2048", 32'd2048, data_o.imm);
     chk2("CFI_type = JAL", 2'b10, data_o.ex.cfi_type);
@@ -148,22 +127,17 @@ initial begin
     // ── 测试7：边界 - rd=x0 应屏蔽写使能 ──
     $display("\n[TEST7] 边界：rd=x0 屏蔽写使能");
     set_inst(32'h1018, 32'h00108013); // addi x0, x1, 1
-    chk5("rd_arch = x0", 5'd0, data_o.rd_arch);
     chk("rd_wen = 0 (x0不可写)", 1'b0, data_o.rd_wen);
 
     // ── 测试8：边界 - rs1=x0, rs2=x0 ──
     $display("\n[TEST8] 边界：rs1=x0, rs2=x0");
     set_inst(32'h101c, 32'h000002b3); // add x5, x0, x0
-    chk5("rs1_arch = x0", 5'd0, data_o.rs1_arch);
-    chk5("rs2_arch = x0", 5'd0, data_o.rs2_arch);
     chk("rs1_used = 0 (x0恒为0)", 1'b0, data_o.rs1_used);
     chk("rs2_used = 0 (x0恒为0)", 1'b0, data_o.rs2_used);
 
     // ── 测试9：CSR 寄存器型（CSRRW x3, mstatus, x2）──
     $display("\n[TEST9] CSR寄存器型 CSRRW");
     set_inst(32'h1020, 32'h300111f3); // csrrw x3, mstatus(0x300), x2
-    chk5("rs1_arch = x2", 5'd2, data_o.rs1_arch);
-    chk5("rd_arch  = x3", 5'd3, data_o.rd_arch);
     chk("rs1_used = 1 (读x2)", 1'b1, data_o.rs1_used);
     chk("rs2_used = 0", 1'b0, data_o.rs2_used);
     chk("rd_wen   = 1", 1'b1, data_o.rd_wen);
@@ -172,7 +146,6 @@ initial begin
     // ── 测试10：CSR 立即数型（CSRRWI x4, mstatus, 5）──
     $display("\n[TEST10] CSR立即数型 CSRRWI (zimm)");
     set_inst(32'h1024, 32'h3002d273); // csrrwi x4, mstatus, 5
-    chk5("rs1_arch = 5 (zimm)", 5'd5, data_o.rs1_arch);
     chk("rs1_used = 0 (CSR zimm不读寄存器)", 1'b0, data_o.rs1_used);
     chk("rd_wen   = 1", 1'b1, data_o.rd_wen);
     chk32("imm 包含 zimm", 32'd5, data_o.imm);
@@ -191,8 +164,6 @@ initial begin
     // ── 测试13：LOAD 指令（LW x7, 12(x3)）──
     $display("\n[TEST13] LOAD指令 LW");
     set_inst(32'h1030, 32'h00c1a383); // lw x7, 12(x3)
-    chk5("rs1_arch = x3", 5'd3, data_o.rs1_arch);
-    chk5("rd_arch  = x7", 5'd7, data_o.rd_arch);
     chk("rs1_used = 1", 1'b1, data_o.rs1_used);
     chk("rd_wen   = 1", 1'b1, data_o.rd_wen);
     chk32("imm = 12", 32'd12, data_o.imm);

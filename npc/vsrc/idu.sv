@@ -1,6 +1,6 @@
 // IDU (Instruction Decode Unit) - OoO 版本
-// 负责：指令解码、立即数生成、控制信号生成
-// 不再负责：寄存器读取（由物理寄存器堆完成）、前递（由重命名消除）
+// 纯组合数据流译码：生成寄存器使用信息、执行控制和立即数。
+// 小核不做指令合法性检查；未识别编码按无副作用指令流过后端。
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -18,12 +18,10 @@ import pipeline_pkt_pkg::*;
 );
 
 // ── 指令字段提取 ──
-wire [31:0] pc   = data_i.pc;
-wire [31:0] inst = data_i.inst;
-wire [31:0] seq_pc = pc + 4;
-
-wire [6:0] opcode = inst[6:0];
-wire [2:0] func3  = inst[14:12];
+wire [31:0] pc           = data_i.pc;
+wire [31:0] inst         = data_i.inst;
+wire [4:0]  opc          = inst[6:2];
+wire [2:0]  func3        = inst[14:12];
 wire [4:0] rs1_addr_raw = inst[19:15];
 wire [4:0] rs2_addr_raw = inst[24:20];
 wire [4:0] rd_addr_raw  = inst[11:7];
@@ -41,8 +39,6 @@ localparam logic [4:0] OPC_CAL_R    = 5'b01100;
 localparam logic [4:0] OPC_MISC_MEM = 5'b00011;
 localparam logic [4:0] OPC_SYSTEM   = 5'b11100;  // SYSTEM 类，包含 ecall、mret、CSR 指令
 
-wire [4:0] opc = opcode[6:2];
-
 wire is_lui      = (opc == OPC_LUI);
 wire is_auipc    = (opc == OPC_AUIPC);
 wire is_jal      = (opc == OPC_JAL);
@@ -55,7 +51,7 @@ wire is_cal_r    = (opc == OPC_CAL_R);
 wire is_misc_mem = (opc == OPC_MISC_MEM);
 wire is_system   = (opc == OPC_SYSTEM);
 
-wire is_calc  = is_cal_i | is_cal_r;
+wire is_calc    = is_cal_i | is_cal_r;
 wire is_fence_i = is_misc_mem & (func3 == 3'b001);
 
 // SYSTEM 指令按照 funct3 分成两类：
@@ -75,70 +71,79 @@ wire is_sysop    = is_system & func3_is_sys;
 wire is_ecall = is_sysop & (inst[31:20] == 12'h000);
 wire is_mret  = is_sysop & (inst[31:20] == 12'h302);
 
-// 合法 opcode 集合；未识别或 SYSTEM 保留编码 → illegal（cause=2）
-// ebreak 由仿真层在 commit 识别，RTL 不 trap
-wire is_ebreak = is_sysop & (inst[31:20] == 12'h001);
-wire is_known_opc = is_lui | is_auipc | is_jal | is_jalr | is_branch |
-                    is_load | is_store | is_cal_i | is_cal_r |
-                    is_fence_i | is_csr | is_ecall | is_mret | is_ebreak |
-                    (is_misc_mem & (func3 == 3'b000)); // fence 当作 nop
-wire illegal = valid_i & ~is_known_opc;
-
 // SRAI/SUB/SRA 需要设置 ALU op[3]
 wire is_srai  = is_cal_i & (func3 == 3'b101) & inst[30];
 wire calc_op3 = is_srai | (is_cal_r & inst[30]);
 
 // ── 立即数生成 ──
-// imm_sel 编码：I=000, S=001, Z=011, J=100, B=101, U=110
-logic [2:0] imm_sel;
+// 3 位选择编码直接控制各字段来源，不生成 32 位宽优先选择器。
+imm_sel_t imm_sel;
 
-always_comb begin
-    if (is_lui | is_auipc)
-        imm_sel = 3'b110; // IMM_U
-    else if (is_jal)
-        imm_sel = 3'b100; // IMM_J
-    else if (is_branch)
-        imm_sel = 3'b101; // IMM_B
-    else if (is_store)
-        imm_sel = 3'b001; // IMM_S
-    else if (is_csr_imm)
-        imm_sel = 3'b011; // IMM_Z (zimm)
-    else
-        imm_sel = 3'b000; // IMM_I (默认，包括 load/cal_i/jalr)
-end
+assign imm_sel[2] = is_lui | is_auipc | is_jal | is_branch;
+assign imm_sel[1] = is_lui | is_auipc | is_csr_imm;
+assign imm_sel[0] = is_branch | is_store | is_csr_imm;
 
-logic [31:0] imm;
-imm_gen u_imm_gen (
-    .imm_sel_i (imm_sel),
-    .inst_i    (inst),
-    .imm_o     (imm)
-);
+wire imm_is_i  = ~|imm_sel;
+wire imm_is_s  = ~imm_sel[2] & ~imm_sel[1] & imm_sel[0];
+wire imm_is_u  = imm_sel[2] & imm_sel[1];
+wire imm_is_z  = imm_sel[1] & imm_sel[0];
+wire imm_is_uj = imm_sel[2] & ~imm_sel[0];
+wire imm_is_j  = imm_sel[2] & ~imm_sel[1] & ~imm_sel[0];
+wire imm_is_b  = imm_sel[2] & imm_sel[0];
+wire imm_sign  = inst[31] & ~imm_is_z;
+
+wire [10:0] imm_30_20 = ({11{ imm_is_u}} & inst[30:20])
+                       | ({11{~imm_is_u}} & {11{imm_sign}});
+wire [7:0]  imm_19_12 = ({8{ imm_is_uj}} & inst[19:12])
+                       | ({8{~imm_is_uj}} & {8{imm_sign}});
+wire        imm_11    = (imm_is_j & inst[20])
+                       | (imm_is_b & inst[7])
+                       | ((imm_is_i | imm_is_s) & imm_sign);
+wire [5:0]  imm_10_5  = {6{~(imm_is_u | imm_is_z)}} & inst[30:25];
+
+wire imm_sel_00 = ~imm_sel[1] & ~imm_sel[0];
+wire imm_sel_01 = ~imm_sel[1] & imm_sel[0];
+wire imm_sel_11 = imm_sel[1] & imm_sel[0];
+
+wire [3:0] imm_4_1 = ({4{imm_sel_00}} & inst[24:21])
+                     | ({4{imm_sel_01}} & inst[11:8])
+                     | ({4{imm_sel_11}} & inst[19:16]);
+wire imm_0 = (imm_is_i & inst[20])
+           | (imm_is_s & inst[7])
+           | (imm_is_z & inst[15]);
+
+wire [31:0] imm = {
+    imm_sign,
+    imm_30_20,
+    imm_19_12,
+    imm_11,
+    imm_10_5,
+    imm_4_1,
+    imm_0
+};
 
 // ── 源寄存器使用判断 ──
 // rs1_used/rs2_used 是语义依赖判断，不是简单检查 rs 字段是否存在。
 // CSR 立即数形式使用 zimm（inst[19:15]），不读取 rs1。
-wire rs1_used = (is_jalr | is_branch | is_load | is_store | is_cal_i | is_cal_r | is_csr_reg) & |rs1_addr_raw;
+wire rs1_used = (is_jalr | is_branch | is_load | is_store
+               | is_cal_i | is_cal_r | is_csr_reg)
+              & (|rs1_addr_raw);
 wire rs2_used = (is_branch | is_store | is_cal_r) & |rs2_addr_raw;
 
 // ── 目的寄存器写使能 ──
-// rd_wen 在 ID 阶段顺手屏蔽 x0。非法指令不写 rd。
-wire rd_wen = ~illegal &
-              (is_lui | is_auipc | is_jal | is_jalr | is_load | is_cal_i | is_cal_r | is_csr) &
-              |rd_addr_raw;
+// rd_wen 在 ID 阶段屏蔽 x0；未识别 opcode 的类型信号全 0。
+wire rd_wen = (is_lui | is_auipc | is_jal | is_jalr
+              | is_load | is_cal_i | is_cal_r | is_csr)
+             & (|rd_addr_raw);
 
 // ── 输出：decode_pkt_t ──
 assign data_o.pc         = pc;
 assign data_o.inst       = inst;
 assign data_o.pred_taken = data_i.pred_taken;
-assign data_o.rs1_arch   = rs1_addr_raw;
-assign data_o.rs2_arch  = rs2_addr_raw;
-assign data_o.rd_arch   = rd_addr_raw;
-assign data_o.rs1_used  = rs1_used;
-assign data_o.rs2_used  = rs2_used;
-assign data_o.rd_wen    = rd_wen;
-assign data_o.exception = illegal;
-assign data_o.exception_cause = illegal ? CAUSE_ILLEGAL_INST : 4'd0;
-assign data_o.imm       = imm;
+assign data_o.rs1_used   = rs1_used;
+assign data_o.rs2_used   = rs2_used;
+assign data_o.rd_wen     = rd_wen;
+assign data_o.imm        = imm;
 
 // ── EX 控制信号 ──
 // ALU 操作按 bit 直接生成，避免写成优先级 mux 链。
@@ -166,54 +171,20 @@ assign data_o.ex.alu_src[0] = is_lui | is_auipc | is_load | is_store | is_cal_i;
 assign data_o.ex.cfi_type[1] = is_jal | is_jalr;
 assign data_o.ex.cfi_type[0] = is_branch | is_jalr;
 
-assign data_o.ex.br_cond = {func3[2], func3[0]};
-
-// OoO 不需要前递选择（在重命名阶段解决 RAW），fwd_sel 设为 RF（表示无前递）
-assign data_o.ex.rs1_used = rs1_used;
-assign data_o.ex.rs2_used = rs2_used;
-assign data_o.ex.fwd_rs1_sel = FWD_SEL_RF;
-assign data_o.ex.fwd_rs2_sel = FWD_SEL_RF;
-
 // ── MEM 控制信号 ──
-// mem.cmd 只告诉 LSU 是否为 load/store。非法指令清零，避免进 LSU。
-assign data_o.mem.cmd = illegal ? MEM_NONE : {is_store, is_load};
+assign data_o.mem.cmd = {is_store, is_load};
 
 // ── SYS 控制信号 ──
 // CSR/系统控制：
 //   csr_cmd    : NONE/WRITE/SET/CLEAR，由 CSR funct3[1:0] 压缩得到
 //   priv_redir : ECALL/MRET 提交点重定向，编码上天然互斥
 //   fence_i    : 与特权重定向分开，贴近 Rocket/Ibex 的语义分层
-// 非法指令清零 sys，避免误走 ecall/CSR 提交路径。
-assign data_o.sys.csr_cmd    = illegal ? CSR_CMD_NONE : ({2{is_csr}} & func3[1:0]);
-assign data_o.sys.priv_redir = illegal ? PRIV_REDIR_NONE : {is_mret, is_ecall};
-assign data_o.sys.fence_i    = illegal ? 1'b0 : is_fence_i;
+assign data_o.sys.csr_cmd    = {2{is_csr}} & func3[1:0];
+assign data_o.sys.priv_redir = {is_mret, is_ecall};
+assign data_o.sys.fence_i    = is_fence_i;
 
 // ── 流水线握手 ──
 assign valid_o = valid_i;
 assign ready_o = ready_i;
-
-endmodule
-
-
-// ── 立即数生成器（复用原有模块）──
-module imm_gen
-import pipeline_pkt_pkg::*;
-(
-    input  imm_sel_t    imm_sel_i,
-    input  logic [31:0] inst_i,
-    output logic [31:0] imm_o
-);
-
-always_comb begin
-    case (imm_sel_i)
-        IMM_I: imm_o = {{20{inst_i[31]}}, inst_i[31:20]};
-        IMM_S: imm_o = {{20{inst_i[31]}}, inst_i[31:25], inst_i[11:7]};
-        IMM_Z: imm_o = {27'b0, inst_i[19:15]};  // CSR zimm（零扩展）
-        IMM_B: imm_o = {{19{inst_i[31]}}, inst_i[31], inst_i[7], inst_i[30:25], inst_i[11:8], 1'b0};
-        IMM_U: imm_o = {inst_i[31:12], 12'b0};
-        IMM_J: imm_o = {{11{inst_i[31]}}, inst_i[31], inst_i[19:12], inst_i[20], inst_i[30:21], 1'b0};
-        default: imm_o = 32'b0;
-    endcase
-end
 
 endmodule

@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     dut->pc_i = 0; dut->inst_i = 0; dut->phys_rd_i = 0;
     dut->rs1_data_i = 0; dut->rs2_data_i = 0; dut->imm_i = 0;
     dut->pred_taken_i = 0; dut->rd_wen_i = 0;
-    dut->alu_op_i = 0; dut->alu_src_i = 0; dut->cfi_type_i = 0; dut->br_cond_i = 0;
+    dut->alu_op_i = 0; dut->alu_src_i = 0; dut->cfi_type_i = 0;
     dut->mem_cmd_i = 0; dut->csr_cmd_i = 0; dut->priv_redir_i = 0; dut->fence_i_i = 0;
     dut->rob_idx_i = 0;
     dut->sq_alloc_ready_i = 1;

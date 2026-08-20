@@ -11,7 +11,7 @@ import pipeline_pkt_pkg::*;
     input   [11:0]      addr,
     input   [31:0]      wdata,
 
-    // trap：ecall 或精确异常（illegal / access fault）
+    // trap：ecall 或精确访存异常
     input               trap_i,
     input   [31:0]      trap_pc_i,
     input   [31:0]      trap_cause_i,

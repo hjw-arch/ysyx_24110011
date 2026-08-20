@@ -18,8 +18,6 @@ import pipeline_pkt_pkg::*;
     output logic        complete_en_o,
     output logic [4:0]  complete_idx_o,
     output logic [31:0] complete_data_o,
-    output logic        complete_exception_o,
-    output logic [3:0]  complete_cause_o,
     output logic        complete_redirect_valid_o,
     output logic [31:0] complete_redirect_addr_o,
 
@@ -42,17 +40,9 @@ wire ex_fire = valid_i & ~is_mem;
 wire [31:0] seq_pc = data_i.pc + 32'd4;
 
 // ── ALU 输入 ──
-logic [31:0] alu_src1, alu_src2;
-
-always_comb begin
-    case (data_i.ex.alu_src)
-        ALU_SRC_RS1_RS2: begin alu_src1 = data_i.rs1_data; alu_src2 = data_i.rs2_data; end
-        ALU_SRC_RS1_IMM: begin alu_src1 = data_i.rs1_data; alu_src2 = data_i.imm;      end
-        ALU_SRC_PC_4:    begin alu_src1 = data_i.pc;       alu_src2 = 32'h4;           end
-        ALU_SRC_PC_IMM:  begin alu_src1 = data_i.pc;       alu_src2 = data_i.imm;      end
-        default: begin alu_src1 = 32'h0; alu_src2 = 32'h0; end
-    endcase
-end
+wire [31:0] alu_src1 = data_i.ex.alu_src[1] ? data_i.pc : data_i.rs1_data;
+wire [31:0] alu_src2 = data_i.ex.alu_src[0] ? data_i.imm :
+                       data_i.ex.alu_src[1] ? 32'd4      : data_i.rs2_data;
 
 logic [31:0] alu_result;
 logic        alu_zf;
@@ -66,15 +56,9 @@ ALU u_ALU (
 );
 
 // ── 分支 ──
-logic branch_taken;
-always_comb begin
-    unique case (data_i.ex.br_cond)
-        BR_EQ:   branch_taken =  alu_zf;
-        BR_NE:   branch_taken = ~alu_zf;
-        BR_LT:   branch_taken =  alu_result[0];
-        BR_GE:   branch_taken = ~alu_result[0];
-    endcase
-end
+wire [1:0] branch_cond = {data_i.funct3[2], data_i.funct3[0]};
+wire       branch_base = branch_cond[1] ? alu_result[0] : alu_zf;
+wire       branch_taken = branch_base ^ branch_cond[0];
 
 wire redirect_is_branch = ~data_i.ex.cfi_type[1] &  data_i.ex.cfi_type[0];
 wire redirect_is_jal    =  data_i.ex.cfi_type[1] & ~data_i.ex.cfi_type[0];
@@ -83,9 +67,11 @@ wire redirect_is_jump   =  data_i.ex.cfi_type[1];
 wire redirect_is_cfi    = |data_i.ex.cfi_type;
 wire actual_taken       = redirect_is_jump | (redirect_is_branch & branch_taken);
 
-wire [31:0] redirect_base  = redirect_is_jalr ? data_i.rs1_data : data_i.pc;
-wire [31:0] cfi_target_sum = redirect_base + data_i.imm;
-wire [31:0] cfi_target     = redirect_is_jalr ? {cfi_target_sum[31:1], 1'b0} : cfi_target_sum;
+wire [31:0] redirect_base   = redirect_is_jalr ? data_i.rs1_data : data_i.pc;
+wire [31:0] cfi_target_sum  = redirect_base + data_i.imm;
+wire [31:0] cfi_target      = redirect_is_jalr
+                            ? {cfi_target_sum[31:1], 1'b0}
+                            : cfi_target_sum;
 wire [31:0] redirect_target = actual_taken ? cfi_target : seq_pc;
 
 // 分支误预测（预测方向与实际不一致）
@@ -94,10 +80,10 @@ wire br_mispred = redirect_is_cfi & (actual_taken ^ data_i.pred_taken);
 // ── CSR / 系统 ──
 // csr_src 进入 ROB.result，commit 时作为 CSR 写入源；rd 旧值在 commit 读出
 wire        csr_valid = data_i.sys.csr_cmd != CSR_CMD_NONE;
-wire        csr_imm   = data_i.inst[14];
+wire        csr_imm   = data_i.funct3[2];
 wire [31:0] csr_src   = csr_imm ? data_i.imm : data_i.rs1_data;
 
-wire is_priv   = data_i.sys.priv_redir != PRIV_REDIR_NONE;
+wire is_priv    = data_i.sys.priv_redir != PRIV_REDIR_NONE;
 wire is_fence_i = data_i.sys.fence_i;
 
 // jal/jalr/fence.i 的链接值/重定向默认目标为 pc+4
@@ -111,19 +97,13 @@ assign complete_en_o   = ex_fire;
 assign complete_idx_o  = data_i.rob_idx;
 assign complete_data_o = ex_result;
 
-// 译码 illegal 在分配时已标 complete；此处兜底：异常指令不再 redirect
-wire has_exc = data_i.exception;
-assign complete_exception_o = ex_fire & has_exc;
-assign complete_cause_o     = has_exc ? data_i.exception_cause : 4'b0;
-
 // 误预测 / fence.i / ecall / mret 均在 head 提交时 flush
 // ecall/mret 的最终目标由顶层用 mtvec/mepc 覆盖；此处先填 seq_pc 占位
-// 异常指令不打 redirect（由 exception 路径 trap）
-assign complete_redirect_valid_o = ex_fire & ~has_exc & (br_mispred | is_fence_i | is_priv);
+assign complete_redirect_valid_o = ex_fire & (br_mispred | is_fence_i | is_priv);
 assign complete_redirect_addr_o  = br_mispred ? redirect_target : seq_pc;
 
 // CSR 的 rd 必须在 commit 写 PRF 后才 wakeup，避免依赖读到 csr_src
-assign wakeup_en_o   = ex_fire & data_i.rd_wen & ~csr_valid & ~has_exc;
+assign wakeup_en_o   = ex_fire & data_i.rd_wen & ~csr_valid;
 assign wakeup_preg_o = data_i.phys_rd;
 
 // 观测用

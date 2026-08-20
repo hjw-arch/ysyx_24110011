@@ -188,8 +188,6 @@ wire [5:0]  wakeup_preg2;
 wire        exu_complete_en;
 wire [4:0]  exu_complete_idx;
 wire [31:0] exu_complete_data;
-wire        exu_complete_exc;
-wire [3:0]  exu_complete_cause;
 wire        exu_complete_redir_valid;
 wire [31:0] exu_complete_redir_addr;
 wire        exu_wakeup_en;
@@ -219,7 +217,7 @@ wire        commit_rd_wen  /* verilator public_flat_rd */ = commit_pkt.rd_wen;
 // ─── 提交点系统语义（对齐五级 WBU）────────────────────────
 // CSR/ecall/mret/fence.i 仅在 ROB head 发射，complete 后下一拍提交。
 // 真正的 CSR 读写、特权跳转目标、icache inval 都在 commit 完成。
-// 精确异常（illegal / bus fault）走 exc_commit，写 mepc/mcause → mtvec。
+// 精确访存异常走 exc_commit，写 mepc/mcause → mtvec。
 wire commit_is_csr     = commit_valid & (commit_pkt.sys.csr_cmd != CSR_CMD_NONE);
 wire commit_is_ecall   = commit_valid & (commit_pkt.sys.priv_redir == PRIV_REDIR_ECALL);
 wire commit_is_mret    = commit_valid & (commit_pkt.sys.priv_redir == PRIV_REDIR_MRET);
@@ -433,8 +431,8 @@ rob u_rob (
     .complete_en1_i             (exu_complete_en),
     .complete_idx1_i            (exu_complete_idx),
     .complete_data1_i           (exu_complete_data),
-    .complete_exception1_i      (exu_complete_exc),
-    .complete_cause1_i          (exu_complete_cause),
+    .complete_exception1_i      (1'b0),
+    .complete_cause1_i          (4'b0),
     .complete_redirect_valid1_i (exu_complete_redir_valid),
     .complete_redirect_addr1_i  (exu_complete_redir_addr),
     .complete_en2_i             (lsu_complete_en),
@@ -557,8 +555,7 @@ physical_regfile u_prf (
 );
 
 wire        exu_prf_wen = exu_complete_en & execute_stage_out.rd_wen
-    & (execute_stage_out.sys.csr_cmd == CSR_CMD_NONE)
-    & ~execute_stage_out.exception;
+    & (execute_stage_out.sys.csr_cmd == CSR_CMD_NONE);
 wire        lsu_prf_wen = lsu_complete_en & lsu_complete_rd_wen;
 wire        csr_prf_capture = commit_is_csr & commit_pkt.rd_wen;
 wire        csr_prf_wen     = csr_prf_pending_valid;
@@ -634,8 +631,6 @@ exu u_exu (
     .complete_en_o             (exu_complete_en),
     .complete_idx_o            (exu_complete_idx),
     .complete_data_o           (exu_complete_data),
-    .complete_exception_o      (exu_complete_exc),
-    .complete_cause_o          (exu_complete_cause),
     .complete_redirect_valid_o (exu_complete_redir_valid),
     .complete_redirect_addr_o  (exu_complete_redir_addr),
     .wakeup_en_o               (exu_wakeup_en),

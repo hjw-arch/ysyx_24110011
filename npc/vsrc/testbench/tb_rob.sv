@@ -76,8 +76,6 @@ task automatic alloc_instr(
     alloc_pkt_i.phys_rd_old = phys_old;
     alloc_pkt_i.rd_wen      = rd_wen;
     alloc_pkt_i.is_store    = 1'b0;
-    alloc_pkt_i.exception   = 1'b0;
-    alloc_pkt_i.exception_cause = '0;
     alloc_pkt_i.sys         = '0;
     tick;
     alloc_en_i = 0;
