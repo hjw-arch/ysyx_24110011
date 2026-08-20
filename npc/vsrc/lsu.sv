@@ -104,10 +104,54 @@ typedef enum logic [1:0] {
 
 state_t state, nstate;
 
-wire is_load  = (data_i.mem.cmd == MEM_LOAD);
-wire is_store = (data_i.mem.cmd == MEM_STORE);
-wire is_mem   = is_load | is_store;
-wire mem_valid = valid_i & is_mem;
+typedef struct packed {
+    logic        is_load;
+    logic        is_store;
+    logic [4:0]  rob_idx;
+    logic [5:0]  phys_rd;
+    logic        rd_wen;
+    logic [2:0]  mem_type;
+    logic [31:0] mem_addr;
+    logic [31:0] store_data;
+} lsu_req_t;
+
+lsu_req_t req_stage_in;
+lsu_req_t req_stage_out;
+wire      req_stage_pre_valid;
+wire      req_stage_pre_ready;
+wire      req_stage_valid;
+wire      req_stage_ready;
+
+wire pre_is_load  = data_i.mem.cmd == MEM_LOAD;
+wire pre_is_store = data_i.mem.cmd == MEM_STORE;
+
+assign req_stage_in.is_load    = pre_is_load;
+assign req_stage_in.is_store   = pre_is_store;
+assign req_stage_in.rob_idx    = data_i.rob_idx;
+assign req_stage_in.phys_rd    = data_i.phys_rd;
+assign req_stage_in.rd_wen     = data_i.rd_wen;
+assign req_stage_in.mem_type   = data_i.inst[14:12];
+assign req_stage_in.mem_addr   = data_i.rs1_data + data_i.imm;
+assign req_stage_in.store_data = data_i.rs2_data;
+assign req_stage_pre_valid     = valid_i & (pre_is_load | pre_is_store) & ~flush_i;
+
+pip_reg #(
+    .WIDTH ($bits(lsu_req_t))
+) u_req_stage (
+    .clk        (clk),
+    .rst        (rst),
+    .flush      (flush_i),
+    .pre_valid  (req_stage_pre_valid),
+    .pre_data   (req_stage_in),
+    .pre_ready  (req_stage_pre_ready),
+    .next_valid (req_stage_valid),
+    .next_data  (req_stage_out),
+    .next_ready (req_stage_ready)
+);
+
+wire is_load   = req_stage_out.is_load;
+wire is_store  = req_stage_out.is_store;
+wire mem_valid = req_stage_valid;
 
 wire state_idle  = (state == S_IDLE);
 wire state_load  /* verilator public_flat_rd */ = (state == S_LOAD);
@@ -127,9 +171,9 @@ logic [2:0]  hold_mem_type;
 logic [31:0] hold_mem_addr /* verilator public_flat_rd */;
 logic        hold_flushed;
 
-wire [31:0] req_mem_addr   = data_i.rs1_data + data_i.imm;
-wire [31:0] req_store_data = data_i.rs2_data;   // 原值；master 按 addr/size 摆放
-wire [2:0]  req_mem_type   = data_i.inst[14:12];
+wire [31:0] req_mem_addr   = req_stage_out.mem_addr;
+wire [31:0] req_store_data = req_stage_out.store_data;
+wire [2:0]  req_mem_type   = req_stage_out.mem_type;
 wire [1:0]  req_size       = req_mem_type[1:0];
 
 // CAM 查询口（组合）
@@ -172,23 +216,18 @@ assign drain_fault_o = drain_resp_fire & (axi_wresp != 2'b00);
 
 // SQ alloc
 assign sq_alloc_en_o      = store_issue_ok;
-assign sq_alloc_rob_idx_o = data_i.rob_idx;
+assign sq_alloc_rob_idx_o = req_stage_out.rob_idx;
 assign sq_alloc_addr_o    = req_mem_addr;
 assign sq_alloc_data_o    = req_store_data;
 assign sq_alloc_strb_o    = req_strb;
 assign sq_alloc_size_o    = req_size;
 
-// ready：只在真正「接受」当前 IQ 项时为 1
-//   store/STLF 同拍 complete + 出队
-//   AXI load 在 load_req_fire 拍出队，hold_* 接管；等 resp 期间 ready=0
-//   resp 拍只 complete(hold)，不再 ready（顶层非 mem 不看 lsu_ready）
-// cam_stall 时 ready=0，IQ 保持该项
-// flush 后 in-flight load 只收尾 AXI（hold_flushed），不得 ready/complete
-assign ready_o = flush_i
-               | (state_idle & ~mem_valid)
-               | store_issue_ok
-               | load_stlf_ok
-               | load_req_fire;
+// request register 对上游提供独立 ready；后级只有真正消费当前请求时才出队：
+//   store/STLF 同拍 complete，AXI load 则由 hold_* 接管。
+// cam_stall 会保留 request register 内的 load；flush 清空未消费请求。
+// 已发出的 AXI load 在 flush 后只收尾事务，不再产生完成与写回。
+assign req_stage_ready = store_issue_ok | load_stlf_ok | load_req_fire;
+assign ready_o         = flush_i | req_stage_pre_ready;
 
 always_comb begin
     nstate = state;
@@ -226,9 +265,9 @@ always_ff @(posedge clk) begin
     end else begin
         if (load_req_fire) begin
             hold_is_load  <= 1'b1;
-            hold_rob_idx  <= data_i.rob_idx;
-            hold_phys_rd  <= data_i.phys_rd;
-            hold_rd_wen   <= data_i.rd_wen;
+            hold_rob_idx  <= req_stage_out.rob_idx;
+            hold_phys_rd  <= req_stage_out.phys_rd;
+            hold_rd_wen   <= req_stage_out.rd_wen;
             hold_mem_type <= req_mem_type;
             hold_mem_addr <= req_mem_addr;
             hold_flushed  <= 1'b0;
@@ -286,16 +325,16 @@ wire load_fault = load_resp_fire & (axi_rresp != 2'b00);
 wire axi_load_complete = load_resp_fire & ~hold_flushed;
 
 assign complete_en_o        = store_issue_ok | load_stlf_ok | axi_load_complete;
-assign complete_idx_o       = (store_issue_ok | load_stlf_ok) ? data_i.rob_idx : hold_rob_idx;
+assign complete_idx_o       = (store_issue_ok | load_stlf_ok) ? req_stage_out.rob_idx : hold_rob_idx;
 assign complete_data_o      = store_issue_ok ? 32'b0 :
                               load_stlf_ok   ? load_data_stlf : load_data_axi;
 assign complete_exception_o = store_issue_ok ? 1'b0 :
                               load_stlf_ok   ? 1'b0 : load_fault;
 assign complete_cause_o     = load_fault ? CAUSE_LOAD_ACCESS_FAULT : 4'b0;
 assign complete_rd_wen_o    = store_issue_ok ? 1'b0 :
-                              load_stlf_ok   ? data_i.rd_wen :
+                              load_stlf_ok   ? req_stage_out.rd_wen :
                                                (hold_rd_wen & hold_is_load & ~load_fault);
-assign complete_phys_rd_o   = (store_issue_ok | load_stlf_ok) ? data_i.phys_rd : hold_phys_rd;
+assign complete_phys_rd_o   = (store_issue_ok | load_stlf_ok) ? req_stage_out.phys_rd : hold_phys_rd;
 
 // AXI master：load 用 ren；drain 用 wen；store/STLF 不写总线
 // master 的 AXADDR/AXSIZE/WSTRB/WDATA 全程直通、不锁存：

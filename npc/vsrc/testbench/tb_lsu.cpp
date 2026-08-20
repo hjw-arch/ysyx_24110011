@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     dut->eval();
     tick(dut);
     check_bit("ARVALID",     true,  dut->ARVALID);
-    check_bit("ready (停)",  false, dut->ready_o);
+    check_bit("request buffer ready", true, dut->ready_o);
     check_bit("complete_en", false, dut->complete_en_o);
 
     // 测试3: Load AXI 完成
@@ -94,8 +94,8 @@ int main(int argc, char** argv) {
     check_u32("complete_data", 0x11223344u, dut->complete_data_o);
     check_bit("complete_rd_wen", true, dut->complete_rd_wen_o);
     check_u32("complete_phys_rd", 40, dut->complete_phys_rd_o);
-    // AXI 请求拍已经接收并移交给 hold_*；响应拍只写回，不重复声明 ready。
-    check_bit("ready stays low on response", false, dut->ready_o);
+    // 请求缓冲为空，可在响应拍接受下一条访存请求。
+    check_bit("request buffer ready on response", true, dut->ready_o);
     dut->RVALID = 0; tick(dut);
 
     // 测试4: flush 丢弃 in-flight load
@@ -123,11 +123,13 @@ int main(int argc, char** argv) {
     dut->inst_i = 0x00a02023; // sw
     dut->rd_wen_i = 0; dut->phys_rd_i = 0;
     dut->eval();
+    tick(dut);
+    dut->valid_i = 0;
+    dut->eval();
     check_bit("sq_alloc_en", true, dut->sq_alloc_en_o);
     check_bit("complete_en store", true, dut->complete_en_o);
     check_bit("AWVALID store issue", false, dut->AWVALID);
     tick(dut);
-    dut->valid_i = 0;
 
     // 测试6: CAM stall 时 load 不得发 AXI
     std::cout << "\n[测试6] CAM stall 时 load 不得发 AXI" << std::endl;
@@ -138,10 +140,13 @@ int main(int argc, char** argv) {
     dut->rd_wen_i = 1; dut->phys_rd_i = 42;
     dut->inst_i = 0x00002003;
     dut->eval();
+    tick(dut);
+    dut->valid_i = 0;
+    dut->eval();
     check_bit("ARVALID blocked by stall", false, dut->ARVALID);
     check_bit("ready blocked by stall",   false, dut->ready_o);
     check_bit("complete blocked by stall", false, dut->complete_en_o);
-    dut->valid_i = 0; dut->cam_stall_i = 0; tick(dut);
+    dut->cam_stall_i = 0; tick(dut);
 
     // 测试7: drain 发起写
     std::cout << "\n[测试7] commit drain 发起 AXI 写" << std::endl;
@@ -172,13 +177,16 @@ int main(int argc, char** argv) {
     dut->rd_wen_i = 1; dut->phys_rd_i = 43;
     dut->cam_hit_i = 0; dut->cam_stall_i = 0;
     dut->eval();
+    check_bit("request accepted", true, dut->ready_o);
+    check_bit("ARVALID before request register", false, dut->ARVALID);
+    tick(dut);
+    dut->valid_i = 0;
+    dut->eval();
     check_bit("ARVALID fire", true, dut->ARVALID);
     check_u32("ARADDR fire", 0x80000001u, dut->ARADDR);
-    tick(dut);
     check_bit("ARVALID wait ARREADY", true, dut->ARVALID);
     check_u32("ARADDR before corrupt", 0x80000001u, dut->ARADDR);
 
-    dut->valid_i = 0;
     dut->rs1_data_i = 0xDEADBEE0;
     dut->imm_i = 0x10;
     dut->inst_i = 0x00000013;
@@ -236,6 +244,9 @@ int main(int argc, char** argv) {
     dut->inst_i = 0x00004003; // lbu
     dut->rd_wen_i = 1; dut->phys_rd_i = 44;
     dut->eval();
+    tick(dut);
+    dut->valid_i = 0;
+    dut->eval();
     check_bit("STLF no ARVALID", false, dut->ARVALID);
     check_bit("STLF complete", true, dut->complete_en_o);
     check_u32("STLF data", 0xAAu, dut->complete_data_o);
@@ -243,7 +254,7 @@ int main(int argc, char** argv) {
     check_u32("STLF idx", 11u, dut->complete_idx_o);
     check_bit("STLF rd_wen", true, dut->complete_rd_wen_o);
     tick(dut);
-    dut->valid_i = 0; dut->cam_hit_i = 0;
+    dut->cam_hit_i = 0;
 
     // 测试11: SQ 非空但不同字（cam none）→ 允许 AXI load
     std::cout << "\n[测试11] CAM none（不同字）允许 AXI load" << std::endl;
@@ -254,10 +265,11 @@ int main(int argc, char** argv) {
     dut->inst_i = 0x00002003; // lw
     dut->rd_wen_i = 1; dut->phys_rd_i = 45;
     dut->eval();
-    check_bit("AXI load ARVALID with SQ nonempty-equivalent", true, dut->ARVALID);
-    check_bit("AXI load not complete yet", false, dut->complete_en_o);
     tick(dut);
     dut->valid_i = 0;
+    dut->eval();
+    check_bit("AXI load ARVALID with SQ nonempty-equivalent", true, dut->ARVALID);
+    check_bit("AXI load not complete yet", false, dut->complete_en_o);
     dut->ARREADY = 1; tick(dut); dut->ARREADY = 0;
     for (int i = 0; i < 6 && !dut->complete_en_o; i++) {
         dut->RVALID = 1; dut->RLAST = 1; dut->RDATA = 0x55667788; dut->RRESP = 0;
@@ -287,6 +299,9 @@ int main(int argc, char** argv) {
     dut->inst_i = 0x00004003; // lbu
     dut->rd_wen_i = 1; dut->phys_rd_i = 46;
     dut->eval();
+    tick(dut);
+    dut->valid_i = 0;
+    dut->eval();
     check_bit("STLF during drain no ARVALID", false, dut->ARVALID);
     check_bit("STLF during drain complete", true, dut->complete_en_o);
     check_u32("STLF during drain data", 0x55u, dut->complete_data_o);
@@ -294,7 +309,7 @@ int main(int argc, char** argv) {
     // drain 仍在进行
     check_bit("drain still AWVALID", true, dut->AWVALID);
 
-    dut->valid_i = 0; dut->cam_hit_i = 0;
+    dut->cam_hit_i = 0;
     dut->AWREADY = 1; dut->WREADY = 1;
     for (int i = 0; i < 8 && !dut->drain_done_o; i++) {
         if (dut->BREADY) { dut->BVALID = 1; dut->BRESP = 0; }

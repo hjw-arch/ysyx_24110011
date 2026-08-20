@@ -115,14 +115,20 @@ wire [31:0] bpu_update_pc;
 wire [31:0] bpu_update_target;
 
 // ─── IF → DEC ─────────────────────────────────────────────
+wire        if2dec_pre_valid;
+if2id_pkt_t if2dec_pre_data;
+wire        if2dec_pre_ready;
 wire        if2dec_valid;
 if2id_pkt_t if2dec_data;
 wire        if2dec_ready;
 
 // ─── DEC → RENAME ─────────────────────────────────────────
-wire        dec2ren_valid;
+wire         dec2ren_pre_valid;
+decode_pkt_t dec2ren_pre_data;
+wire         dec2ren_pre_ready;
+wire         dec2ren_valid;
 decode_pkt_t dec2ren_data;
-wire        dec2ren_ready;
+wire         dec2ren_ready;
 
 // ─── RENAME → IQ ──────────────────────────────────────────
 wire              ren2iq_valid;
@@ -167,6 +173,10 @@ wire [31:0] prf_wdata1;
 wire        prf_wen2;
 wire [5:0]  prf_waddr2;
 wire [31:0] prf_wdata2;
+
+logic        csr_prf_pending_valid;
+logic [5:0]  csr_prf_pending_addr;
+logic [31:0] csr_prf_pending_data;
 
 // ─── 唤醒信号（与两个 PRF 写端口一一对应）────────────────
 wire        wakeup_en1;
@@ -313,9 +323,26 @@ IFU u_ifu (
     .bpu_update_taken_i  (bpu_update_taken),
     .bpu_update_pc_i     (bpu_update_pc),
     .bpu_update_target_i (bpu_update_target),
-    .valid_o             (if2dec_valid),
-    .data_o              (if2dec_data),
-    .ready_i             (if2dec_ready)
+    .valid_o             (if2dec_pre_valid),
+    .data_o              (if2dec_pre_data),
+    .ready_i             (if2dec_pre_ready)
+);
+
+// ================================================================
+//  IF → Decode：恢复五级流水线原有的前端级间寄存器
+// ================================================================
+pip_reg #(
+    .WIDTH ($bits(if2id_pkt_t))
+) u_if2dec_stage (
+    .clk        (clock),
+    .rst        (reset),
+    .flush      (pipeline_flush),
+    .pre_valid  (if2dec_pre_valid),
+    .pre_data   (if2dec_pre_data),
+    .pre_ready  (if2dec_pre_ready),
+    .next_valid (if2dec_valid),
+    .next_data  (if2dec_data),
+    .next_ready (if2dec_ready)
 );
 
 // ================================================================
@@ -325,9 +352,26 @@ idu u_idu (
     .valid_i (if2dec_valid),
     .data_i  (if2dec_data),
     .ready_o (if2dec_ready),
-    .valid_o (dec2ren_valid),
-    .data_o  (dec2ren_data),
-    .ready_i (dec2ren_ready)
+    .valid_o (dec2ren_pre_valid),
+    .data_o  (dec2ren_pre_data),
+    .ready_i (dec2ren_pre_ready)
+);
+
+// ================================================================
+//  Decode → Rename：隔离译码与重命名/分派组合逻辑
+// ================================================================
+pip_reg #(
+    .WIDTH ($bits(decode_pkt_t))
+) u_dec2ren_stage (
+    .clk        (clock),
+    .rst        (reset),
+    .flush      (pipeline_flush),
+    .pre_valid  (dec2ren_pre_valid),
+    .pre_data   (dec2ren_pre_data),
+    .pre_ready  (dec2ren_pre_ready),
+    .next_valid (dec2ren_valid),
+    .next_data  (dec2ren_data),
+    .next_ready (dec2ren_ready)
 );
 
 // ================================================================
@@ -516,15 +560,29 @@ wire        exu_prf_wen = exu_complete_en & execute_stage_out.rd_wen
     & (execute_stage_out.sys.csr_cmd == CSR_CMD_NONE)
     & ~execute_stage_out.exception;
 wire        lsu_prf_wen = lsu_complete_en & lsu_complete_rd_wen;
-wire        csr_prf_wen = commit_is_csr & commit_pkt.rd_wen;
+wire        csr_prf_capture = commit_is_csr & commit_pkt.rd_wen;
+wire        csr_prf_wen     = csr_prf_pending_valid;
+
+always_ff @(posedge clock) begin
+    if (reset) begin
+        csr_prf_pending_valid <= 1'b0;
+    end else begin
+        csr_prf_pending_valid <= csr_prf_capture;
+    end
+
+    if (csr_prf_capture) begin
+        csr_prf_pending_addr <= commit_pkt.phys_rd;
+        csr_prf_pending_data <= csr_rdata;
+    end
+end
 
 wire execute_stage_is_mem = execute_stage_out.mem.cmd != MEM_NONE;
 assign execute_stage_ready = execute_stage_is_mem ? lsu_ready : ~csr_prf_wen;
 
 // CSR 与 EXU 按设计不会同时请求 W1；条件选择仍以 CSR 为优先级。
 assign prf_wen1   = exu_prf_wen | csr_prf_wen;
-assign prf_waddr1 = csr_prf_wen ? commit_pkt.phys_rd : execute_stage_out.phys_rd;
-assign prf_wdata1 = csr_prf_wen ? csr_rdata          : exu_complete_data;
+assign prf_waddr1 = csr_prf_wen ? csr_prf_pending_addr : execute_stage_out.phys_rd;
+assign prf_wdata1 = csr_prf_wen ? csr_prf_pending_data : exu_complete_data;
 
 // LSU load 独占 W2。
 assign prf_wen2   = lsu_prf_wen;
@@ -533,7 +591,7 @@ assign prf_wdata2 = lsu_complete_data;
 
 // 唤醒端口与 PRF 写端口保持相同的使能和目标寄存器。
 assign wakeup_en1   = exu_wakeup_en | csr_prf_wen;
-assign wakeup_preg1 = csr_prf_wen ? commit_pkt.phys_rd : exu_wakeup_preg;
+assign wakeup_preg1 = csr_prf_wen ? csr_prf_pending_addr : exu_wakeup_preg;
 assign wakeup_en2   = lsu_prf_wen;
 assign wakeup_preg2 = lsu_complete_phys_rd;
 

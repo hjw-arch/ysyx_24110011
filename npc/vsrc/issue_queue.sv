@@ -45,6 +45,7 @@ import pipeline_pkt_pkg::*;
 // 队列项结构
 typedef struct packed {
     logic           valid;
+    logic   [4:0]   age;
     rob_idx_t       rob_idx;
     logic   [31:0]  pc;
     logic   [2:0]   funct3;
@@ -64,6 +65,7 @@ typedef struct packed {
 } iq_entry_t;
 
 iq_entry_t iq [0:IQ_SIZE-1];
+rob_idx_t  rob_head_q;
 
 // ── 每项属性（组合）──
 wire [IQ_SIZE-1:0] ent_valid;
@@ -84,7 +86,7 @@ generate
                                  | (iq[gi].sys.priv_redir != PRIV_REDIR_NONE)
                                  | iq[gi].sys.fence_i;
         assign ent_is_head[gi]   = (iq[gi].rob_idx == rob_head_i);
-        assign ent_age[gi]       = iq[gi].rob_idx - rob_head_i;
+        assign ent_age[gi]       = iq[gi].age;
     end
 endgenerate
 
@@ -205,9 +207,19 @@ assign dispatch_ready_o = alloc_has_slot;
 // valid 与 payload 同步更新，保持同一 always_ff 语义一致
 always_ff @(posedge clk) begin
     if (rst || flush_i) begin
+        rob_head_q <= rob_head_i;
         for (int i = 0; i < IQ_SIZE; i++)
             iq[i].valid <= 1'b0;
     end else begin
+        rob_head_q <= rob_head_i;
+
+        if (rob_head_i != rob_head_q) begin
+            for (int i = 0; i < IQ_SIZE; i++) begin
+                if (iq[i].valid)
+                    iq[i].age <= iq[i].age - 1'b1;
+            end
+        end
+
         if (wakeup_en1_i || wakeup_en2_i) begin
             for (int i = 0; i < IQ_SIZE; i++) begin
                 if (iq[i].valid) begin
@@ -224,6 +236,7 @@ always_ff @(posedge clk) begin
 
         if (dispatch_fire) begin
             iq[alloc_idx].valid      <= 1'b1;
+            iq[alloc_idx].age        <= dispatch_pkt_i.rob_idx - rob_head_i;
             iq[alloc_idx].rob_idx    <= dispatch_pkt_i.rob_idx;
             iq[alloc_idx].pc         <= dispatch_pkt_i.pc;
             iq[alloc_idx].funct3     <= dispatch_pkt_i.inst[14:12];

@@ -216,7 +216,7 @@ test_$(1): prepare_build
 		$(abspath ./vsrc/$(1).sv) \
 		-Mdir $(TB_OBJ_DIR)/$(1) \
 		-o Vtb_$(1) && \
-	$(TB_OBJ_DIR)/$(1)/Vtb_$(1) || echo "  [ERROR] $(1) 测试失败"
+	$(TB_OBJ_DIR)/$(1)/Vtb_$(1)
 endef
 
 $(foreach m,$(TB_SIMPLE),$(eval $(call TB_SIMPLE_RULE,$(m))))
@@ -234,7 +234,7 @@ test_$(1): prepare_build
 		$(TB_DIR)/tb_$(1).sv \
 		-Mdir $(TB_OBJ_DIR)/$(1) \
 		-o Vtb_$(1) && \
-	$(TB_OBJ_DIR)/$(1)/Vtb_$(1) || echo "  [ERROR] $(1) 测试失败"
+	$(TB_OBJ_DIR)/$(1)/Vtb_$(1)
 endef
 
 $(foreach m,$(TB_PKG),$(eval $(call TB_PKG_RULE,$(m))))
@@ -251,11 +251,12 @@ test_$(1): prepare_build
 		$(TB_DIR)/tb_$(1).cpp \
 		$(TB_DIR)/$(1)_wrapper.sv \
 		$(abspath ./vsrc/$(1).sv) \
+		$(abspath ./vsrc/pip_reg.sv) \
 		$(abspath ./vsrc/ALU.sv) \
 		$(abspath ./vsrc/axi4_full_master.sv) \
 		-Mdir $(TB_OBJ_DIR)/$(1) \
 		-o Vtb_$(1) && \
-	$(TB_OBJ_DIR)/$(1)/Vtb_$(1) || echo "  [ERROR] $(1) 测试失败"
+	$(TB_OBJ_DIR)/$(1)/Vtb_$(1)
 endef
 
 $(foreach m,$(TB_CPP),$(eval $(call TB_CPP_RULE,$(m))))
