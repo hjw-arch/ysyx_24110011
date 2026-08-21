@@ -27,10 +27,7 @@ module rename_map_table #(
     input       [4:0]   commit_arch_i,
     input       [5:0]   commit_phys_i,
 
-    input               flush_i,
-
-    // 给 freelist 的 AMT 快照（含本拍 commit bypass）
-    output      [5:0]   amt_snapshot_o [0:NUM_ARCH_REGS-1]
+    input               flush_i
 );
 
 logic [5:0] map_table [0:NUM_ARCH_REGS-1];
@@ -39,23 +36,6 @@ logic [5:0] arch_map  [0:NUM_ARCH_REGS-1];
 assign rs1_phys_o    = map_table[rs1_arch_i];
 assign rs2_phys_o    = map_table[rs2_arch_i];
 assign rd_phys_old_o = map_table[rd_arch_i];
-
-// next AMT = arch_map 合入本拍 commit（组合），供 freelist flush 重建
-logic [5:0] next_amt [0:NUM_ARCH_REGS-1];
-always_comb begin
-    for (int i = 0; i < NUM_ARCH_REGS; i++) begin
-        next_amt[i] = arch_map[i];
-    end
-    if (commit_en_i)
-        next_amt[commit_arch_i] = commit_phys_i;
-end
-
-genvar gi;
-generate
-    for (gi = 0; gi < NUM_ARCH_REGS; gi++) begin : g_amt
-        assign amt_snapshot_o[gi] = next_amt[gi];
-    end
-endgenerate
 
 always_ff @(posedge clk) begin
     if (rst) begin

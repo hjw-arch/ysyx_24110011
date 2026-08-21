@@ -10,20 +10,21 @@ always #5 clk = ~clk;
 logic       alloc_req_i;
 logic       alloc_valid_o;
 logic [5:0] alloc_preg_o;
-logic       free_en_i;
-logic [5:0] free_preg_i;
+logic       commit_en_i;
+logic [5:0] commit_preg_new_i;
+logic [5:0] commit_preg_old_i;
 logic       flush_i;
-logic [5:0] amt_snapshot_i [0:31];
 
 freelist dut (
-    .clk(clk), .rst(rst),
-    .alloc_req_i(alloc_req_i),
-    .alloc_valid_o(alloc_valid_o),
-    .alloc_preg_o(alloc_preg_o),
-    .free_en_i(free_en_i),
-    .free_preg_i(free_preg_i),
-    .flush_i(flush_i),
-    .amt_snapshot_i(amt_snapshot_i)
+    .clk               (clk),
+    .rst               (rst),
+    .alloc_req_i       (alloc_req_i),
+    .alloc_valid_o     (alloc_valid_o),
+    .alloc_preg_o      (alloc_preg_o),
+    .commit_en_i        (commit_en_i),
+    .commit_preg_new_i  (commit_preg_new_i),
+    .commit_preg_old_i  (commit_preg_old_i),
+    .flush_i            (flush_i)
 );
 
 int pass_cnt = 0, fail_cnt = 0;
@@ -41,69 +42,84 @@ endtask
 task automatic tick; @(posedge clk); #1; endtask
 
 initial begin
-    alloc_req_i = 0; free_en_i = 0; free_preg_i = 0; flush_i = 0;
-    for (int i = 0; i < 32; i++) amt_snapshot_i[i] = 6'(i);
-    tick; tick; rst = 0; tick;
+    alloc_req_i       = 1'b0;
+    commit_en_i        = 1'b0;
+    commit_preg_new_i  = '0;
+    commit_preg_old_i  = '0;
+    flush_i            = 1'b0;
 
-    // ── 测试1：初始状态，p32 是第一个可用寄存器 ──
+    tick;
+    tick;
+    rst = 1'b0;
+    tick;
+
+    // ── 测试1：初始状态 ──
     $display("\n[TEST1] 初始状态低位优先分配");
-    alloc_req_i = 1; tick; alloc_req_i = 0;
     chk ("分配有效", 1'b1, alloc_valid_o);
-    // 第一次分配后 p32 已被占用，下次应给 p33
-    // （alloc_preg_o 在 alloc_req 拍后更新）
-    // 注意：alloc_preg 是组合输出，当 alloc_req=1 时即显示待分配值
-    alloc_req_i = 1;
-    #1; // 等组合逻辑稳定
-    chk6("第二次分配 p33", 6'd33, alloc_preg_o);
-    tick; alloc_req_i = 0;  // tick 内先 posedge 才赋 0，避免同边沿竞争
+    chk6("首次分配 p32", 6'd32, alloc_preg_o);
 
-    // ── 测试2：分配 alloc_req=1 时组合输出正确 ──
-    $display("\n[TEST2] 分配请求组合逻辑");
-    alloc_req_i = 1;
+    // ── 测试2：推测分配 ──
+    $display("\n[TEST2] 推测分配消耗 p32");
+    alloc_req_i = 1'b1;
+    tick;
+    alloc_req_i = 1'b0;
     #1;
-    chk ("alloc_valid=1", 1'b1, alloc_valid_o);
-    chk6("第三次分配 p34", 6'd34, alloc_preg_o);
-    tick; alloc_req_i = 0;
+    chk6("下一项为 p33", 6'd33, alloc_preg_o);
 
-    // ── 测试3：释放后可重新分配 ──
-    $display("\n[TEST3] 释放后可再分配");
-    free_en_i = 1; free_preg_i = 6'd32;
-    tick; free_en_i = 0;
-    // p32 重新空闲，因低位优先，下次应给 p32
-    alloc_req_i = 1;
+    // ── 测试3：提交新映射 p32，释放旧映射 p5 ──
+    $display("\n[TEST3] 提交更新 committed FreeList");
+    commit_en_i       = 1'b1;
+    commit_preg_new_i = 6'd32;
+    commit_preg_old_i = 6'd5;
+    tick;
+    commit_en_i = 1'b0;
     #1;
-    chk6("释放后分配到 p32", 6'd32, alloc_preg_o);
-    @(posedge clk); alloc_req_i = 0; #1;
+    chk6("提交后旧映射 p5 可分配", 6'd5, alloc_preg_o);
 
-    // ── 测试4：p0 不可释放；p1-p31 首次提交后可回收 ──
-    $display("\n[TEST4] p0 不可释放，p5 可回收");
-    free_en_i = 1; free_preg_i = 6'd0; // p0 必须忽略
-    tick; free_en_i = 0;
-    free_en_i = 1; free_preg_i = 6'd5; // 释放原恒等映射 p5
-    tick; free_en_i = 0;
-    // p5 应成为最低空闲号
-    alloc_req_i = 1; #1;
-    chk ("释放 p5 后仍有空闲", 1'b1, alloc_valid_o);
-    chk6("释放 p5 后分配到 p5", 6'd5, alloc_preg_o);
-    @(posedge clk); alloc_req_i = 0; #1;
+    // ── 测试4：Flush 撤销未提交的 p5 分配 ──
+    $display("\n[TEST4] Flush 恢复 committed FreeList");
+    alloc_req_i = 1'b1;
+    tick;
+    alloc_req_i = 1'b0;
+    #1;
+    chk6("错误路径分配 p5 后下一项为 p33", 6'd33, alloc_preg_o);
 
-    // ── 测试5：flush 恢复初始状态 ──
-    $display("\n[TEST5] flush 恢复初始状态");
-    flush_i = 1; tick; flush_i = 0; tick;
-    alloc_req_i = 1; #1;
-    chk ("flush后有空闲", 1'b1, alloc_valid_o);
-    chk6("flush后首次分配 p32", 6'd32, alloc_preg_o);
-    @(posedge clk); alloc_req_i = 0; #1;
+    flush_i = 1'b1;
+    tick;
+    flush_i = 1'b0;
+    #1;
+    chk6("Flush 后 p5 重新空闲", 6'd5, alloc_preg_o);
 
-    // ── 测试6：耗尽后 alloc_valid=0 ──
+    // ── 测试5：同拍 Commit+Flush 必须保留 head 提交 ──
+    $display("\n[TEST5] Commit+Flush 同拍旁路");
+    alloc_req_i = 1'b1;
+    tick;
+    alloc_req_i = 1'b0;
+
+    commit_en_i       = 1'b1;
+    commit_preg_new_i = 6'd5;
+    commit_preg_old_i = 6'd6;
+    flush_i           = 1'b1;
+    tick;
+    commit_en_i = 1'b0;
+    flush_i     = 1'b0;
+    #1;
+    chk6("同拍恢复后 p5 占用、p6 空闲", 6'd6, alloc_preg_o);
+
+    // ── 测试6：复位后耗尽全部推测空闲寄存器 ──
     $display("\n[TEST6] 耗尽所有空闲寄存器");
-    flush_i = 1; tick; flush_i = 0; tick;
-    // 分配全部 32 个空闲寄存器 (p32-p63)
+    rst = 1'b1;
+    tick;
+    rst = 1'b0;
+    tick;
+
     for (int i = 0; i < 32; i++) begin
-        alloc_req_i = 1; tick;
+        alloc_req_i = 1'b1;
+        tick;
     end
-    alloc_req_i = 0; #1;
-    chk ("耗尽后 alloc_valid=0", 1'b0, alloc_valid_o);
+    alloc_req_i = 1'b0;
+    #1;
+    chk("耗尽后 alloc_valid=0", 1'b0, alloc_valid_o);
 
     tick;
     $display("\n===== freelist: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

@@ -2,7 +2,7 @@
 // 集成映射表、空闲列表、忙碌表，完成寄存器重命名
 // 关键优化：若唤醒信号与分派同周期到达，直接在分派包里标记 rs_ready=1，
 // 避免指令进队后无法被唤醒的竞争（busy_table 清除要到下拍才生效）。
-// flush 时：RAT 由 AMT 恢复，freelist 按 AMT 重建，busy_table 清空。
+// flush 时：RAT 由 AMT 恢复，freelist 恢复 committed 位图，busy_table 清空。
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -53,7 +53,6 @@ wire [5:0] rd_phys_new;
 wire       freelist_valid;
 wire       rs1_ready_bt;
 wire       rs2_ready_bt;
-wire [5:0] amt_snapshot [0:31];
 
 wire [4:0] rs1_arch = decode_pkt_i.inst[19:15];
 wire [4:0] rs2_arch = decode_pkt_i.inst[24:20];
@@ -80,8 +79,7 @@ rename_map_table u_map_table (
     .commit_en_i    (commit_valid_i & commit_rd_wen_i),
     .commit_arch_i  (commit_arch_rd_i),
     .commit_phys_i  (commit_phys_rd_i),
-    .flush_i        (flush_i),
-    .amt_snapshot_o (amt_snapshot)
+    .flush_i        (flush_i)
 );
 
 freelist u_freelist (
@@ -90,11 +88,11 @@ freelist u_freelist (
     // 仅在真正分派时分配，避免 can_proceed=0 时消耗 freelist
     .alloc_req_i    (dispatch_valid_o & decode_pkt_i.rd_wen),
     .alloc_valid_o  (freelist_valid),
-    .alloc_preg_o   (rd_phys_new),
-    .free_en_i      (commit_valid_i & commit_rd_wen_i),
-    .free_preg_i    (commit_preg_old_i),
-    .flush_i        (flush_i),
-    .amt_snapshot_i (amt_snapshot)
+    .alloc_preg_o      (rd_phys_new),
+    .commit_en_i        (commit_valid_i & commit_rd_wen_i),
+    .commit_preg_new_i  (commit_phys_rd_i),
+    .commit_preg_old_i  (commit_preg_old_i),
+    .flush_i            (flush_i)
 );
 
 busy_table u_busy_table (

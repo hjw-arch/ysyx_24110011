@@ -16,7 +16,6 @@ logic       commit_en_i;
 logic [4:0] commit_arch_i;
 logic [5:0] commit_phys_i;
 logic       flush_i;
-logic [5:0] amt_snapshot_o [0:31];
 
 rename_map_table dut (
     .clk(clk), .rst(rst),
@@ -24,7 +23,7 @@ rename_map_table dut (
     .rs1_phys_o(rs1_phys_o), .rs2_phys_o(rs2_phys_o), .rd_phys_old_o(rd_phys_old_o),
     .update_en_i(update_en_i), .update_arch_i(update_arch_i), .update_phys_i(update_phys_i),
     .commit_en_i(commit_en_i), .commit_arch_i(commit_arch_i), .commit_phys_i(commit_phys_i),
-    .flush_i(flush_i), .amt_snapshot_o(amt_snapshot_o)
+    .flush_i(flush_i)
 );
 
 int pass_cnt = 0, fail_cnt = 0;
