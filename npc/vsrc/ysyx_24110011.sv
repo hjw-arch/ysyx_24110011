@@ -5,7 +5,7 @@
 //
 // 不变量：
 //   1. 架构状态（AMT / CSR / 内存）只在 ROB commit 对外不可回滚
-//   2. flush 仅 rob.flush_o；RAT/freelist 用 next_amt 恢复
+//   2. 分支误预测在 EXU 立即恢复；异常/特权跳转/fence.i 在 ROB head 全局刷新
 //   3. store 不得在 commit 前进入 AXI；issue 只入 SQ，commit 后 drain
 //   4. load：SQ CAM 全覆盖 STLF / 部分重叠 stall / 无重叠 AXI；IQ 仍 older_mem 序
 //   5. 单发射：dispatch/issue/commit 宽均为 1；快、慢写回各使用一路唤醒
@@ -97,15 +97,14 @@ assign io_slave_rdata   = 32'b0;
 assign io_slave_rlast   = 1'b0;
 assign io_slave_rid     = 4'b0;
 
-// ─── 全局 flush / redirect ────────────────────────────────
-// EXU redirect 只写入 ROB complete；冲刷前端仅在 head 提交时 rob_flush
+// ─── flush / redirect ─────────────────────────────────────
 wire        exu_redirect_valid /* verilator public_flat_rd */;
 wire [31:0] exu_redirect_addr  /* verilator public_flat_rd */;
 wire        rob_flush          /* verilator public_flat_rd */;
 wire [31:0] rob_flush_pc;
-
-// flush 仅以 ROB 为准；redirect 目标见 redirect_pc_final（trap/mret/其它）
-wire        pipeline_flush = rob_flush;
+wire        branch_recover_valid /* verilator public_flat_rd */;
+wire        pipeline_flush;
+wire        rename_recover_busy;
 
 // ─── BPU 更新（来自 exu）──────────────────────────────────
 wire        bpu_update_valid;
@@ -140,6 +139,13 @@ wire [4:0]        rob_alloc_idx;
 wire              rob_alloc_ready;
 wire              rob_alloc_en;
 rob_alloc_pkt_t   rob_alloc_pkt;
+
+// ─── ROB → Rename 恢复 Walk ──────────────────────────────
+wire [4:0] rob_walk_idx;
+wire       rob_walk_valid;
+wire       rob_walk_rd_wen;
+wire [4:0] rob_walk_arch_rd;
+wire [5:0] rob_walk_phys_rd;
 
 // ─── IQ → EXU/LSU ─────────────────────────────────────────
 wire              iq_issue_valid;
@@ -188,10 +194,11 @@ wire [5:0]  wakeup_preg2;
 wire        exu_complete_en;
 wire [4:0]  exu_complete_idx;
 wire [31:0] exu_complete_data;
-wire        exu_complete_redir_valid;
-wire [31:0] exu_complete_redir_addr;
 wire        exu_wakeup_en;
 wire [5:0]  exu_wakeup_preg;
+
+assign branch_recover_valid = exu_redirect_valid & ~rob_flush;
+assign pipeline_flush       = rob_flush | branch_recover_valid;
 
 // ─── LSU 完成信号 ──────────────────────────────────────────
 wire        lsu_ready;
@@ -254,7 +261,8 @@ assign icache_inval = commit_is_fence_i;
 wire [31:0] redirect_pc_final =
     (commit_is_ecall | exc_commit_valid) ? csr_mtvec :
     commit_is_mret                        ? csr_mepc  :
-    rob_flush_pc;
+    rob_flush                             ? rob_flush_pc :
+                                            exu_redirect_addr;
 
 // ─── Store Queue / drain / CAM 握手 ───────────────────────
 wire        sq_alloc_en;
@@ -276,7 +284,6 @@ wire        sq_commit_fault;
 
 wire        drain_req;
 wire [31:0] drain_addr, drain_data;
-wire [3:0]  drain_strb;
 wire [1:0]  drain_size;
 wire        drain_fire, drain_done, drain_fault;
 
@@ -406,6 +413,12 @@ rename_stage u_rename (
     .rob_ready_i       (rob_alloc_ready),
     .rob_alloc_en_o    (rob_alloc_en),
     .rob_alloc_pkt_o   (rob_alloc_pkt),
+    .rob_head_idx_i    (rob_head_idx),
+    .rob_walk_idx_o    (rob_walk_idx),
+    .rob_walk_valid_i  (rob_walk_valid),
+    .rob_walk_rd_wen_i (rob_walk_rd_wen),
+    .rob_walk_arch_rd_i (rob_walk_arch_rd),
+    .rob_walk_phys_rd_i (rob_walk_phys_rd),
     .commit_valid_i    (commit_valid),
     .commit_arch_rd_i  (commit_pkt.arch_rd),
     .commit_phys_rd_i  (commit_pkt.phys_rd),
@@ -415,7 +428,10 @@ rename_stage u_rename (
     .wakeup_preg1_i    (wakeup_preg1),
     .wakeup_en2_i      (wakeup_en2),
     .wakeup_preg2_i    (wakeup_preg2),
-    .flush_i           (pipeline_flush)
+    .branch_recover_idx_i (exu_complete_idx),
+    .branch_recover_i  (branch_recover_valid),
+    .recover_busy_o    (rename_recover_busy),
+    .flush_i           (rob_flush)
 );
 
 // ================================================================
@@ -433,15 +449,19 @@ rob u_rob (
     .complete_data1_i           (exu_complete_data),
     .complete_exception1_i      (1'b0),
     .complete_cause1_i          (4'b0),
-    .complete_redirect_valid1_i (exu_complete_redir_valid),
-    .complete_redirect_addr1_i  (exu_complete_redir_addr),
     .complete_en2_i             (lsu_complete_en),
     .complete_idx2_i            (lsu_complete_idx),
     .complete_data2_i           (lsu_complete_data),
     .complete_exception2_i      (lsu_complete_exc),
     .complete_cause2_i          (lsu_complete_cause),
-    .complete_redirect_valid2_i (1'b0),
-    .complete_redirect_addr2_i  (32'b0),
+    .branch_recover_valid_i     (branch_recover_valid),
+    .branch_recover_idx_i       (exu_complete_idx),
+    .recover_stall_i            (rename_recover_busy),
+    .recover_walk_idx_i         (rob_walk_idx),
+    .recover_walk_valid_o       (rob_walk_valid),
+    .recover_walk_rd_wen_o      (rob_walk_rd_wen),
+    .recover_walk_arch_rd_o     (rob_walk_arch_rd),
+    .recover_walk_phys_rd_o     (rob_walk_phys_rd),
     .store_commit_ready_i       (sq_commit_ready),
     .store_commit_fault_i       (sq_commit_fault),
     .store_commit_req_o         (sq_commit_req),
@@ -460,57 +480,60 @@ rob u_rob (
 //  Store Queue（commit 后 AXI 写）
 // ================================================================
 store_queue u_sq (
-    .clk             (clock),
-    .rst             (reset),
-    .flush_i         (pipeline_flush),
-    .alloc_en_i      (sq_alloc_en),
-    .alloc_rob_idx_i (sq_alloc_rob_idx),
-    .alloc_addr_i    (sq_alloc_addr),
-    .alloc_data_i    (sq_alloc_data),
-    .alloc_strb_i    (sq_alloc_strb),
-    .alloc_size_i    (sq_alloc_size),
-    .alloc_ready_o   (sq_alloc_ready),
+    .clk                    (clock),
+    .rst                    (reset),
+    .flush_i                (rob_flush),
+    .branch_recover_valid_i (branch_recover_valid),
+    .branch_recover_idx_i   (exu_complete_idx),
+    .alloc_en_i             (sq_alloc_en),
+    .alloc_rob_idx_i        (sq_alloc_rob_idx),
+    .alloc_addr_i           (sq_alloc_addr),
+    .alloc_data_i           (sq_alloc_data),
+    .alloc_strb_i           (sq_alloc_strb),
+    .alloc_size_i           (sq_alloc_size),
+    .alloc_ready_o          (sq_alloc_ready),
     // empty 仅调试/TB；load 门控已由 CAM 取代
-    .empty_o          (),
-    .cam_addr_i       (sq_cam_addr),
-    .cam_size_i       (sq_cam_size),
-    .cam_hit_o        (sq_cam_hit),
-    .cam_stall_o      (sq_cam_stall),
-    .cam_data_o       (sq_cam_data),
-    .commit_req_i     (sq_commit_req),
-    .commit_rob_idx_i (sq_commit_rob_idx),
-    .commit_ready_o   (sq_commit_ready),
-    .commit_fault_o   (sq_commit_fault),
-    .drain_req_o      (drain_req),
-    .drain_addr_o     (drain_addr),
-    .drain_data_o     (drain_data),
-    .drain_strb_o     (drain_strb),
-    .drain_size_o     (drain_size),
-    .drain_fire_i     (drain_fire),
-    .drain_done_i     (drain_done),
-    .drain_fault_i    (drain_fault)
+    .empty_o                 (),
+    .cam_addr_i              (sq_cam_addr),
+    .cam_size_i              (sq_cam_size),
+    .cam_hit_o               (sq_cam_hit),
+    .cam_stall_o             (sq_cam_stall),
+    .cam_data_o              (sq_cam_data),
+    .commit_req_i            (sq_commit_req),
+    .commit_rob_idx_i        (sq_commit_rob_idx),
+    .commit_ready_o          (sq_commit_ready),
+    .commit_fault_o          (sq_commit_fault),
+    .drain_req_o             (drain_req),
+    .drain_addr_o            (drain_addr),
+    .drain_data_o            (drain_data),
+    .drain_size_o            (drain_size),
+    .drain_fire_i            (drain_fire),
+    .drain_done_i            (drain_done),
+    .drain_fault_i           (drain_fault)
 );
 
 // ================================================================
 //  Issue Queue
 // ================================================================
 issue_queue u_iq (
-    .clk              (clock),
-    .rst              (reset),
-    .dispatch_en_i    (ren2iq_valid),
-    .dispatch_pkt_i   (ren2iq_pkt),
-    .dispatch_ready_o (ren2iq_ready),
-    .issue_valid_o    (iq_issue_valid),
-    .issue_pkt_o      (iq_issue_pkt),
-    .issue_ready_i    (iq_issue_ready),
-    .issue_phys_rs1_o (iq_phys_rs1),
-    .issue_phys_rs2_o (iq_phys_rs2),
-    .wakeup_en1_i     (wakeup_en1),
-    .wakeup_preg1_i   (wakeup_preg1),
-    .wakeup_en2_i     (wakeup_en2),
-    .wakeup_preg2_i   (wakeup_preg2),
-    .rob_head_i       (rob_head_idx),
-    .flush_i          (pipeline_flush)
+    .clk                    (clock),
+    .rst                    (reset),
+    .dispatch_en_i          (ren2iq_valid),
+    .dispatch_pkt_i         (ren2iq_pkt),
+    .dispatch_ready_o       (ren2iq_ready),
+    .issue_valid_o          (iq_issue_valid),
+    .issue_pkt_o            (iq_issue_pkt),
+    .issue_ready_i          (iq_issue_ready),
+    .issue_phys_rs1_o       (iq_phys_rs1),
+    .issue_phys_rs2_o       (iq_phys_rs2),
+    .wakeup_en1_i           (wakeup_en1),
+    .wakeup_preg1_i         (wakeup_preg1),
+    .wakeup_en2_i           (wakeup_en2),
+    .wakeup_preg2_i         (wakeup_preg2),
+    .rob_head_i             (rob_head_idx),
+    .branch_recover_valid_i (branch_recover_valid),
+    .branch_recover_idx_i   (exu_complete_idx),
+    .flush_i                (rob_flush)
 );
 
 // ================================================================
@@ -520,12 +543,20 @@ assign issue_stage_in.pkt      = iq_issue_pkt;
 assign issue_stage_in.phys_rs1 = iq_phys_rs1;
 assign issue_stage_in.phys_rs2 = iq_phys_rs2;
 
+wire [4:0] issue_stage_recover_distance =
+    issue_stage_out.pkt.rob_idx - exu_complete_idx;
+wire issue_stage_is_younger = (issue_stage_recover_distance != 5'd0)
+                            & ~issue_stage_recover_distance[4];
+wire issue_stage_flush = rob_flush
+                       | (branch_recover_valid & issue_stage_valid
+                          & issue_stage_is_younger);
+
 pip_reg #(
     .WIDTH ($bits(issue_stage_t))
 ) u_issue_stage (
     .clk        (clock),
     .rst        (reset),
-    .flush      (pipeline_flush),
+    .flush      (issue_stage_flush),
     .pre_valid  (iq_issue_valid),
     .pre_data   (issue_stage_in),
     .pre_ready  (iq_issue_ready),
@@ -606,8 +637,9 @@ pip_reg #(
 ) u_execute_stage (
     .clk        (clock),
     .rst        (reset),
-    .flush      (pipeline_flush),
-    .pre_valid  (issue_stage_valid),
+    .flush      (rob_flush),
+    .pre_valid  (issue_stage_valid
+                & ~(branch_recover_valid & issue_stage_is_younger)),
     .pre_data   (execute_stage_in),
     .pre_ready  (issue_stage_ready),
     .next_valid (execute_stage_valid),
@@ -617,22 +649,17 @@ pip_reg #(
 
 wire is_mem_inst = execute_stage_valid & execute_stage_is_mem & ~pipeline_flush;
 wire is_exu_inst = execute_stage_valid & ~execute_stage_is_mem
-    & execute_stage_ready & ~pipeline_flush;
+    & ~csr_prf_wen & ~rob_flush;
 
 // ================================================================
 //  EXU
 // ================================================================
 exu u_exu (
-    .clk                       (clock),
-    .rst                       (reset),
     .valid_i                   (is_exu_inst),
     .data_i                    (execute_stage_out),
-    .ready_o                   (),
     .complete_en_o             (exu_complete_en),
     .complete_idx_o            (exu_complete_idx),
     .complete_data_o           (exu_complete_data),
-    .complete_redirect_valid_o (exu_complete_redir_valid),
-    .complete_redirect_addr_o  (exu_complete_redir_addr),
     .wakeup_en_o               (exu_wakeup_en),
     .wakeup_preg_o             (exu_wakeup_preg),
     .redirect_valid_o          (exu_redirect_valid),
@@ -657,39 +684,40 @@ logic        LSU_AWVALID, LSU_AWREADY, LSU_WLAST, LSU_WVALID, LSU_WREADY;
 logic        LSU_BVALID, LSU_BREADY;
 
 lsu u_lsu (
-    .clk                  (clock),
-    .rst                  (reset),
-    .valid_i              (is_mem_inst),
-    .data_i               (execute_stage_out),
-    .ready_o              (lsu_ready),
-    .flush_i              (pipeline_flush),
-    .complete_en_o        (lsu_complete_en),
-    .complete_idx_o       (lsu_complete_idx),
-    .complete_data_o      (lsu_complete_data),
-    .complete_exception_o (lsu_complete_exc),
-    .complete_cause_o     (lsu_complete_cause),
-    .complete_rd_wen_o    (lsu_complete_rd_wen),
-    .complete_phys_rd_o   (lsu_complete_phys_rd),
-    .sq_alloc_en_o        (sq_alloc_en),
-    .sq_alloc_rob_idx_o   (sq_alloc_rob_idx),
-    .sq_alloc_addr_o      (sq_alloc_addr),
-    .sq_alloc_data_o      (sq_alloc_data),
-    .sq_alloc_strb_o      (sq_alloc_strb),
-    .sq_alloc_size_o      (sq_alloc_size),
-    .sq_alloc_ready_i     (sq_alloc_ready),
-    .cam_addr_o           (sq_cam_addr),
-    .cam_size_o           (sq_cam_size),
-    .cam_hit_i            (sq_cam_hit),
-    .cam_stall_i          (sq_cam_stall),
-    .cam_data_i           (sq_cam_data),
-    .drain_req_i          (drain_req),
-    .drain_addr_i         (drain_addr),
-    .drain_data_i         (drain_data),
-    .drain_strb_i         (drain_strb),
-    .drain_size_i         (drain_size),
-    .drain_fire_o         (drain_fire),
-    .drain_done_o         (drain_done),
-    .drain_fault_o        (drain_fault),
+    .clk                    (clock),
+    .rst                    (reset),
+    .valid_i                (is_mem_inst),
+    .data_i                 (execute_stage_out),
+    .ready_o                (lsu_ready),
+    .flush_i                (rob_flush),
+    .branch_recover_valid_i (branch_recover_valid),
+    .branch_recover_idx_i   (exu_complete_idx),
+    .complete_en_o          (lsu_complete_en),
+    .complete_idx_o         (lsu_complete_idx),
+    .complete_data_o        (lsu_complete_data),
+    .complete_exception_o   (lsu_complete_exc),
+    .complete_cause_o       (lsu_complete_cause),
+    .complete_rd_wen_o      (lsu_complete_rd_wen),
+    .complete_phys_rd_o     (lsu_complete_phys_rd),
+    .sq_alloc_en_o          (sq_alloc_en),
+    .sq_alloc_rob_idx_o     (sq_alloc_rob_idx),
+    .sq_alloc_addr_o        (sq_alloc_addr),
+    .sq_alloc_data_o        (sq_alloc_data),
+    .sq_alloc_strb_o        (sq_alloc_strb),
+    .sq_alloc_size_o        (sq_alloc_size),
+    .sq_alloc_ready_i       (sq_alloc_ready),
+    .cam_addr_o             (sq_cam_addr),
+    .cam_size_o             (sq_cam_size),
+    .cam_hit_i              (sq_cam_hit),
+    .cam_stall_i            (sq_cam_stall),
+    .cam_data_i             (sq_cam_data),
+    .drain_req_i            (drain_req),
+    .drain_addr_i           (drain_addr),
+    .drain_data_i           (drain_data),
+    .drain_size_i           (drain_size),
+    .drain_fire_o           (drain_fire),
+    .drain_done_o           (drain_done),
+    .drain_fault_o          (drain_fault),
     .ARADDR               (LSU_ARADDR),
     .ARID                 (LSU_ARID),
     .ARLEN                (LSU_ARLEN),
@@ -809,8 +837,6 @@ assign LSU_BVALID  = m1_bvalid;
 axi4_full_arbiter u_arbiter (
     .clk           (clock),
     .rst           (reset),
-    .m0_prerequest (1'b0),
-    .m1_prerequest (1'b0),
     .m0_arid       (m0_arid),
     .m0_araddr     (m0_araddr),
     .m0_arlen      (m0_arlen),

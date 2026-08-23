@@ -15,6 +15,14 @@ logic [5:0] update_phys_i;
 logic       commit_en_i;
 logic [4:0] commit_arch_i;
 logic [5:0] commit_phys_i;
+logic       recover_en_i;
+logic       recover_snapshot_hit_i;
+logic [1:0] recover_snapshot_slot_i;
+logic       snapshot_en_i;
+logic [1:0] snapshot_slot_i;
+logic       walk_en_i;
+logic [4:0] walk_arch_i;
+logic [5:0] walk_phys_i;
 logic       flush_i;
 
 rename_map_table dut (
@@ -23,6 +31,10 @@ rename_map_table dut (
     .rs1_phys_o(rs1_phys_o), .rs2_phys_o(rs2_phys_o), .rd_phys_old_o(rd_phys_old_o),
     .update_en_i(update_en_i), .update_arch_i(update_arch_i), .update_phys_i(update_phys_i),
     .commit_en_i(commit_en_i), .commit_arch_i(commit_arch_i), .commit_phys_i(commit_phys_i),
+    .snapshot_en_i(snapshot_en_i), .snapshot_slot_i(snapshot_slot_i),
+    .recover_en_i(recover_en_i), .recover_snapshot_hit_i(recover_snapshot_hit_i),
+    .recover_snapshot_slot_i(recover_snapshot_slot_i),
+    .walk_en_i(walk_en_i), .walk_arch_i(walk_arch_i), .walk_phys_i(walk_phys_i),
     .flush_i(flush_i)
 );
 
@@ -39,6 +51,9 @@ initial begin
     rs1_arch_i = 0; rs2_arch_i = 0; rd_arch_i = 0;
     update_en_i = 0; update_arch_i = 0; update_phys_i = 0;
     commit_en_i = 0; commit_arch_i = 0; commit_phys_i = 0; flush_i = 0;
+    snapshot_en_i = 0; snapshot_slot_i = 0;
+    recover_en_i = 0; recover_snapshot_hit_i = 0; recover_snapshot_slot_i = 0;
+    walk_en_i = 0; walk_arch_i = 0; walk_phys_i = 0;
     tick; tick; rst = 0; tick;
 
     // ── 测试1：初始恒等映射 ──
@@ -110,6 +125,62 @@ initial begin
     flush_i = 1; tick; flush_i = 0; tick;
     rs1_arch_i = 5'd7; #1;
     chk6("flush后 x7 → p55(AMT)", 6'd55, rs1_phys_o);
+
+    // ── 测试7：误预测恢复保留分支自身映射，撤销年轻映射 ──
+    $display("\n[TEST7] RAT 稀疏快照恢复");
+    update_en_i    = 1;
+    update_arch_i  = 5'd1;
+    update_phys_i  = 6'd32;
+    snapshot_en_i  = 1;
+    snapshot_slot_i = 2'd2;
+    tick;
+    update_en_i    = 0;
+    snapshot_en_i  = 0;
+
+    update_en_i   = 1;
+    update_arch_i = 5'd2;
+    update_phys_i = 6'd33;
+    tick;
+    update_en_i = 0;
+
+    recover_en_i            = 1;
+    recover_snapshot_hit_i   = 1;
+    recover_snapshot_slot_i  = 2'd2;
+    tick;
+    recover_en_i = 0;
+
+    rs1_arch_i = 5'd1;
+    rs2_arch_i = 5'd2;
+    #1;
+    chk6("恢复后保留分支自身 x1 → p32", 6'd32, rs1_phys_o);
+    chk6("恢复后撤销年轻 x2 → p33", 6'd2, rs2_phys_o);
+
+    // ── 测试8：从稀疏快照恢复后，ROB Walk 重放保留映射 ──
+    $display("\n[TEST8] 稀疏快照 + ROB Walk");
+    walk_en_i   = 1;
+    walk_arch_i = 5'd2;
+    walk_phys_i = 6'd33;
+    tick;
+    walk_arch_i = 5'd3;
+    walk_phys_i = 6'd34;
+    tick;
+    walk_en_i = 0;
+
+    rs1_arch_i = 5'd2;
+    rs2_arch_i = 5'd3;
+    #1;
+    chk6("Walk 重放 x2 → p33", 6'd33, rs1_phys_o);
+    chk6("Walk 重放 x3 → p34", 6'd34, rs2_phys_o);
+
+    // ── 测试9：无快照命中时从提交映射恢复 ──
+    $display("\n[TEST9] 无快照回退 AMT");
+    recover_snapshot_hit_i = 0;
+    recover_en_i           = 1;
+    tick;
+    recover_en_i = 0;
+    rs1_arch_i = 5'd2;
+    #1;
+    chk6("无快照时 x2 回到 AMT", 6'd2, rs1_phys_o);
 
     tick;
     $display("\n===== rename_map_table: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

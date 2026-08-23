@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
     dut->sq_alloc_ready_i = 1;
     dut->cam_hit_i = 0; dut->cam_stall_i = 0; dut->cam_data_i = 0;
     dut->drain_req_i = 0;
-    dut->drain_addr_i = 0; dut->drain_data_i = 0; dut->drain_strb_i = 0; dut->drain_size_i = 0;
+    dut->drain_addr_i = 0; dut->drain_data_i = 0; dut->drain_size_i = 0;
     dut->eval();
     for (int i = 0; i < 3; i++) tick(dut);
     dut->rst = 0; dut->eval();
@@ -154,7 +154,6 @@ int main(int argc, char** argv) {
     dut->drain_req_i = 1;
     dut->drain_addr_i = 0x80001000;
     dut->drain_data_i = 0xA5A5A5A5;
-    dut->drain_strb_i = 0xF;
     dut->drain_size_i = 2;
     dut->eval();
     tick(dut);
@@ -211,7 +210,6 @@ int main(int argc, char** argv) {
     dut->drain_req_i = 1;
     dut->drain_addr_i = 0x80002000;
     dut->drain_data_i = 0xA1B2C3D4;
-    dut->drain_strb_i = 0xF;
     dut->drain_size_i = 2;
     dut->eval();
     check_bit("AWVALID drain fire", true, dut->AWVALID);
@@ -286,7 +284,6 @@ int main(int argc, char** argv) {
     dut->drain_req_i = 1;
     dut->drain_addr_i = 0x80004000;
     dut->drain_data_i = 0x11111111;
-    dut->drain_strb_i = 0xF;
     dut->drain_size_i = 2;
     dut->eval();
     tick(dut); // 进入 S_DRAIN

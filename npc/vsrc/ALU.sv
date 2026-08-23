@@ -19,9 +19,6 @@ adder32 addsub(
     .cout(cout)
 );
 
-// assign {cout, addsub_result} = data1 + (data2 ^ {32{cin}}) + cin;    // 另一种方法
-
-
 wire [31:0] left_logic_shifter = data1 << data2[4:0];
 wire [31:0] right_logic_shifter = data1 >> data2[4:0];
 wire [31:0] right_arithmetic_shifter = $signed(data1) >>> data2[4:0];

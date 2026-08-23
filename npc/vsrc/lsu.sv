@@ -6,7 +6,6 @@
 //   2. 子字摆放只在 master / SQ CAM；SQ 存 rs2 原值
 //   3. drain 优先占 AXI；STLF 不占 AXI，可与 drain 同拍 complete
 //   4. sq_alloc_strb 仅供 CAM；写通道 WSTRB 由 master 按 addr/size 生成
-//   5. drain_strb 不驱动总线（同上）；保留口便于调试/对齐 SQ
 
 `include "./include/pipeline_pkt_pkg.sv"
 
@@ -22,6 +21,8 @@ import pipeline_pkt_pkg::*;
     output              ready_o,
 
     input               flush_i,
+    input               branch_recover_valid_i,
+    input       [4:0]   branch_recover_idx_i,
 
     // 完成 → ROB（load AXI/STLF；store 入 SQ 后同拍 complete）
     output logic        complete_en_o,
@@ -52,7 +53,6 @@ import pipeline_pkt_pkg::*;
     input               drain_req_i,
     input       [31:0]  drain_addr_i,
     input       [31:0]  drain_data_i,
-    input       [3:0]   drain_strb_i,
     input       [1:0]   drain_size_i,
     output logic        drain_fire_o,
     output logic        drain_done_o,
@@ -106,7 +106,6 @@ state_t state, nstate;
 
 typedef struct packed {
     logic        is_load;
-    logic        is_store;
     logic [4:0]  rob_idx;
     logic [5:0]  phys_rd;
     logic        rd_wen;
@@ -122,25 +121,40 @@ wire      req_stage_pre_ready;
 wire      req_stage_valid;
 wire      req_stage_ready;
 
+function automatic logic is_younger(
+    input logic [4:0] candidate,
+    input logic [4:0] reference
+);
+    logic [4:0] distance;
+    begin
+        distance   = candidate - reference;
+        is_younger = (distance != 5'd0) & ~distance[4];
+    end
+endfunction
+
 wire pre_is_load  = data_i.mem.cmd == MEM_LOAD;
 wire pre_is_store = data_i.mem.cmd == MEM_STORE;
 
 assign req_stage_in.is_load    = pre_is_load;
-assign req_stage_in.is_store   = pre_is_store;
 assign req_stage_in.rob_idx    = data_i.rob_idx;
 assign req_stage_in.phys_rd    = data_i.phys_rd;
 assign req_stage_in.rd_wen     = data_i.rd_wen;
 assign req_stage_in.mem_type   = data_i.funct3;
 assign req_stage_in.mem_addr   = data_i.rs1_data + data_i.imm;
 assign req_stage_in.store_data = data_i.rs2_data;
-assign req_stage_pre_valid     = valid_i & (pre_is_load | pre_is_store) & ~flush_i;
+assign req_stage_pre_valid = valid_i & (pre_is_load | pre_is_store)
+                           & ~flush_i & ~branch_recover_valid_i;
+
+wire req_stage_flush = flush_i
+                     | (branch_recover_valid_i & req_stage_valid
+                        & is_younger(req_stage_out.rob_idx, branch_recover_idx_i));
 
 pip_reg #(
     .WIDTH ($bits(lsu_req_t))
 ) u_req_stage (
     .clk        (clk),
     .rst        (rst),
-    .flush      (flush_i),
+    .flush      (req_stage_flush),
     .pre_valid  (req_stage_pre_valid),
     .pre_data   (req_stage_in),
     .pre_ready  (req_stage_pre_ready),
@@ -150,7 +164,7 @@ pip_reg #(
 );
 
 wire is_load   = req_stage_out.is_load;
-wire is_store  = req_stage_out.is_store;
+wire is_store  = ~req_stage_out.is_load;
 wire mem_valid = req_stage_valid;
 
 wire state_idle  = (state == S_IDLE);
@@ -163,7 +177,6 @@ logic [1:0]  axi_rresp;
 logic [1:0]  axi_wresp;
 
 // load 锁存（仅 AXI 路径）
-logic        hold_is_load /* verilator public_flat_rd */;
 logic [4:0]  hold_rob_idx;
 logic [5:0]  hold_phys_rd;
 logic        hold_rd_wen;
@@ -192,16 +205,18 @@ end
 
 // store：idle + SQ 有槽 + 本拍无 drain（commit 写优先）
 wire store_issue_ok = state_idle & mem_valid & is_store
-                    & sq_alloc_ready_i & ~flush_i & ~drain_req_i;
+                    & sq_alloc_ready_i & ~flush_i & ~branch_recover_valid_i
+                    & ~drain_req_i;
 
 // STLF：全覆盖命中；不占 AXI，idle/drain 均可同拍 complete
-wire load_stlf_ok = mem_valid & is_load & cam_hit_i & ~flush_i
+wire load_stlf_ok = mem_valid & is_load & cam_hit_i
+                  & ~flush_i & ~branch_recover_valid_i
                   & (state_idle | state_drain);
 
 // AXI load：无重叠、idle、无 drain
 wire load_axi_ok  = state_idle & mem_valid & is_load
                   & ~cam_hit_i & ~cam_stall_i
-                  & ~flush_i & ~drain_req_i;
+                  & ~flush_i & ~branch_recover_valid_i & ~drain_req_i;
 
 wire load_req_fire  /* verilator public_flat_rd */ = load_axi_ok;
 wire load_resp_fire /* verilator public_flat_rd */ = state_load & axi_done;
@@ -255,7 +270,6 @@ end
 
 always_ff @(posedge clk) begin
     if (rst) begin
-        hold_is_load  <= 1'b0;
         hold_rob_idx  <= '0;
         hold_phys_rd  <= '0;
         hold_rd_wen   <= 1'b0;
@@ -264,14 +278,16 @@ always_ff @(posedge clk) begin
         hold_flushed  <= 1'b0;
     end else begin
         if (load_req_fire) begin
-            hold_is_load  <= 1'b1;
             hold_rob_idx  <= req_stage_out.rob_idx;
             hold_phys_rd  <= req_stage_out.phys_rd;
             hold_rd_wen   <= req_stage_out.rd_wen;
             hold_mem_type <= req_mem_type;
             hold_mem_addr <= req_mem_addr;
             hold_flushed  <= 1'b0;
-        end else if (state_load && flush_i) begin
+        end else if (state_load
+                && (flush_i
+                    || (branch_recover_valid_i
+                        && is_younger(hold_rob_idx, branch_recover_idx_i)))) begin
             hold_flushed <= 1'b1;
         end
     end
@@ -322,7 +338,9 @@ end
 wire load_fault = load_resp_fire & (axi_rresp != 2'b00);
 
 // complete：store / STLF 同拍；AXI load 等响应
-wire axi_load_complete = load_resp_fire & ~hold_flushed;
+wire axi_load_complete = load_resp_fire & ~hold_flushed
+                       & ~(branch_recover_valid_i
+                           & is_younger(hold_rob_idx, branch_recover_idx_i));
 
 assign complete_en_o        = store_issue_ok | load_stlf_ok | axi_load_complete;
 assign complete_idx_o       = (store_issue_ok | load_stlf_ok) ? req_stage_out.rob_idx : hold_rob_idx;
@@ -333,7 +351,7 @@ assign complete_exception_o = store_issue_ok ? 1'b0 :
 assign complete_cause_o     = load_fault ? CAUSE_LOAD_ACCESS_FAULT : 4'b0;
 assign complete_rd_wen_o    = store_issue_ok ? 1'b0 :
                               load_stlf_ok   ? req_stage_out.rd_wen :
-                                               (hold_rd_wen & hold_is_load & ~load_fault);
+                                               (hold_rd_wen & ~load_fault);
 assign complete_phys_rd_o   = (store_issue_ok | load_stlf_ok) ? req_stage_out.phys_rd : hold_phys_rd;
 
 // AXI master：load 用 ren；drain 用 wen；store/STLF 不写总线
@@ -355,14 +373,11 @@ axi4_full_master u_axi4_full_master (
     .rst            (rst),
     .wen            (wen),
     .ren            (ren),
-    .user_ready     (1'b1),
     .size           (axi_size),
-    .len            (8'b0),
     .waddr          (axi_waddr),
     .wdata          (axi_wdata),
     .raddr          (axi_raddr),
     .rdata          (axi_rdata),
-    .rdata_valid    (),
     .rresp          (axi_rresp),
     .wresp          (axi_wresp),
     .done           (axi_done),
@@ -397,9 +412,6 @@ axi4_full_master u_axi4_full_master (
     .BID            (BID),
     .BREADY         (BREADY)
 );
-
-// drain_strb 与 SQ 队头 strb 同源，总线侧不用
-wire _unused_drain_strb = |drain_strb_i;
 
 // 轻量观测（PMC / 调试）
 wire stlf_fire_o /* verilator public_flat_rd */ = load_stlf_ok;

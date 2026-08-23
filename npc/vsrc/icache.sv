@@ -1,4 +1,3 @@
-// error暂不实现
 module icache #(
     parameter   ADDR_WIDTH          =   32,
     parameter   LINE_BYTES          =   16,
@@ -26,7 +25,6 @@ module icache #(
     output  [DATA_WIDTH-1:0]    resp_data_o,
     output  [ADDR_WIDTH-1:0]    resp_addr_o,
     output                      resp_pred_taken_o,
-    output                      resp_err_o,
     input                       resp_ready_i,
 
     input                       kill_i,
@@ -39,7 +37,6 @@ module icache #(
 
     input                       refill_resp_valid_i,
     input   [LINE_WIDTH-1:0]    refill_resp_data_i,
-    input                       refill_resp_err_i,
     output                      refill_resp_ready_o
 );
 
@@ -201,7 +198,6 @@ assign resp_valid_o  = hit_resp_valid | refill_resp_valid;
 assign resp_data_o   = resp_line[{resp_word_sel, {DATA_WIDTH_LOG2{1'b0}}} +: DATA_WIDTH];
 assign resp_addr_o   = s2_addr;
 assign resp_pred_taken_o = s2_data.pred_taken;
-assign resp_err_o    = refill_resp_valid & refill_resp_err_i;
 
 
 /*============================================================
@@ -321,8 +317,7 @@ end
 endmodule
 
 
-// axi_read_adapter 是一个很薄的adapter，不保存请求以节省ysyx要求的面积，这里的请求由icache自己保存
-// 但可能存在时序问题，如果后期发现存在时序问题则需要加一拍skid来保证时序
+// Adapter 不重复保存请求；miss 地址由 ICache 的 S2 状态保持到 AR 握手。
 module axi_read_adapter #(
 	parameter ADDR_WIDTH  = 32,
 	parameter LINE_WIDTH  = 128,
@@ -338,7 +333,6 @@ module axi_read_adapter #(
 
 	output logic                    resp_valid_o,
 	output logic [LINE_WIDTH-1:0]   resp_data_o,
-	output logic                    resp_err_o,
 	input  logic                    resp_ready_i,
 
 	// ======== AXI4 读通道 ========
@@ -396,17 +390,6 @@ module axi_read_adapter #(
 	always_ff @(posedge clk)
 		shift_reg <= beat_fire ? {RDATA, shift_reg[LINE_WIDTH-1:BUS_WIDTH]} : shift_reg;
 
-	// ──────────── 错误累积 ────────────
-    // 暂时不用
-	// logic err_r;
-
-	// always_ff @(posedge clk) begin
-	// 	if (rst | resp_fire)
-	// 		err_r <= 1'b0;
-	// 	else if (beat_fire & (RRESP != 2'b00))
-	// 		err_r <= 1'b1;
-	// end
-
 	// ──────────── AXI AR 通道（固定参数）────────────
 	assign ARVALID = (state == S_IDLE) & req_valid_i;
 	assign ARADDR  = req_addr_i;
@@ -419,9 +402,8 @@ module axi_read_adapter #(
 	assign RREADY  = (state == S_REFILL);
 
 	// ──────────── 上游接口 ────────────
-	assign req_ready_o  = (state == S_IDLE) & ARREADY;      // 这里存在不确定性的时序压力，如果确实发现存在时序压力，需要让adapter自己存储请求
+	assign req_ready_o  = (state == S_IDLE) & ARREADY;
 	assign resp_valid_o = (state == S_DONE);
 	assign resp_data_o  = shift_reg;
-	assign resp_err_o   = 1'b0;
 
 endmodule

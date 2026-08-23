@@ -1,14 +1,14 @@
 // 重命名映射表（Rename Map Table）
-// 维护架构寄存器到物理寄存器的推测映射（speculative RAT）
-// 同时维护架构映射表（Architectural Map Table, AMT）：
-//   - commit 时更新 AMT
-//   - flush 时用 AMT 恢复 RAT
-// 同拍 commit+flush（分支误预测提交）：先把 commit 合入 AMT，再恢复 RAT
-// 初始恒等映射：x0→p0 ... x31→p31
+//
+// map_table：推测映射，Rename 查询和更新。
+// arch_map ：已提交映射，异常/全局 flush 时恢复。
+// snapshots：四份稀疏推测快照；分支误预测先恢复最近的旧快照，再由
+//            Rename 控制器按 ROB 顺序重放快照之后的目的寄存器映射。
 
 module rename_map_table #(
-    parameter int NUM_ARCH_REGS = 32
-)(
+    parameter int NUM_ARCH_REGS = 32,
+    parameter int NUM_SNAPSHOTS = 4
+) (
     input               clk,
     input               rst,
 
@@ -27,11 +27,23 @@ module rename_map_table #(
     input       [4:0]   commit_arch_i,
     input       [5:0]   commit_phys_i,
 
+    input               snapshot_en_i,
+    input       [$clog2(NUM_SNAPSHOTS)-1:0] snapshot_slot_i,
+
+    input               recover_en_i,
+    input               recover_snapshot_hit_i,
+    input       [$clog2(NUM_SNAPSHOTS)-1:0] recover_snapshot_slot_i,
+
+    input               walk_en_i,
+    input       [4:0]   walk_arch_i,
+    input       [5:0]   walk_phys_i,
+
     input               flush_i
 );
 
-logic [5:0] map_table [0:NUM_ARCH_REGS-1];
-logic [5:0] arch_map  [0:NUM_ARCH_REGS-1];
+logic [5:0] map_table    [0:NUM_ARCH_REGS-1];
+logic [5:0] arch_map     [0:NUM_ARCH_REGS-1];
+logic [5:0] snapshot_map [0:NUM_SNAPSHOTS-1][0:NUM_ARCH_REGS-1];
 
 assign rs1_phys_o    = map_table[rs1_arch_i];
 assign rs2_phys_o    = map_table[rs2_arch_i];
@@ -44,20 +56,41 @@ always_ff @(posedge clk) begin
             arch_map[i]  <= 6'(i);
         end
     end else begin
-        // 1) 先提交到 AMT（即使同拍 flush 也要提交 head）
         if (commit_en_i)
             arch_map[commit_arch_i] <= commit_phys_i;
 
-        // 2) flush：RAT 恢复到 next AMT（含本拍 commit）
         if (flush_i) begin
+            // 同拍提交必须进入恢复后的推测映射。
             for (int i = 0; i < NUM_ARCH_REGS; i++) begin
-                if (commit_en_i && (commit_arch_i == 5'(i)))
-                    map_table[i] <= commit_phys_i;
-                else
-                    map_table[i] <= arch_map[i];
+                map_table[i] <= (commit_en_i && (commit_arch_i == 5'(i)))
+                    ? commit_phys_i
+                    : arch_map[i];
             end
-        end else if (update_en_i) begin
-            map_table[update_arch_i] <= update_phys_i;
+        end else if (recover_en_i) begin
+            // 未命中快照时从包含本拍提交的体系结构映射开始 Walk。
+            for (int i = 0; i < NUM_ARCH_REGS; i++) begin
+                if (recover_snapshot_hit_i)
+                    map_table[i] <= snapshot_map[recover_snapshot_slot_i][i];
+                else
+                    map_table[i] <= (commit_en_i && (commit_arch_i == 5'(i)))
+                        ? commit_phys_i
+                        : arch_map[i];
+            end
+        end else begin
+            if (walk_en_i)
+                map_table[walk_arch_i] <= walk_phys_i;
+            else if (update_en_i)
+                map_table[update_arch_i] <= update_phys_i;
+        end
+
+        if (snapshot_en_i) begin
+            // 快照对应“本条指令完成重命名之后”的状态。
+            for (int i = 0; i < NUM_ARCH_REGS; i++) begin
+                snapshot_map[snapshot_slot_i][i] <=
+                    (update_en_i && (update_arch_i == 5'(i)))
+                        ? update_phys_i
+                        : map_table[i];
+            end
         end
     end
 end

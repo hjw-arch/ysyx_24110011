@@ -1,14 +1,10 @@
-// EXU_ooo Wrapper - 将 packed struct 展平为独立信号，便于 C++ testbench 访问
+// EXU wrapper：将 packed struct 展平，便于 C++ testbench 访问。
 
 `include "./include/pipeline_pkt_pkg.sv"
 
 module exu_wrapper
 import pipeline_pkt_pkg::*;
 (
-    input               clk,
-    input               rst,
-
-    // 展平的输入信号
     input               valid_i,
     input   [31:0]      pc_i,
     input   [31:0]      inst_i,
@@ -23,22 +19,15 @@ import pipeline_pkt_pkg::*;
     input   [1:0]       alu_src_i,
     input   [1:0]       cfi_type_i,
     input   [1:0]       br_cond_i,
-    // mem_ctrl_t 字段
-    input   [2:0]       mem_cmd_i,
     // sys_ctrl_t 字段
     input   [1:0]       csr_cmd_i,
     input   [1:0]       priv_redir_i,
     input               fence_i_i,
     input   [31:0]      imm_i,
 
-    output              ready_o,
-
-    // 输出信号（保持原样）
     output logic        complete_en_o,
     output logic [4:0]  complete_idx_o,
     output logic [31:0] complete_data_o,
-    output logic        complete_redirect_valid_o,
-    output logic [31:0] complete_redirect_addr_o,
 
     output logic        wakeup_en_o,
     output logic [5:0]  wakeup_preg_o,
@@ -69,24 +58,18 @@ assign data_packed.rd_wen             = rd_wen_i;
 assign data_packed.ex.alu_op          = alu_op_i;
 assign data_packed.ex.alu_src         = alu_src_i;
 assign data_packed.ex.cfi_type        = cfi_type_i;
-assign data_packed.mem.cmd            = mem_cmd_i;
+assign data_packed.mem.cmd            = MEM_NONE;
 assign data_packed.sys.csr_cmd        = csr_cmd_i;
 assign data_packed.sys.priv_redir     = priv_redir_i;
 assign data_packed.sys.fence_i        = fence_i_i;
 assign data_packed.imm                = imm_i;
 
-// 实例化真正的 EXU_ooo
 exu u_exu (
-    .clk                            (clk),
-    .rst                            (rst),
     .valid_i                        (valid_i),
     .data_i                         (data_packed),
-    .ready_o                        (ready_o),
     .complete_en_o                  (complete_en_o),
     .complete_idx_o                 (complete_idx_o),
     .complete_data_o                (complete_data_o),
-    .complete_redirect_valid_o      (complete_redirect_valid_o),
-    .complete_redirect_addr_o       (complete_redirect_addr_o),
     .wakeup_en_o                    (wakeup_en_o),
     .wakeup_preg_o                  (wakeup_preg_o),
     .redirect_valid_o               (redirect_valid_o),

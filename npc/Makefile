@@ -18,7 +18,6 @@ NPC_HOME := $(abspath .)
 # 本地仿真环境参数
 TOP_NAME            ?= ysyx
 SIM_CINC            = $(addprefix -I, $(abspath ./csrc/Include) $(NPC_HOME)/include)
-# axi4_lite 未接入当前仿真网表，不进 include，避免与 AXI4-full 双轨混淆
 SIM_VINC            = $(abspath ./vsrc) $(abspath ./vsrc/include)
 SIM_CFLAGS          = -O3 $(SIM_CINC)
 SIM_LDFLAGS         = -lreadline -ldl

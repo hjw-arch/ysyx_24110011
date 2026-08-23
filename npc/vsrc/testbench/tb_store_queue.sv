@@ -11,6 +11,8 @@ logic rst = 1;
 always #5 clk = ~clk;
 
 logic        flush_i;
+logic        branch_recover_valid_i;
+logic [4:0]  branch_recover_idx_i;
 logic        alloc_en_i;
 logic [4:0]  alloc_rob_idx_i;
 logic [31:0] alloc_addr_i, alloc_data_i;
@@ -29,7 +31,6 @@ logic        commit_ready_o, commit_fault_o;
 
 logic        drain_req_o;
 logic [31:0] drain_addr_o, drain_data_o;
-logic [3:0]  drain_strb_o;
 logic [1:0]  drain_size_o;
 logic        drain_fire_i, drain_done_i, drain_fault_i;
 
@@ -67,7 +68,7 @@ task automatic do_alloc(
 endtask
 
 initial begin
-    flush_i = 0;
+    flush_i = 0; branch_recover_valid_i = 0; branch_recover_idx_i = 0;
     alloc_en_i = 0; alloc_rob_idx_i = 0;
     alloc_addr_i = 0; alloc_data_i = 0; alloc_strb_i = 0; alloc_size_i = 0;
     cam_addr_i = 0; cam_size_i = 0;
@@ -186,6 +187,24 @@ initial begin
     #1;
     chk("cam_hit SH hi→LHU", 1'b1, cam_hit_o);
     chk32("cam_data SH hi→LHU", 32'h0000_AB12, cam_data_o);
+
+    // ── TEST9: 分支恢复只裁掉年轻 store 后缀 ──
+    $display("\n[TEST9] 分支选择性恢复");
+    flush_i = 1; tick; flush_i = 0;
+    do_alloc(5'd10, 32'h8000_7000, 32'h1010_1010, 4'b1111, 2'b10);
+    do_alloc(5'd12, 32'h8000_7004, 32'h1212_1212, 4'b1111, 2'b10);
+    do_alloc(5'd13, 32'h8000_7008, 32'h1313_1313, 4'b1111, 2'b10);
+
+    branch_recover_valid_i = 1'b1;
+    branch_recover_idx_i   = 5'd11;
+    tick;
+    branch_recover_valid_i = 1'b0;
+
+    chk("恢复后仅保留更老 store", 1'b1, dut.count == 1);
+    cam_addr_i = 32'h8000_7000; cam_size_i = 2'b10; #1;
+    chk("更老 store 仍可 CAM 命中", 1'b1, cam_hit_o);
+    cam_addr_i = 32'h8000_7004; #1;
+    chk("年轻 store 已从 CAM 清除", 1'b0, cam_hit_o);
 
     tick;
     $display("\n===== store_queue: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

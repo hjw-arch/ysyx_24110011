@@ -71,7 +71,7 @@ always_ff @(posedge clk) begin
 	state <= rst ? 1'b0 : next_state;
 end
 
-assign next_state = ~state & arvalid | state & ~rready;		// 这种简单的二值状态机，仅需考虑合适需要为“1”
+assign next_state = (~state & arvalid) | (state & ~rready);
 
 // 依赖状态机的信号
 assign arready	=	~state;		// arready = (state == IDLE)

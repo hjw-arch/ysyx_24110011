@@ -52,9 +52,8 @@ logic				ic_req_ready /* verilator public_flat_rd */;
 
 logic				ic_resp_valid /* verilator public_flat_rd */;
 logic	[31:0]		ic_resp_data;
-logic	[31:0]		ic_resp_addr;/* verilator lint_off UNUSEDSIGNAL */
+logic	[31:0]		ic_resp_addr;
 logic               ic_resp_pred_taken;
-logic               ic_resp_err;
 logic				ic_resp_ready /* verilator public_flat_rd */;
 
 
@@ -73,9 +72,10 @@ logic   [31:0]  bpu_pred_pc;
 
 assign pc_plus4 = pc_r + 32'd4;
 
-assign pc_n	=	redirect_valid_i ? redirect_pc_i :   // 这里当前设置为重定向当拍不发请求，因为控制逻辑复杂。后续icache改成2级流水线可以考虑当拍重定向
-				ic_req_fire ? (bpu_pred_taken ? bpu_pred_pc : pc_plus4) :
-				pc_r;
+// Redirect 优先；重定向当拍抑制 ICache 请求，下一拍从目标地址重新取指。
+assign pc_n = redirect_valid_i ? redirect_pc_i :
+              ic_req_fire      ? (bpu_pred_taken ? bpu_pred_pc : pc_plus4) :
+                                  pc_r;
 
 always_ff @(posedge clk) begin
     if (rst) begin
@@ -97,10 +97,10 @@ assign  ic_req_pred_taken = bpu_pred_taken;
 // 3. 对下游的输出
 // ==========================================
 
-assign	valid_o		= ic_resp_valid & ~redirect_valid_i; // 实际上不要 ~redirect_valid_i 也行，由 icache 自己处理
-assign	data_o.inst = ic_resp_data;
-assign	data_o.pc	= ic_resp_addr;
-assign  data_o.pred_taken = ic_resp_pred_taken;
+assign valid_o           = ic_resp_valid & ~redirect_valid_i;
+assign data_o.inst       = ic_resp_data;
+assign data_o.pc         = ic_resp_addr;
+assign data_o.pred_taken = ic_resp_pred_taken;
 
 // ready 信号
 assign	ic_resp_ready = redirect_valid_i | ready_i;
@@ -114,7 +114,6 @@ logic [31:0]            refill_req_addr;
 logic                   refill_req_ready;
 logic                   refill_resp_valid;
 logic [127:0]           refill_resp_data;
-logic                   refill_resp_err;
 logic                   refill_resp_ready;
 
 
@@ -137,7 +136,6 @@ icache #(
     .resp_data_o        (ic_resp_data),
     .resp_addr_o        (ic_resp_addr),
     .resp_pred_taken_o  (ic_resp_pred_taken),
-    .resp_err_o         (ic_resp_err),
     .resp_ready_i       (ic_resp_ready),
     .kill_i             (redirect_valid_i),
     .inval_i            (icache_inval_i),
@@ -147,7 +145,6 @@ icache #(
     .refill_req_ready_i (refill_req_ready),
     .refill_resp_valid_i(refill_resp_valid),
     .refill_resp_data_i (refill_resp_data),
-    .refill_resp_err_i  (refill_resp_err),
     .refill_resp_ready_o(refill_resp_ready)
 );
 
@@ -183,7 +180,6 @@ axi_read_adapter u_axi_adapter (
     .req_ready_o        (refill_req_ready),
     .resp_valid_o       (refill_resp_valid),
     .resp_data_o        (refill_resp_data),
-    .resp_err_o         (refill_resp_err),
     .resp_ready_i       (refill_resp_ready),
     // Adapter ↔ AXI Bus
     .ARADDR             (ARADDR),

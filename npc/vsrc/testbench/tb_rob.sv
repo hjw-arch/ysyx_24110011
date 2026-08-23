@@ -20,16 +20,20 @@ logic [4:0]      complete_idx1_i;
 logic [31:0]     complete_data1_i;
 logic            complete_exception1_i;
 logic [3:0]      complete_cause1_i;
-logic            complete_redirect_valid1_i;
-logic [31:0]     complete_redirect_addr1_i;
 
 logic            complete_en2_i;
 logic [4:0]      complete_idx2_i;
 logic [31:0]     complete_data2_i;
 logic            complete_exception2_i;
 logic [3:0]      complete_cause2_i;
-logic            complete_redirect_valid2_i;
-logic [31:0]     complete_redirect_addr2_i;
+logic            branch_recover_valid_i;
+logic [4:0]      branch_recover_idx_i;
+logic            recover_stall_i;
+logic [4:0]      recover_walk_idx_i;
+logic            recover_walk_valid_o;
+logic            recover_walk_rd_wen_o;
+logic [4:0]      recover_walk_arch_rd_o;
+logic [5:0]      recover_walk_phys_rd_o;
 
 logic            store_commit_ready_i = 1'b1;
 logic            store_commit_fault_i = 1'b0;
@@ -88,8 +92,6 @@ task automatic complete_instr(input [4:0] idx, input [31:0] data, input expt = 0
     complete_data1_i            = data;
     complete_exception1_i       = expt;
     complete_cause1_i           = 4'd0;
-    complete_redirect_valid1_i  = 0;
-    complete_redirect_addr1_i   = 0;
     tick;
     complete_en1_i = 0;
 endtask
@@ -98,10 +100,10 @@ initial begin
     alloc_en_i = 0; alloc_pkt_i = '0;
     complete_en1_i = 0; complete_idx1_i = 0; complete_data1_i = 0;
     complete_exception1_i = 0; complete_cause1_i = 0;
-    complete_redirect_valid1_i = 0; complete_redirect_addr1_i = 0;
     complete_en2_i = 0; complete_idx2_i = 0; complete_data2_i = 0;
     complete_exception2_i = 0; complete_cause2_i = 0;
-    complete_redirect_valid2_i = 0; complete_redirect_addr2_i = 0;
+    branch_recover_valid_i = 0; branch_recover_idx_i = 0;
+    recover_stall_i = 0; recover_walk_idx_i = 0;
     tick; tick; rst = 0; tick;
 
     // ── 测试1：基本分配→完成→提交 ──
@@ -174,13 +176,74 @@ initial begin
     complete_exception1_i = 1;
     complete_cause1_i = 4'd2;
     complete_data1_i = 32'h0;
-    complete_redirect_valid1_i = 0;
     tick; complete_en1_i = 0; complete_exception1_i = 0;
     chk("异常导致 flush_o=1", 1'b1, flush_o);
     tick;
     chk("flush后 alloc_ready=1", 1'b1, alloc_ready_o);
     chk("flush后 commit_valid=0", 1'b0, commit_valid_o);
     chk("flush后 flush_o=0", 1'b0, flush_o);
+
+    // ── 测试5：执行级误预测只清除年轻项 ──
+    $display("\n[TEST5] 分支选择性恢复");
+    alloc_instr(32'h3000, 5'd1, 6'd32, 6'd1, 1'b1);
+    idxA = alloc_idx_o - 5'd1;
+    alloc_instr(32'h3004, 5'd2, 6'd33, 6'd2, 1'b1);
+    idxB = alloc_idx_o - 5'd1;
+    alloc_instr(32'h3008, 5'd3, 6'd34, 6'd3, 1'b1);
+
+    complete_en1_i          = 1'b1;
+    complete_idx1_i         = idxB;
+    complete_data1_i        = 32'hBBBB_0001;
+    branch_recover_valid_i  = 1'b1;
+    branch_recover_idx_i    = idxB;
+    tick;
+    complete_en1_i         = 1'b0;
+    branch_recover_valid_i = 1'b0;
+
+    chk("恢复后 tail 指向分支后一项", 1'b1, alloc_idx_o == (idxB + 5'd1));
+    chk("恢复后更老项仍在 ROB", 1'b1, dut.rob_q[idxA[3:0]].valid);
+    chk("恢复后分支项仍在 ROB", 1'b1, dut.rob_q[idxB[3:0]].valid);
+    chk("恢复后年轻项已清除", 1'b0, dut.rob_q[(idxB + 5'd1) & 5'h0f].valid);
+
+    // ── 测试6：恢复 Walk 只读保留项，并阻止 ROB 同时提交 ──
+    $display("\n[TEST6] 恢复 Walk 读口与提交停顿");
+    recover_walk_idx_i = idxA;
+    #1;
+    chk("Walk 命中老指令", 1'b1, recover_walk_valid_o);
+    chk("Walk 读出 rd_wen", 1'b1, recover_walk_rd_wen_o);
+    chk("Walk 读出 arch rd", 1'b1, recover_walk_arch_rd_o == 5'd1);
+    chk("Walk 读出 phys rd", 1'b1, recover_walk_phys_rd_o == 6'd32);
+
+    complete_instr(idxA, 32'hAAAA_0001);
+    recover_stall_i = 1'b1;
+    #1;
+    chk("Walk 期间禁止提交", 1'b0, commit_valid_o);
+    recover_stall_i = 1'b0;
+    #1;
+    chk("Walk 结束恢复提交", 1'b1, commit_valid_o);
+
+    // ── 测试7：Walk 期间 Store 不得提前从 SQ pop ──
+    $display("\n[TEST7] 恢复 Walk 阻止 Store 提交请求");
+    rst = 1'b1;
+    tick;
+    rst = 1'b0;
+    tick;
+
+    alloc_pkt_i              = '0;
+    alloc_pkt_i.pc           = 32'h4000;
+    alloc_pkt_i.is_store     = 1'b1;
+    alloc_en_i               = 1'b1;
+    idxA                     = alloc_idx_o;
+    tick;
+    alloc_en_i = 1'b0;
+    complete_instr(idxA, 32'b0);
+
+    recover_stall_i = 1'b1;
+    #1;
+    chk("Walk 期间 store_commit_req=0", 1'b0, store_commit_req_o);
+    recover_stall_i = 1'b0;
+    #1;
+    chk("Walk 结束 store_commit_req=1", 1'b1, store_commit_req_o);
 
     tick;
     $display("\n===== rob: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

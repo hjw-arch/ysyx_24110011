@@ -17,6 +17,8 @@ import pipeline_pkt_pkg::*;
     input               clk,
     input               rst,
     input               flush_i,            // 丢弃未提交项；in-flight drain 跑完
+    input               branch_recover_valid_i,
+    input       [4:0]   branch_recover_idx_i,
 
     // ── issue 分配 ──
     input               alloc_en_i,
@@ -45,7 +47,6 @@ import pipeline_pkt_pkg::*;
     output              drain_req_o,
     output      [31:0]  drain_addr_o,
     output      [31:0]  drain_data_o,
-    output      [3:0]   drain_strb_o,
     output      [1:0]   drain_size_o,
     input               drain_fire_i,
     input               drain_done_i,
@@ -87,11 +88,30 @@ assign commit_fault_o = commit_ready_o & sq[head_ptr].fault;
 assign drain_req_o  = commit_req_i & head_match & ~sq[head_ptr].done & ~sq[head_ptr].committed;
 assign drain_addr_o = sq[head_ptr].addr;
 assign drain_data_o = sq[head_ptr].data;
-assign drain_strb_o = sq[head_ptr].strb;
 assign drain_size_o = sq[head_ptr].size;
 
 wire alloc_fire = alloc_en_i & alloc_ready_o & ~flush_i;
 wire pop_fire   = commit_req_i & commit_ready_o;
+
+function automatic logic is_younger(
+    input logic [4:0] candidate,
+    input logic [4:0] reference
+);
+    logic [4:0] distance;
+    begin
+        distance   = candidate - reference;
+        is_younger = (distance != 5'd0) & ~distance[4];
+    end
+endfunction
+
+logic [PTR_W:0] recover_keep_count;
+always_comb begin
+    recover_keep_count = '0;
+    for (int i = 0; i < SQ_DEPTH; i++) begin
+        if (sq[i].valid && !is_younger(sq[i].rob_idx, branch_recover_idx_i))
+            recover_keep_count = recover_keep_count + 1'b1;
+    end
+end
 
 // ── load 字节掩码（对齐）──
 logic [3:0] ld_mask;
@@ -229,6 +249,28 @@ always_ff @(posedge clk) begin
             tail  <= '0;
             count <= '0;
         end
+    end else if (branch_recover_valid_i) begin
+        // SQ 按程序序入队，误预测路径只可能形成队尾连续后缀。
+        for (int i = 0; i < SQ_DEPTH; i++) begin
+            if (sq[i].valid && is_younger(sq[i].rob_idx, branch_recover_idx_i))
+                sq[i].valid <= 1'b0;
+        end
+
+        if (drain_fire_i && head_valid)
+            sq[head_ptr].committed <= 1'b1;
+
+        if (drain_done_i && head_valid && sq[head_ptr].committed) begin
+            sq[head_ptr].done  <= 1'b1;
+            sq[head_ptr].fault <= drain_fault_i;
+        end
+
+        if (pop_fire) begin
+            sq[head_ptr].valid <= 1'b0;
+            head <= head + 1'b1;
+        end
+
+        tail  <= head + recover_keep_count;
+        count <= recover_keep_count - {{PTR_W{1'b0}}, pop_fire};
     end else begin
         if (alloc_fire) begin
             sq[tail_ptr].valid     <= 1'b1;

@@ -216,9 +216,7 @@ assign m_awready  = select_s1_aw ? s1_awready : s0_awready; // 如果目标是S0
 //--------------------------------------------------------------------------
 // 写数据 (W) 通道路由 (Master -> Slaves)
 //--------------------------------------------------------------------------
-// 将 W 通道信号路由到由相应 AW 通道选择的从设备
-// 注意：这个简单的路由假设 W 通道紧随 AW 地址选择之后。
-// 更健壮的 Xbar 可能需要缓冲 AW 的目标决策。
+// Master 在 AW/W 完成前保持地址稳定，因此 W 通道可复用 AW 地址译码结果。
 assign s0_wvalid = m_wvalid & select_s0_aw; // S0 的 W 有效，当主设备 W 有效且 AW 目标是 S0
 assign s0_wdata  = m_wdata;                 // 数据透传
 assign s0_wstrb  = m_wstrb;                 // 字节选通透传
@@ -255,4 +253,3 @@ assign s0_bready = m_bready;	// assign s0_bready = m_bready & select_s0_aw;	更�
 assign s1_bready = m_bready;	// assign s1_bready = m_bready & select_s1_aw;	更规范的写法
 
 endmodule // Xbar
-

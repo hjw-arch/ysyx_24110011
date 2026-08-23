@@ -1,5 +1,4 @@
-// 仅支持增量传输、
-// 需要重构
+// 单事务 AXI4 master：支持 1/2/4 字节、单拍读写，不支持 outstanding/burst。
 module axi4_full_master (
     // Global Signals
     input               clk,
@@ -8,14 +7,11 @@ module axi4_full_master (
     // User Signals
     input               wen,        // 写数据和写地址有效
     input               ren,        // 读数据和读地址有效
-    input               user_ready, // 主机可接受反馈
     input        [1:0]  size,       // 传输大小
-    input        [7:0]  len,        // 传输次数（突发传输）
     input  logic [31:0] waddr,
     input  logic [31:0] wdata,
     input  logic [31:0] raddr,
     output logic [31:0] rdata,
-    output logic        rdata_valid,
     output logic [1:0]  rresp,
     output logic [1:0]  wresp,
     output              done,
@@ -66,8 +62,9 @@ module axi4_full_master (
 // 每次都是LAST传输
 assign ARBURST = 2'b01;
 assign AWBURST = 2'b01;
-assign AWLEN   = 8'b0;        // 读通道不进行突发传输
-assign WLAST   = 1'b1;        //
+assign ARLEN   = 8'b0;
+assign AWLEN   = 8'b0;
+assign WLAST   = 1'b1;
 assign ARID    = 4'b0;
 assign AWID    = 4'b0;
 
@@ -75,8 +72,6 @@ assign AWID    = 4'b0;
 // 000：无须对齐    001：地址最后一位必须为0    010：地址最后两位必须为0
 assign ARSIZE = {1'b0, size};
 assign AWSIZE = {1'b0, size};
-
-assign ARLEN = len;
 
 typedef enum logic [1:0] {
     R_IDLE,
@@ -99,7 +94,6 @@ always_ff @(posedge clk) begin
     r_state <= rst ? R_IDLE : next_r_state;
 end
 
-// 时序可优化，2级mux->1级mux
 always_comb begin
     case(r_state)
         R_IDLE:
@@ -117,14 +111,13 @@ always_comb begin
     endcase
 end
 
-reg [31 : 0] RDATA_TEMP;
+logic [31:0] RDATA_TEMP;
 always_ff @(posedge clk) begin
-    RDATA_TEMP <= RVALID & RREADY ? RDATA : RDATA_TEMP;
+    RDATA_TEMP <= (RVALID & RREADY) ? RDATA : RDATA_TEMP;
 end
 
-// rdata
 always_comb begin
-    case ({ARSIZE[1 : 0], ARADDR[1 : 0]})
+    case ({ARSIZE[1:0], ARADDR[1:0]})
         4'b0000: rdata = {24'b0, RDATA_TEMP[7:0]};
         4'b0001: rdata = {24'b0, RDATA_TEMP[15:8]};
         4'b0010: rdata = {24'b0, RDATA_TEMP[23:16]};
@@ -139,16 +132,12 @@ end
 assign ARADDR = raddr;
 assign rresp  = RRESP;
 
-assign ARVALID = r_state == R_IDLE & ren | r_state == R_WAIT_ARREADY;
-assign RREADY  = r_state == R_WAIT_RDATA & user_ready;
-
-always_ff @(posedge clk) begin
-    rdata_valid <= RVALID & RREADY ? 1'b1 : 1'b0;
-end
+assign ARVALID = (r_state == R_IDLE) & ren | (r_state == R_WAIT_ARREADY);
+assign RREADY  = r_state == R_WAIT_RDATA;
 
 reg rdone;
 always_ff @(posedge clk) begin
-    rdone <= RVALID & RREADY & RLAST ? 1'b1 : 1'b0;
+    rdone <= (RVALID & RREADY & RLAST) ? 1'b1 : 1'b0;
 end
 
 // 写通道
@@ -156,7 +145,6 @@ always_ff @(posedge clk) begin
     w_state <= rst ? W_IDLE : next_w_state;
 end
 
-// 时序可优化，2级mux->1级mux
 always_comb begin
     case(w_state)
         W_IDLE:
@@ -185,84 +173,52 @@ always_comb begin
     endcase
 end
 
-// 设置WSTRB
-// always_comb begin
-//     case(AWSIZE[1 : 0])
-//         2'b00:
-//             case(waddr[1 : 0])
-//                 2'b00: WSTRB = 4'b0001;
-//                 2'b01: WSTRB = 4'b0010;
-//                 2'b10: WSTRB = 4'b0100;
-//                 2'b11: WSTRB = 4'b1000;
-//             endcase
-//         2'b01:
-//             case(waddr[1])
-//                 1'b1: WSTRB = 4'b1100;
-//                 1'b0: WSTRB = 4'b0011;
-//             endcase
-//         2'b10:
-//             WSTRB = 4'b1111;
-//         default:
-//             WSTRB = 4'b0000;
-//     endcase
-// end
+// 不支持非对齐访问。逐 lane 展开，避免在 store 写通路引入动态移位器。
+assign WSTRB[0] = (~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] & ~AWADDR[0])
+                | (~AWSIZE[1] &  AWSIZE[0] & ~AWADDR[1])
+                | ( AWSIZE[1] & ~AWSIZE[0]);
+assign WSTRB[1] = (~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] &  AWADDR[0])
+                | (~AWSIZE[1] &  AWSIZE[0] & ~AWADDR[1])
+                | ( AWSIZE[1] & ~AWSIZE[0]);
+assign WSTRB[2] = (~AWSIZE[1] & ~AWSIZE[0] &  AWADDR[1] & ~AWADDR[0])
+                | (~AWSIZE[1] &  AWSIZE[0] &  AWADDR[1])
+                | ( AWSIZE[1] & ~AWSIZE[0]);
+assign WSTRB[3] = (~AWSIZE[1] & ~AWSIZE[0] &  AWADDR[1] &  AWADDR[0])
+                | (~AWSIZE[1] &  AWSIZE[0] &  AWADDR[1])
+                | ( AWSIZE[1] & ~AWSIZE[0]);
 
-// 同等替换，效率更高
-// 不支持非对齐访问
-assign WSTRB[0] = ~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] & ~AWADDR[0] | ~AWSIZE[1] & AWSIZE[0] & ~AWADDR[1] | AWSIZE[1] & ~AWSIZE[0];
-assign WSTRB[1] = ~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] & AWADDR[0] | ~AWSIZE[1] & AWSIZE[0] & ~AWADDR[1] | AWSIZE[1] & ~AWSIZE[0];
-assign WSTRB[2] = ~AWSIZE[1] & ~AWSIZE[0] & AWADDR[1] & ~AWADDR[0] | ~AWSIZE[1] & AWSIZE[0] & AWADDR[1] | AWSIZE[1] & ~AWSIZE[0];
-assign WSTRB[3] = ~AWSIZE[1] & ~AWSIZE[0] & AWADDR[1] & AWADDR[0] | ~AWSIZE[1] & AWSIZE[0] & AWADDR[1] | AWSIZE[1] & ~AWSIZE[0];
+assign WDATA[7:0] =
+    {8{~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] & ~AWADDR[0]}} & wdata[7:0] |
+    {8{~AWSIZE[1] &  AWSIZE[0] & ~AWADDR[1]}}              & wdata[7:0] |
+    {8{ AWSIZE[1] & ~AWSIZE[0]}}                            & wdata[7:0];
 
-// WDATA
-// always_comb begin
-//     case (AWSIZE[1 : 0])
-//         2'b00: // 1 字节
-//             case (waddr[1:0])
-//                 2'b00: WDATA = {24'b0, wdata[7:0]};          // 第 0 字节
-//                 2'b01: WDATA = {16'b0, wdata[7:0], 8'b0};    // 第 1 字节
-//                 2'b10: WDATA = {8'b0, wdata[7:0], 16'b0};    // 第 2 字节
-//                 2'b11: WDATA = {wdata[7:0], 24'b0};          // 第 3 字节
-//             endcase
-//         2'b01: // 2 字节
-//             case (waddr[1])
-//                 1'b0: WDATA = {16'b0, wdata[15:0]};         // 第 0、1 字节
-//                 1'b1: WDATA = {wdata[15:0], 16'b0};         // 第 2、3 字节
-//             endcase
-//         2'b10: //  personally4 字节
-//             WDATA = wdata;                              // 完整 32 位
-//         default:
-//             WDATA = 32'b0;                              // 默认 0
-//     endcase
-// end
+assign WDATA[15:8] =
+    {8{~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] &  AWADDR[0]}} & wdata[7:0]  |
+    {8{~AWSIZE[1] &  AWSIZE[0] & ~AWADDR[1]}}              & wdata[15:8] |
+    {8{ AWSIZE[1] & ~AWSIZE[0]}}                            & wdata[15:8];
 
-// 同等替换，效率更高
+assign WDATA[23:16] =
+    {8{~AWSIZE[1] & ~AWSIZE[0] &  AWADDR[1] & ~AWADDR[0]}} & wdata[7:0]   |
+    {8{~AWSIZE[1] &  AWSIZE[0] &  AWADDR[1]}}              & wdata[7:0]   |
+    {8{ AWSIZE[1] & ~AWSIZE[0]}}                            & wdata[23:16];
 
-// 不支持非对齐访问
-assign WDATA[7 : 0] = {8{~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] & ~AWADDR[0]}} & wdata[7 : 0] |
-                        {8{~AWSIZE[1] & AWSIZE[0] & ~AWADDR[1]}} & wdata[7 : 0] |
-                        {8{AWSIZE[1] & ~AWSIZE[0]}} & wdata[7 : 0];
-
-assign WDATA[15 : 8] = {8{~AWSIZE[1] & ~AWSIZE[0] & ~AWADDR[1] & AWADDR[0]}} & wdata[7 : 0] |
-                        {8{~AWSIZE[1] & AWSIZE[0] & ~AWADDR[1]}} & wdata[15 : 8] |
-                        {8{AWSIZE[1] & ~AWSIZE[0]}} & wdata[15 : 8];
-
-assign WDATA[23 : 16] = {8{~AWSIZE[1] & ~AWSIZE[0] & AWADDR[1] & ~AWADDR[0]}} & wdata[7 : 0] |
-                        {8{~AWSIZE[1] & AWSIZE[0] & AWADDR[1]}} & wdata[7 : 0] |
-                        {8{AWSIZE[1] & ~AWSIZE[0]}} & wdata[23 : 16];
-
-assign WDATA[31 : 24] = {8{~AWSIZE[1] & ~AWSIZE[0] & AWADDR[1] & AWADDR[0]}} & wdata[7 : 0] |
-                        {8{~AWSIZE[1] & AWSIZE[0] & AWADDR[1]}} & wdata[15 : 8] |
-                        {8{AWSIZE[1] & ~AWSIZE[0]}} & wdata[31 : 24];
+assign WDATA[31:24] =
+    {8{~AWSIZE[1] & ~AWSIZE[0] &  AWADDR[1] &  AWADDR[0]}} & wdata[7:0]   |
+    {8{~AWSIZE[1] &  AWSIZE[0] &  AWADDR[1]}}              & wdata[15:8]  |
+    {8{ AWSIZE[1] & ~AWSIZE[0]}}                            & wdata[31:24];
 
 assign AWADDR  = waddr;
-assign AWVALID = w_state == W_IDLE & wen | w_state == W_WAIT_AWREADY | w_state == W_WAIT_ALLREADY;
-assign WVALID  = w_state == W_IDLE & wen | w_state == W_WAIT_WREADY | w_state == W_WAIT_ALLREADY;
-assign BREADY  = w_state == W_WAIT_BRESP & user_ready;
+assign AWVALID = (w_state == W_IDLE) & wen
+               | (w_state == W_WAIT_AWREADY)
+               | (w_state == W_WAIT_ALLREADY);
+assign WVALID  = (w_state == W_IDLE) & wen
+               | (w_state == W_WAIT_WREADY)
+               | (w_state == W_WAIT_ALLREADY);
+assign BREADY  = w_state == W_WAIT_BRESP;
 assign wresp   = BRESP;
 
 wire wdone = BVALID & BREADY;
 
-assign done = rdone | wdone;    // 告诉主机，下个上升沿就可以保存数据
+assign done = rdone | wdone;
 
 endmodule

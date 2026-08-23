@@ -24,6 +24,8 @@ logic              wakeup_en2_i;
 logic [5:0]        wakeup_preg2_i;
 logic [4:0]        rob_head_i;
 logic              flush_i;
+logic              branch_recover_valid_i;
+logic [4:0]        branch_recover_idx_i;
 
 issue_queue dut (.*);
 
@@ -87,7 +89,7 @@ initial begin
     wakeup_en1_i = 0; wakeup_preg1_i = 0;
     wakeup_en2_i = 0; wakeup_preg2_i = 0;
     rob_head_i = 5'd0;
-    flush_i = 0;
+    flush_i = 0; branch_recover_valid_i = 0; branch_recover_idx_i = 0;
     tick; tick; rst = 0; tick;
 
     // ── 测试1：就绪指令立即发射 ──
@@ -237,6 +239,28 @@ initial begin
     rob_head_i = 5'd7; #1;
     chk("变为 head 后 CSR 可发", 1'b1, issue_valid_o);
     issue_ready_i = 1; tick;
+
+    // ── 测试9：分支恢复只清除年轻项 ──
+    $display("\n[TEST9] 分支选择性恢复");
+    flush_i = 1; tick; flush_i = 0;
+    rob_head_i = 5'd10;
+    issue_ready_i = 0;
+    dispatch_ready_instr(5'd10, 6'd44);
+    dispatch_ready_instr(5'd11, 6'd45);
+    dispatch_ready_instr(5'd12, 6'd46);
+
+    branch_recover_valid_i = 1'b1;
+    branch_recover_idx_i   = 5'd11;
+    tick;
+    branch_recover_valid_i = 1'b0;
+    #1;
+
+    chk5("恢复后先保留更老 rob=10", 5'd10, issue_pkt_o.rob_idx);
+    issue_ready_i = 1;
+    tick;
+    chk5("恢复后保留分支 rob=11", 5'd11, issue_pkt_o.rob_idx);
+    tick;
+    chk("年轻 rob=12 已清除", 1'b0, issue_valid_o);
 
     tick;
     $display("\n===== issue_queue: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

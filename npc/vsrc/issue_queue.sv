@@ -38,7 +38,11 @@ import pipeline_pkt_pkg::*;
     // ── ROB head：年龄比较 + 系统指令 oldest 约束 ──
     input       [4:0]   rob_head_i,
 
-    // ── 刷新接口 ──
+    // 执行级分支恢复：只清除比误预测分支年轻的队列项。
+    input               branch_recover_valid_i,
+    input       [4:0]   branch_recover_idx_i,
+
+    // ── 提交点全局刷新接口 ──
     input               flush_i
 );
 
@@ -64,6 +68,9 @@ typedef struct packed {
 
 iq_entry_t iq [0:IQ_SIZE-1];
 rob_idx_t  rob_head_q;
+
+// rob_idx 用于完成回报与分支恢复；age 缓存相对 ROB head 的距离，避免在
+// 发射选择树前为每个表项增加减法器。两者看似重复，实际是用少量 FF 换时序。
 
 // ── 每项属性（组合）──
 wire [IQ_SIZE-1:0] ent_valid;
@@ -161,10 +168,10 @@ always_comb begin
     selected_idx = found_ready ? select_l3.idx : '0;
 end
 
-wire issue_fire    = found_ready & issue_ready_i;
-wire dispatch_fire = dispatch_en_i & dispatch_ready_o;
+wire issue_fire    = found_ready & issue_ready_i & ~branch_recover_valid_i;
+wire dispatch_fire = dispatch_en_i & dispatch_ready_o & ~branch_recover_valid_i;
 
-assign issue_valid_o    = found_ready;
+assign issue_valid_o    = found_ready & ~branch_recover_valid_i & ~flush_i;
 assign issue_phys_rs1_o = iq[selected_idx].phys_rs1;
 assign issue_phys_rs2_o = iq[selected_idx].phys_rs2;
 
@@ -197,6 +204,17 @@ always_comb begin
 end
 
 assign dispatch_ready_o = alloc_has_slot;
+
+function automatic logic is_younger(
+    input logic [4:0] candidate,
+    input logic [4:0] reference
+);
+    logic [4:0] distance;
+    begin
+        distance   = candidate - reference;
+        is_younger = (distance != 5'd0) & ~distance[4];
+    end
+endfunction
 
 // ── 时序：唤醒 / 发射 / 分配 ──
 // valid 与 payload 同步更新，保持同一 always_ff 语义一致
@@ -246,6 +264,14 @@ always_ff @(posedge clk) begin
             iq[alloc_idx].mem        <= dispatch_pkt_i.mem;
             iq[alloc_idx].sys        <= dispatch_pkt_i.sys;
             iq[alloc_idx].imm        <= dispatch_pkt_i.imm;
+        end
+
+        if (branch_recover_valid_i) begin
+            for (int i = 0; i < IQ_SIZE; i++) begin
+                if (iq[i].valid
+                        && is_younger(iq[i].rob_idx, branch_recover_idx_i))
+                    iq[i].valid <= 1'b0;
+            end
         end
     end
 end

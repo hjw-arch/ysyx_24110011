@@ -13,6 +13,13 @@ logic [5:0] alloc_preg_o;
 logic       commit_en_i;
 logic [5:0] commit_preg_new_i;
 logic [5:0] commit_preg_old_i;
+logic       snapshot_en_i;
+logic [1:0] snapshot_slot_i;
+logic       recover_en_i;
+logic       recover_snapshot_hit_i;
+logic [1:0] recover_snapshot_slot_i;
+logic       walk_en_i;
+logic [5:0] walk_preg_i;
 logic       flush_i;
 
 freelist dut (
@@ -24,6 +31,13 @@ freelist dut (
     .commit_en_i        (commit_en_i),
     .commit_preg_new_i  (commit_preg_new_i),
     .commit_preg_old_i  (commit_preg_old_i),
+    .snapshot_en_i           (snapshot_en_i),
+    .snapshot_slot_i         (snapshot_slot_i),
+    .recover_en_i            (recover_en_i),
+    .recover_snapshot_hit_i  (recover_snapshot_hit_i),
+    .recover_snapshot_slot_i (recover_snapshot_slot_i),
+    .walk_en_i               (walk_en_i),
+    .walk_preg_i             (walk_preg_i),
     .flush_i            (flush_i)
 );
 
@@ -46,6 +60,13 @@ initial begin
     commit_en_i        = 1'b0;
     commit_preg_new_i  = '0;
     commit_preg_old_i  = '0;
+    snapshot_en_i            = 1'b0;
+    snapshot_slot_i          = '0;
+    recover_en_i             = 1'b0;
+    recover_snapshot_hit_i   = 1'b0;
+    recover_snapshot_slot_i  = '0;
+    walk_en_i                = 1'b0;
+    walk_preg_i              = '0;
     flush_i            = 1'b0;
 
     tick;
@@ -120,6 +141,50 @@ initial begin
     alloc_req_i = 1'b0;
     #1;
     chk("耗尽后 alloc_valid=0", 1'b0, alloc_valid_o);
+
+    // ── 测试7：快照恢复归还快照之后分配的寄存器 ──
+    $display("\n[TEST7] FreeList 稀疏快照恢复");
+    rst = 1'b1;
+    tick;
+    rst = 1'b0;
+    tick;
+
+    alloc_req_i      = 1'b1;
+    snapshot_en_i    = 1'b1;
+    snapshot_slot_i  = 2'd3;
+    tick;
+    snapshot_en_i = 1'b0;
+    tick;
+    alloc_req_i = 1'b0;
+
+    commit_en_i       = 1'b1;
+    commit_preg_new_i = 6'd40;
+    commit_preg_old_i = 6'd5;
+    tick;
+    commit_en_i = 1'b0;
+
+    // 端口在 commit_en=0 时可保留非零旧值，恢复逻辑不得误释放它。
+    commit_preg_old_i = 6'd28;
+    recover_snapshot_hit_i  = 1'b1;
+    recover_snapshot_slot_i = 2'd3;
+    recover_en_i            = 1'b1;
+    tick;
+    recover_en_i = 1'b0;
+    #1;
+
+    chk("分支自身分配 p32 保持占用", 1'b0, dut.free_list[32]);
+    chk("年轻路径分配 p33 被归还", 1'b1, dut.free_list[33]);
+    chk("期间提交释放的 p5 仍为空闲", 1'b1, dut.free_list[5]);
+    chk("无提交时 old 端口 p28 不得被误释放", 1'b0, dut.free_list[28]);
+
+    // ── 测试8：Walk 重新占用快照之后保留指令的物理寄存器 ──
+    $display("\n[TEST8] 稀疏快照 + ROB Walk");
+    walk_en_i   = 1'b1;
+    walk_preg_i = 6'd33;
+    tick;
+    walk_en_i = 1'b0;
+    #1;
+    chk("Walk 后 p33 重新占用", 1'b0, dut.free_list[33]);
 
     tick;
     $display("\n===== freelist: %0d通过, %0d失败 =====\n", pass_cnt, fail_cnt);

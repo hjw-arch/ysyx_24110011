@@ -1,25 +1,19 @@
 // exu (Execution Unit)
 // 非访存指令执行；访存由 LSU 处理
 // CSR：此处只准备 csr_src 写入 ROB.result，真正读写 CSR / 写 rd 在 commit 点（对齐五级 WBU）
-// ecall/mret/fence.i：只打 redirect 标记，目标在 commit 用 CSR.mtvec/mepc 或 pc+4 确定
+// 分支误预测：执行完成当拍立即恢复；ecall/mret/fence.i 仍在 commit 点重定向。
 
 `include "./include/pipeline_pkt_pkg.sv"
 
 module exu
 import pipeline_pkt_pkg::*;
 (
-    input               clk,
-    input               rst,
-
     input               valid_i,
     input   issue2ex_pkt_t data_i,
-    output              ready_o,
 
     output logic        complete_en_o,
     output logic [4:0]  complete_idx_o,
     output logic [31:0] complete_data_o,
-    output logic        complete_redirect_valid_o,
-    output logic [31:0] complete_redirect_addr_o,
 
     output logic        wakeup_en_o,
     output logic [5:0]  wakeup_preg_o,
@@ -34,15 +28,15 @@ import pipeline_pkt_pkg::*;
     output logic [31:0] bpu_update_target_o
 );
 
-wire is_mem  = (data_i.mem.cmd != MEM_NONE);
-wire ex_fire = valid_i & ~is_mem;
+wire ex_fire = valid_i;
 
 wire [31:0] seq_pc = data_i.pc + 32'd4;
 
 // ── ALU 输入 ──
+// JAL/JALR/FENCE 的写回由 seq_pc 独立产生，因此通用 ALU 的 data2 不需要
+// 再为 alu_src=PC_4 保留一个“常数 4”选择器。
 wire [31:0] alu_src1 = data_i.ex.alu_src[1] ? data_i.pc : data_i.rs1_data;
-wire [31:0] alu_src2 = data_i.ex.alu_src[0] ? data_i.imm :
-                       data_i.ex.alu_src[1] ? 32'd4      : data_i.rs2_data;
+wire [31:0] alu_src2 = data_i.ex.alu_src[0] ? data_i.imm : data_i.rs2_data;
 
 logic [31:0] alu_result;
 logic        alu_zf;
@@ -83,30 +77,24 @@ wire        csr_valid = data_i.sys.csr_cmd != CSR_CMD_NONE;
 wire        csr_imm   = data_i.funct3[2];
 wire [31:0] csr_src   = csr_imm ? data_i.imm : data_i.rs1_data;
 
-wire is_priv    = data_i.sys.priv_redir != PRIV_REDIR_NONE;
 wire is_fence_i = data_i.sys.fence_i;
 
 // jal/jalr/fence.i 的链接值/重定向默认目标为 pc+4
 wire        seq_result = redirect_is_jump | is_fence_i;
-wire [31:0] ex_result  = csr_valid  ? csr_src :
-                         seq_result ? seq_pc  :
-                                      alu_result;
+wire [31:0] ex_result = csr_valid  ? csr_src :
+                        seq_result ? seq_pc  :
+                                     alu_result;
 
 // ── complete → ROB ──
 assign complete_en_o   = ex_fire;
 assign complete_idx_o  = data_i.rob_idx;
 assign complete_data_o = ex_result;
 
-// 误预测 / fence.i / ecall / mret 均在 head 提交时 flush
-// ecall/mret 的最终目标由顶层用 mtvec/mepc 覆盖；此处先填 seq_pc 占位
-assign complete_redirect_valid_o = ex_fire & (br_mispred | is_fence_i | is_priv);
-assign complete_redirect_addr_o  = br_mispred ? redirect_target : seq_pc;
-
 // CSR 的 rd 必须在 commit 写 PRF 后才 wakeup，避免依赖读到 csr_src
 assign wakeup_en_o   = ex_fire & data_i.rd_wen & ~csr_valid;
 assign wakeup_preg_o = data_i.phys_rd;
 
-// 观测用
+// 执行级分支恢复请求
 assign redirect_valid_o = ex_fire & br_mispred;
 assign redirect_addr_o  = redirect_target;
 
@@ -115,7 +103,5 @@ assign bpu_update_btb_type_o = redirect_is_jal;
 assign bpu_update_taken_o    = actual_taken;
 assign bpu_update_pc_o       = data_i.pc;
 assign bpu_update_target_o   = cfi_target;
-
-assign ready_o = 1'b1;
 
 endmodule

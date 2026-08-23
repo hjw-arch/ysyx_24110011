@@ -10,7 +10,7 @@ typedef struct packed {
     logic   [31:0]  pc;
     logic   [31:0]  inst;
     logic           pred_taken;
-} pipe_meta_t;
+} if2id_pkt_t;
 
 //============================================================
 // ALU control
@@ -139,17 +139,6 @@ typedef struct packed {
     logic           fence_i;
 } sys_ctrl_t;
 
-typedef struct packed {
-    logic           valid;
-    logic [31:0]    addr;
-} redirect_t;
-
-//============================================================
-// Pipeline packets
-//============================================================
-
-typedef pipe_meta_t if2id_pkt_t;
-
 //============================================================
 // OoO types (single-issue out-of-order execution)
 //============================================================
@@ -159,22 +148,6 @@ typedef logic [5:0] phys_reg_t;
 
 // ROB 索引（5 位，支持 32 项 ROB）
 typedef logic [4:0] rob_idx_t;
-
-// ROB 项结构
-typedef struct packed {
-    logic           valid;
-    logic           complete;       // 执行完成标志
-    logic   [31:0]  pc;
-    logic   [31:0]  inst;
-    logic   [4:0]   arch_rd;        // 架构目的寄存器
-    phys_reg_t      phys_rd;        // 物理目的寄存器
-    phys_reg_t      phys_rd_old;    // 旧物理寄存器（提交时释放）
-    logic   [31:0]  result;
-    logic           rd_wen;
-    logic           exception;
-    logic   [3:0]   exception_cause;
-    sys_ctrl_t      sys;
-} rob_entry_t;
 
 // ROB 分配包
 typedef struct packed {
@@ -192,15 +165,12 @@ typedef struct packed {
 // 仿真：cpu_exec 不拆本结构位域；顶层展平 commit_pc/inst/arch_rd/rd_wen/result_arch
 // 改字段顺序或宽度时，必须同步 ysyx_24110011 展平口（若仍有 VlWide 读者）
 typedef struct packed {
-    logic           valid;
     logic   [4:0]   arch_rd;
     phys_reg_t      phys_rd;        // 提交时 arch_rd 对应的新物理寄存器
     phys_reg_t      phys_rd_old;    // 提交时释放的旧物理寄存器
     logic   [31:0]  result;
     logic           rd_wen;
-    logic           is_store;
     sys_ctrl_t      sys;
-    redirect_t      redirect;
     logic   [31:0]  pc;
     logic   [31:0]  inst;
 } rob_commit_t;

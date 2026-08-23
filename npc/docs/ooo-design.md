@@ -2,7 +2,7 @@
 
 > 分支：`OoO_pre`  
 > **唯一设计真源**（`npc/docs/` 仅本文）  
-> 状态：与 `vsrc/` 同步 — Tier1 + Tier2 + **Tier3-A** 完成；工程清理（仿真契约展平、轻量 PMC、注释）已落地。
+> 状态：与 `vsrc/` 同步 — Tier1 + Tier2 + **Tier3-A** + **四项稀疏快照恢复**完成。
 
 ---
 
@@ -25,7 +25,7 @@
 
 1. 架构状态（AMT 映射、CSR、**内存**）只在 ROB **commit** 对外部不可回滚。  
 2. 推测执行可写 PRF、占 SQ，但 **store 不得在 commit 前进入 AXI**。  
-3. flush 只信任 `rob.flush_o`；恢复用 **next_amt（含同拍 commit）** 重建 RAT 与 freelist。  
+3. 分支误预测由 EXU 立即恢复并只清除年轻状态；异常/特权跳转/fence.i 在 ROB head 全局刷新。
 4. 宽度：dispatch / issue / commit 均为 **1**。
 
 风格：组合优先 `assign`，时序 always 浅，中文注释写不变量；面积小、延迟低。
@@ -41,20 +41,21 @@
 | **Tier1** | BPU 真实 PC、legacy 隔离、定向 TB、设计文档 | ✅ |
 | **Tier2** | 精确异常；Store Queue（commit 后 AXI 写）；PRF 2R2W（CSR 并快写） | ✅ |
 | **Tier3-A** | SQ CAM STLF（全覆盖）；部分重叠 stall；无重叠可 AXI load | ✅ |
+| **分支恢复** | 4 项分布式稀疏快照；ROB Walk；ROB/IQ/LSU/SQ 年轻项选择性清除 | ✅ |
 | **工程清理** | commit 仿真契约展平；OoO 轻量 PMC；接口/注释；Makefile 去 axi4_lite include | ✅ |
 
 ### 2.2 回归
 
 | 项 | 结果 |
 |----|------|
-| `make -C npc test` | 全过（含 `store_queue` 25、`lsu` 54） |
-| 经典 `*-riscv32-npc.bin`（除 bitrev） | **25/25** HIT GOOD TRAP |
+| `make -C npc test` | 全过（263 项断言） |
+| `make ARCH=riscv32-npc run` | **38/38** HIT GOOD TRAP（DiffTest 开启） |
 | `fence-i-riscv32e-npc.bin` | PASS |
 | bitrev | **不做**（按项目约定） |
 
 ### 2.3 明确不做（本阶段）
 
-双发射、复杂 mem 预测、多 ALU、非对齐访存、部分字节合并前递、RAT checkpoint、多 outstanding AXI load（除非后续单独立项）。
+双发射、复杂 mem 预测、多 ALU、非对齐访存、部分字节合并前递、多 outstanding AXI load（除非后续单独立项）。
 
 ### 2.4 周期基线（Tier2 → Tier3-A）
 
@@ -124,6 +125,8 @@ IQ older_mem 序不变
 | SQ_DEPTH | 8 | Store Queue |
 | NUM_PHYS_REGS | 64 | 物理寄存器（p0 = x0 恒 0） |
 | NUM_ARCH_REGS | 32 | RV32I |
+| NUM_SNAPSHOTS | 4 | RAT / FreeList 同槽分布式快照 |
+| SNAPSHOT_PERIOD | 4 | 每 4 条已分派指令最多创建一份快照 |
 | FETCH/DECODE/ISSUE/COMMIT_WIDTH | 1 | 单发射 |
 
 ---
@@ -134,9 +137,10 @@ IQ older_mem 序不变
 |----|----------|----------|------|
 | **RAT**（推测） | `rename_map_table.map_table` | dispatch 分配新 phys_rd | 源操作数重命名 |
 | **AMT**（架构） | `rename_map_table.arch_map` | **commit** 且 rd_wen | 提交后 arch→phys |
-| next_amt | 组合：AMT 合入本拍 commit | flush 当拍 | 恢复 RAT；freelist 快照 |
+| 稀疏快照 | `snapshot_map[4]` | 每隔 4 条 dispatch | 恢复最近旧状态 |
 
-- freelist：p0 永不分配/释放；commit 归还 `phys_rd_old`；flush 按 `amt_snapshot` 重建。  
+- freelist：p0 永不分配/释放；commit 归还 `phys_rd_old`；四份 `snapshot_free` 与 RAT 快照同槽创建。由于当前 FreeList 是位图，不照搬香山环形队列的 `headPtr` 快照。
+- ROB Walk：ROB 原有的 `arch_rd / phys_rd / rd_wen` 直接充当恢复日志，不另建 RAB。快照命中后从 `snapshot_tag + 1` 重放到误预测分支；未命中则从 AMT/committed FreeList 和 ROB head 开始重放。
 - busy_table：dispatch set；wakeup clear（**双路**，clear 优先于 set）。  
 - wakeup bypass：dispatch 同拍命中 rs 则直接 ready。
 
@@ -149,10 +153,11 @@ IQ older_mem 序不变
 - 16 项循环队列；5-bit sequence ID 保持模 32 年龄语义，低 4 位寻址存储槽。
 - 双路 complete（EXU / LSU 可同拍）。
 - store head：无异常时等 `store_commit_ready`（SQ drain 完成）才退休。  
-- `commit_valid = head_ready & ~head_trap`；trap/redirect → `flush_o`。  
+- `commit_valid = head_ready & ~head_trap`；执行级误预测保留分支及更老项并回退 tail。
 - 译码期 illegal：alloc 即 complete+exception，到 head 走 trap。  
 - `exc_commit_*`：异常提交观测；顶层写 CSR trap。  
 - `head_idx_o`：IQ 年龄与 sys-at-head。
+- 恢复只读口：按 `recover_walk_idx` 输出 `arch_rd / phys_rd / rd_wen`；Walk 期间停止 ROB commit，但保留老指令执行。Store 的 commit 请求使用同一停顿，避免 SQ 先于 ROB pop。
 
 ### 5.2 Issue Queue（`issue_queue.sv`）
 
@@ -165,7 +170,7 @@ IQ older_mem 序不变
 
 - 非 mem 组合完成；mem 不 complete。  
 - CSR：只把 `csr_src` 写入 ROB.result；**不** EXU wakeup/写 PRF。  
-- 误预测 / fence.i / priv：complete 打 `redirect_valid`；目标 ecall/mret 在 commit 覆盖。  
+- 误预测：EXU 当拍请求恢复；fence.i / priv 标记进入 ROB，在 commit 点重定向。
 - BPU 更新：valid/type/taken/**pc**/target（pc 必须为指令 PC）。
 
 ### 5.4 LSU + Store Queue（Tier2 + Tier3-A）
@@ -232,13 +237,18 @@ IQ older_mem 序不变
 
 ## 6. flush / 恢复
 
-```
-rob_flush
-  → IFU redirect（redirect_pc_final：trap→mtvec，mret→mepc，else rob_flush_pc）
-  → rename：RAT ← next_amt；freelist 重建；busy 清零
-  → IQ 清空
-  → LSU in-flight load 标记 flushed（不 complete）
-  → SQ：丢弃未 committed；in-flight drain 跑完
+```text
+EXU branch_recover
+  → IFU 立即 redirect
+  → RAT / FreeList ← 最近的四项分布式快照（无命中则提交态）
+  → 按 ROB 顺序 Walk 到误预测分支，重放 arch_rd→phys_rd 和 pdst 占用
+  → ROB / IQ / LSU / SQ 只清除年轻项
+  → Issue→RegRead 仅清年轻项，更老已发射指令继续推进
+
+ROB global flush（异常 / ecall / mret / fence.i）
+  → RAT / FreeList 恢复提交状态，BusyTable / IQ 清空
+  → LSU 错误 load 只收尾 AXI，不再 complete
+  → SQ 丢弃未提交项，已发起 drain 跑完
 ```
 
 ---
@@ -299,8 +309,11 @@ timeout 60 npc/build/obj-npc/Vysyx -b -d ./npc/libnemu.so \
   am-kernels/tests/cpu-tests/build/fence-i-riscv32e-npc.bin
 ```
 
-单元：`store_queue` 25、`lsu` 54（含 STLF / stall / drain 中 STLF）。  
-集成：**25/25 + fence-i**。testbench 源码可本地保留，**不必纳入 git 跟踪**。
+单元：共 **263/263**，其中 `rob` 28、`store_queue` 28、`lsu` 56。
+集成：cpu-tests Makefile **38/38**；RT-Thread 5.0.1 在 Device 配置下进入 `msh`。
+
+4000 MHz 目标压榨式 STA（Nangate45）：固定扇出后面积 `97437.662 um²`，
+关键路径落在 IQ 表项更新端，为 `1.407 ns`，折算 `690.628 MHz`；新增快照恢复不是关键路径。
 
 ---
 
@@ -313,7 +326,7 @@ timeout 60 npc/build/obj-npc/Vysyx -b -d ./npc/libnemu.so \
 | **P1** | **乱序访存 A2**：load 越过地址已知且不重叠的更老 store；重叠 STLF/stall | 微架构 | 正确性敏感；现 store issue 即知 addr，条件有利 |
 | **P2** | **A3** 双 inflight / 非阻塞 load | 微架构 | 宜在 A1/A2 后；注意 master 直通与 flush |
 | **P3** | 双发射（dispatch/issue 宽=2，最好双 commit） | 大改 | 全局端口；见 §11，**不优先** |
-| 延期 | RAT checkpoint、部分字节合并、非对齐、复杂 mem 预测 | — | 默认不做 |
+| 延期 | 部分字节合并、非对齐、复杂 mem 预测 | — | 默认不做 |
 
 ---
 
@@ -370,5 +383,6 @@ timeout 60 npc/build/obj-npc/Vysyx -b -d ./npc/libnemu.so \
 | Tier3-A | CAM STLF + 非空 SQ 下 AXI load | ✅ |
 | 工程清理 | 仿真契约、PMC、注释 | ✅ |
 | Tier3-B（=A1/A2） | 访存 issue 放松 | 📋 推荐下一步 |
-| Tier3-C（=A3 等） | 多 inflight load；checkpoint 仍默认不做 | 📋 可选 |
+| 分支恢复 | 4 项分布式稀疏快照 + ROB Walk + 年轻项 squash | ✅ |
+| Tier3-C（=A3 等） | 多 inflight load | 📋 可选 |
 | 超标量 | 双发射 | 📋 更后 |
