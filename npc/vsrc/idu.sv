@@ -159,11 +159,10 @@ assign data_o.ex.alu_op[0] = (is_branch & func3[2] & func3[1]) | (is_calc & func
 // ALU 输入源编码：
 //   00: rs1, rs2
 //   01: rs1, imm
-//   10: pc,  4
+//   10: pc,  rs2（当前指令集不使用）
 //   11: pc,  imm
-// FENCE.I 使用 pc+4，这样 WBU 提交时可以直接拿 result 作为重定向地址，
-// 不需要在提交点再放一个 pc+4 加法器。
-assign data_o.ex.alu_src[1] = is_auipc | is_jal | is_jalr | is_fence_i;
+// JAL/JALR/FENCE.I 的 pc+4 由 EXU 的 seq_pc 独立产生，不占用通用 ALU 输入编码。
+assign data_o.ex.alu_src[1] = is_auipc;
 assign data_o.ex.alu_src[0] = is_lui | is_auipc | is_load | is_store | is_cal_i;
 
 // 控制流指令类型编码：

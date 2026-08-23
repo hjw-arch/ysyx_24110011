@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
     std::cout << "\n[测试6] JAL: PC=0x2000, offset=0x400，预测正确 → 无 redirect" << std::endl;
     dut->pc_i = 0x2000; dut->imm_i = 0x400;
     dut->phys_rd_i = 15; dut->rd_wen_i = 1;
-    dut->cfi_type_i = 0b10; dut->pred_taken_i = 1; dut->alu_src_i = 0b10;  // CFI_JAL, PC_4
+    dut->cfi_type_i = 0b10; dut->pred_taken_i = 1; dut->alu_src_i = 0b00;
     dut->eval();
     check_u32("complete_data (PC+4)",  0x2004, dut->complete_data_o);
     check_bit("redirect_valid (无)",   false,  dut->redirect_valid_o);
@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
     std::cout << "\n[测试7] JALR: rs1=0x3000, imm=100" << std::endl;
     dut->pc_i = 0x5000; dut->rs1_data_i = 0x3000; dut->imm_i = 100;
     dut->phys_rd_i = 16;
-    dut->cfi_type_i = 0b11; dut->alu_src_i = 0b01;  // CFI_JALR, RS1_IMM
+    dut->cfi_type_i = 0b11; dut->alu_src_i = 0b00;
     dut->eval();
     check_u32("complete_data (PC+4)", 0x5004, dut->complete_data_o);
     check_u32("redirect_addr",        0x3064, dut->redirect_addr_o);

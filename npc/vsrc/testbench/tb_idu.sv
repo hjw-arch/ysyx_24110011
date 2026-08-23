@@ -122,7 +122,7 @@ initial begin
     chk("rd_wen = 1", 1'b1, data_o.rd_wen);
     chk32("imm = 2048", 32'd2048, data_o.imm);
     chk2("CFI_type = JAL", 2'b10, data_o.ex.cfi_type);
-    chk2("ALU_src = pc+4", 2'b10, data_o.ex.alu_src);
+    chk2("ALU_src 不参与 JAL 链接值生成", 2'b00, data_o.ex.alu_src);
 
     // ── 测试7：边界 - rd=x0 应屏蔽写使能 ──
     $display("\n[TEST7] 边界：rd=x0 屏蔽写使能");

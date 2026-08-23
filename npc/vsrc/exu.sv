@@ -33,8 +33,7 @@ wire ex_fire = valid_i;
 wire [31:0] seq_pc = data_i.pc + 32'd4;
 
 // ── ALU 输入 ──
-// JAL/JALR/FENCE 的写回由 seq_pc 独立产生，因此通用 ALU 的 data2 不需要
-// 再为 alu_src=PC_4 保留一个“常数 4”选择器。
+// JAL/JALR/FENCE 的写回由 seq_pc 独立产生，通用 ALU 只选择 rs2/imm。
 wire [31:0] alu_src1 = data_i.ex.alu_src[1] ? data_i.pc : data_i.rs1_data;
 wire [31:0] alu_src2 = data_i.ex.alu_src[0] ? data_i.imm : data_i.rs2_data;
 

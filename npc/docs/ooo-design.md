@@ -312,8 +312,8 @@ timeout 60 npc/build/obj-npc/Vysyx -b -d ./npc/libnemu.so \
 单元：共 **263/263**，其中 `rob` 28、`store_queue` 28、`lsu` 56。
 集成：cpu-tests Makefile **38/38**；RT-Thread 5.0.1 在 Device 配置下进入 `msh`。
 
-4000 MHz 目标压榨式 STA（Nangate45）：固定扇出后面积 `97437.662 um²`，
-关键路径落在 IQ 表项更新端，为 `1.407 ns`，折算 `690.628 MHz`；新增快照恢复不是关键路径。
+4000 MHz 目标压榨式 STA（Nangate45）：固定扇出后面积 `97697.012 um²`，
+关键路径落在 ROB 表项更新端，为 `1.405 ns`，折算 `691.493 MHz`；新增快照恢复不是关键路径。
 
 ---
 

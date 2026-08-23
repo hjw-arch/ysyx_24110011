@@ -34,18 +34,17 @@ localparam alu_op_t ALU_COPY2 = 4'b1100;
 // ALU source encoding
 //
 // alu_src[1]: 0 -> rs1, 1 -> pc
-// alu_src[0]: 0 -> rs2/4, 1 -> imm
+// alu_src[0]: 0 -> rs2, 1 -> imm
 //
 // 00: rs1 + rs2
 // 01: rs1 + imm
-// 10: pc  + 4
+// 10: pc  + rs2（当前指令集不使用）
 // 11: pc  + imm
 //============================================================
 typedef logic [1:0] alu_src_t;
 
 localparam alu_src_t ALU_SRC_RS1_RS2 = 2'b00;
 localparam alu_src_t ALU_SRC_RS1_IMM = 2'b01;
-localparam alu_src_t ALU_SRC_PC_4    = 2'b10;
 localparam alu_src_t ALU_SRC_PC_IMM  = 2'b11;
 
 //============================================================
